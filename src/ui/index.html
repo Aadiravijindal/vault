@@ -1,46 +1,82 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" dir="ltr">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark light">
+<meta name="description" content="Vault — governance for the company's shared AI memory.">
 <title>Vault — shared AI memory governance</title>
 <link rel="stylesheet" href="/app.css">
 </head>
 <body>
-<div id="login" class="login">
-  <div class="login-card">
-    <div class="brand"><span class="lock">🔒</span> VAULT</div>
-    <p class="tagline">The company's shared AI memory — with a guard at the door,<br>a recorder that never stops, and proof you can verify yourself.</p>
-    <label>Access token</label>
-    <input id="token" type="password" placeholder="vlt_…" autocomplete="off">
-    <button id="signin">Sign in</button>
+<!-- A keyboard user should not have to tab through fourteen navigation links to
+     reach the table they came for. This is the first focusable thing on the
+     page and becomes visible the moment it takes focus. -->
+<a href="#view" class="skip" id="skipLink" data-i18n="nav.skip">Skip to main content</a>
+
+<!-- Announcements for assistive technology. Two regions, deliberately: `polite`
+     for ordinary results, `assertive` for what a person must not miss — a kill
+     switch engaging, a chain verification failing. One region would mean either
+     interrupting constantly or never interrupting. -->
+<div id="live" class="sr-only" role="status" aria-live="polite" aria-atomic="true"></div>
+<div id="alertLive" class="sr-only" role="alert" aria-live="assertive" aria-atomic="true"></div>
+
+<main id="login" class="login">
+  <form class="login-card" id="loginForm" novalidate>
+    <h1 class="brand"><span class="lock" aria-hidden="true">🔒</span> <span data-i18n="app.name">VAULT</span></h1>
+    <p class="tagline" data-i18n="app.tagline">The company's shared AI memory — with a guard at the door, a recorder that never stops, and proof you can verify yourself.</p>
+
+    <label for="token" data-i18n="auth.token">Access token</label>
+    <input id="token" name="token" type="password" placeholder="vlt_…" autocomplete="off"
+           spellcheck="false" required aria-describedby="loginHint loginErr" aria-invalid="false">
+    <button id="signin" type="submit" data-i18n="auth.signin">Sign in</button>
+
     <p class="hint" id="loginHint">Run <code>node demo/seed.js</code> to generate demo tokens, or <code>node bin/vault.js serve</code> and use the token it prints.</p>
-    <p class="err" id="loginErr"></p>
-  </div>
-</div>
+    <p class="err" id="loginErr" role="alert"></p>
+
+    <div class="langpick">
+      <label for="locale" data-i18n="lang.label">Interface language</label>
+      <select id="locale" name="locale"></select>
+      <p class="hint" data-i18n="lang.note">This changes the interface only. Your memory content is never machine-translated.</p>
+    </div>
+  </form>
+</main>
 
 <div id="app" class="app hidden">
-  <nav id="nav">
-    <div class="brand"><span class="lock">🔒</span> VAULT</div>
-    <div class="who"><span id="whoName"></span><span id="whoRole" class="role"></span></div>
-    <ul id="screens"></ul>
+  <nav id="nav" aria-label="Primary navigation" data-i18n-aria-label="a11y.navLandmark">
+    <div class="brand"><span class="lock" aria-hidden="true">🔒</span> <span data-i18n="app.name">VAULT</span></div>
+    <div class="who">
+      <span id="whoName"></span>
+      <span id="whoRole" class="role"></span>
+    </div>
+    <!-- A real list, so assistive technology announces "navigation, list, 14
+         items" rather than reading fourteen unrelated links. -->
+    <ul id="screens" role="list"></ul>
     <div class="navfoot">
-      <div id="ksBadge" class="ks ks-0">Kill switch: normal</div>
-      <button id="signout" class="link">Sign out</button>
+      <div id="ksBadge" class="ks ks-0" role="status">
+        <span data-i18n="killswitch.label">Kill switch</span>: <span id="ksState" data-i18n="killswitch.normal">normal</span>
+      </div>
+      <button id="signout" class="link" type="button" data-i18n="auth.signout">Sign out</button>
     </div>
   </nav>
-  <main>
+
+  <main id="mainRegion" aria-labelledby="title">
     <header>
       <h1 id="title">Map</h1>
       <div class="tools">
-        <span id="chainBadge" class="badge">chain …</span>
-        <button id="refresh" class="ghost">Refresh</button>
+        <span id="chainBadge" class="badge" role="status">chain …</span>
+        <button id="refresh" class="ghost" type="button" data-i18n="action.refresh">Refresh</button>
       </div>
     </header>
-    <section id="view"><div class="loading">loading…</div></section>
+    <!-- tabindex="-1" so the skip link can move focus here programmatically
+         without putting the region into the tab order itself. -->
+    <section id="view" tabindex="-1" aria-busy="false">
+      <div class="loading" data-i18n="state.loading">loading…</div>
+    </section>
   </main>
 </div>
 
+<script src="/i18n-bundle.js"></script>
 <script src="/app.js"></script>
 </body>
 </html>

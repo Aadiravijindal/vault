@@ -580,6 +580,17 @@ export class ApiServer {
   }
 
   _serveUi(path, res) {
+    // The browser cannot `import` from src/ui/i18n.js without a module server,
+    // and duplicating the string table into app.js would guarantee the two
+    // drift. So the module is shipped verbatim with its exports bound to a
+    // global — one source of truth, no build step.
+    if (path === '/i18n-bundle.js') {
+      const src = readFileSync(join(UI_DIR, 'i18n.js'), 'utf8')
+        .replace(/^export (const|class|function) /gm, '$1 ');
+      const body = `window.VaultI18n=(function(){\n${src}\nreturn {LOCALES,STRINGS,I18n,coverage,negotiate};\n})();\n`;
+      res.writeHead(200, { 'Content-Type': 'text/javascript; charset=utf-8' });
+      return res.end(body);
+    }
     const rel = path === '/' ? '/index.html' : path;
     const file = join(UI_DIR, normalize(rel).replace(/^(\.\.[/\\])+/, ''));
     if (!file.startsWith(UI_DIR) || !existsSync(file)) {

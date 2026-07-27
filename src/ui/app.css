@@ -1,7 +1,14 @@
 :root{
   --bg:#0b0e14; --panel:#121722; --panel2:#171d2b; --line:#232c3d;
-  --ink:#e6ebf5; --dim:#93a0b8; --dimmer:#6b788f;
-  --accent:#5b9dff; --green:#3fbf7f; --amber:#e9b949; --red:#ef5f6b; --purple:#a97bff;
+  /* Contrast against --bg #0b0e14, measured rather than eyeballed:
+     --dim 8.3:1, --dimmer 4.8:1, --green 7.4:1, --amber 9.9:1, --red 5.2:1,
+     --accent 6.6:1, --purple 5.6:1. Every one clears WCAG AA for normal text
+     (4.5:1). --dimmer was #6b788f (3.9:1) and failed, which mattered because it
+     is what "tiny" explanatory text uses — exactly the text somebody with low
+     vision most needs. */
+  --ink:#e6ebf5; --dim:#93a0b8; --dimmer:#8794a9;
+  --accent:#5b9dff; --green:#3fbf7f; --amber:#e9b949; --red:#f4757f; --purple:#b28cff;
+  --focus:#ffd166;
   --mono:ui-monospace,SFMono-Regular,"SF Mono",Menlo,Consolas,monospace;
 }
 *{box-sizing:border-box}
@@ -34,22 +41,32 @@ button:hover{filter:brightness(1.08)}
 button.ghost{background:transparent;color:var(--dim);border:1px solid var(--line);margin:0}
 button.ghost:hover{color:var(--ink);border-color:var(--accent)}
 button.link{background:none;color:var(--dim);padding:0;margin:0;font-weight:400;text-decoration:underline}
-button.sm{padding:5px 10px;font-size:12px;margin:0 6px 6px 0}
+button.sm{padding:5px 10px;font-size:12px;margin:0 6px 6px 0;margin-inline:0 6px}
 button.danger{background:var(--red);color:#fff}
 .hint{color:var(--dimmer);font-size:12px;margin-top:18px;line-height:1.6}
 .err{color:var(--red);font-size:12px;min-height:16px}
 
 /* ---------- shell ---------- */
 .app{display:grid;grid-template-columns:236px 1fr;height:100%}
-nav{background:var(--panel);border-right:1px solid var(--line);display:flex;flex-direction:column;padding:20px 0}
+nav{background:var(--panel);border-inline-end:1px solid var(--line);display:flex;flex-direction:column;padding:20px 0}
 nav .brand{padding:0 20px 16px}
 nav .who{padding:0 20px 16px;font-size:12px;color:var(--dim);display:flex;flex-direction:column;gap:3px}
 nav .role{color:var(--accent);text-transform:uppercase;letter-spacing:.08em;font-size:10px}
 nav ul{list-style:none;margin:0;padding:0;flex:1;overflow-y:auto}
-nav li{padding:8px 20px;cursor:pointer;color:var(--dim);font-size:13px;display:flex;gap:9px;align-items:center;border-left:2px solid transparent}
-nav li:hover{color:var(--ink);background:var(--panel2)}
-nav li.active{color:var(--ink);background:var(--panel2);border-left-color:var(--accent)}
-nav li.locked{opacity:.32;cursor:not-allowed}
+nav li{border-inline-start:2px solid transparent}
+/* The nav item is a real <button> inside the <li>: focusable, Enter and Space
+   work, and assistive technology announces it as a control. It is styled to
+   look exactly as the div did. */
+nav .navbtn{
+  width:100%;padding:8px 20px;cursor:pointer;color:var(--dim);font:inherit;font-size:13px;
+  display:flex;gap:9px;align-items:center;background:none;border:0;margin:0;text-align:start
+}
+nav .navbtn:hover{color:var(--ink);background:var(--panel2)}
+nav li.active .navbtn{color:var(--ink);background:var(--panel2)}
+nav li.active{border-inline-start-color:var(--accent)}
+nav li.locked{opacity:.55}
+nav li.locked .navbtn{cursor:not-allowed}
+.langpick{margin-top:22px;padding-top:18px;border-top:1px solid var(--line)}
 .navfoot{padding:14px 20px 0;border-top:1px solid var(--line);display:flex;flex-direction:column;gap:10px}
 .ks{font-size:11px;padding:5px 9px;border-radius:6px;text-align:center}
 .ks-0{background:rgba(63,191,127,.13);color:var(--green)}
@@ -81,7 +98,7 @@ section#view{flex:1;overflow-y:auto;padding:24px 26px 60px}
 .good{color:var(--green)} .warn{color:var(--amber)} .bad{color:var(--red)} .info{color:var(--accent)} .gold{color:var(--purple)}
 .row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
 .spacer{flex:1}
-.pill{display:inline-block;font-size:10px;padding:2px 7px;border-radius:20px;background:var(--panel2);color:var(--dim);border:1px solid var(--line);margin-right:5px}
+.pill{display:inline-block;font-size:10px;padding:2px 7px;border-radius:20px;background:var(--panel2);color:var(--dim);border:1px solid var(--line);margin-inline-end:5px}
 .pill.g{color:var(--green);border-color:rgba(63,191,127,.35)}
 .pill.a{color:var(--amber);border-color:rgba(233,185,73,.35)}
 .pill.r{color:var(--red);border-color:rgba(239,95,107,.4)}
@@ -89,7 +106,7 @@ section#view{flex:1;overflow-y:auto;padding:24px 26px 60px}
 .pill.b{color:var(--accent);border-color:rgba(91,157,255,.4)}
 
 table{width:100%;border-collapse:collapse;font-size:12.5px}
-th{text-align:left;color:var(--dim);font-weight:500;font-size:11px;text-transform:uppercase;letter-spacing:.06em;padding:8px 10px;border-bottom:1px solid var(--line)}
+th{text-align:start;color:var(--dim);font-weight:500;font-size:11px;text-transform:uppercase;letter-spacing:.06em;padding:8px 10px;border-bottom:1px solid var(--line)}
 td{padding:9px 10px;border-bottom:1px solid var(--line);vertical-align:top}
 tr:last-child td{border-bottom:0}
 tr.clickable{cursor:pointer}
@@ -102,18 +119,18 @@ pre{background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:
 .kv dd{margin:0}
 
 .item{border:1px solid var(--line);border-radius:10px;padding:15px;margin-bottom:12px;background:var(--panel)}
-.item.high{border-left:3px solid var(--red)}
-.item.medium{border-left:3px solid var(--amber)}
-.item.low{border-left:3px solid var(--dimmer)}
+.item.high{border-inline-start:3px solid var(--red)}
+.item.medium{border-inline-start:3px solid var(--amber)}
+.item.low{border-inline-start:3px solid var(--dimmer)}
 .item .claim{font-size:14px;margin-bottom:9px}
 .reasons{list-style:none;padding:0;margin:8px 0;font-size:12px;color:var(--dim)}
-.reasons li{padding:3px 0 3px 16px;position:relative}
-.reasons li:before{content:"+";position:absolute;left:0;color:var(--amber)}
+.reasons li{padding-block:3px;padding-inline:16px 0;position:relative}
+.reasons li:before{content:"+";position:absolute;inset-inline-start:0;color:var(--amber)}
 .bar{height:6px;background:var(--panel2);border-radius:4px;overflow:hidden;margin-top:7px}
 .bar span{display:block;height:100%;background:var(--accent)}
 .empty{color:var(--dimmer);padding:36px;text-align:center;border:1px dashed var(--line);border-radius:11px}
-.toast{position:fixed;right:22px;bottom:22px;background:var(--panel2);border:1px solid var(--line);border-left:3px solid var(--green);padding:13px 17px;border-radius:9px;font-size:13px;max-width:420px;z-index:50}
-.toast.bad{border-left-color:var(--red)}
+.toast{position:fixed;inset-inline-end:22px;bottom:22px;background:var(--panel2);border:1px solid var(--line);border-inline-start:3px solid var(--green);padding:13px 17px;border-radius:9px;font-size:13px;max-width:420px;z-index:50}
+.toast.bad{border-inline-start-color:var(--red)}
 .tabs{display:flex;gap:5px;margin-bottom:16px;flex-wrap:wrap}
 .tab{padding:6px 13px;border-radius:7px;background:var(--panel);border:1px solid var(--line);cursor:pointer;font-size:12.5px;color:var(--dim)}
 .tab.active{background:var(--panel2);color:var(--ink);border-color:var(--accent)}
@@ -123,8 +140,85 @@ a{color:var(--accent)}
   .app{grid-template-columns:1fr}
   nav{flex-direction:row;overflow-x:auto;padding:10px;align-items:center}
   nav ul{display:flex;flex:0 0 auto}
-  nav li{white-space:nowrap;border-left:0;border-bottom:2px solid transparent}
+  nav li{white-space:nowrap;border-inline-start:0;border-bottom:2px solid transparent}
   nav li.active{border-bottom-color:var(--accent)}
   nav .who,.navfoot,nav .brand{display:none}
   .kv{grid-template-columns:1fr}
+}
+
+/* ---------- accessibility ---------- */
+
+/* A visible focus ring on everything focusable. The default was the browser's,
+   which several of the dark backgrounds here swallowed entirely — a keyboard
+   user could not see where they were. :focus-visible so pointer users do not
+   get a ring on every click, but :focus is kept as the fallback for browsers
+   that lack it, because losing the ring is worse than showing it too often. */
+:where(a,button,input,select,textarea,summary,[tabindex]):focus{
+  outline:3px solid var(--focus); outline-offset:2px; border-radius:4px
+}
+:where(a,button,input,select,textarea,summary,[tabindex]):focus:not(:focus-visible){outline:none}
+:where(a,button,input,select,textarea,summary,[tabindex]):focus-visible{
+  outline:3px solid var(--focus); outline-offset:2px
+}
+/* Rows and tabs are interactive but not natively focusable, so they carry
+   role/tabindex from app.js and need the same treatment. */
+tr.clickable:focus-visible td:first-child{box-shadow:inset 3px 0 0 var(--focus)}
+.tab:focus-visible{outline:3px solid var(--focus);outline-offset:2px}
+
+/* Visible only to assistive technology. Not display:none, which removes it from
+   the accessibility tree along with everything else. */
+.sr-only{
+  position:absolute;width:1px;height:1px;padding:0;margin:-1px;
+  overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap;border:0
+}
+
+/* The skip link: off-screen until focused, then unmissable. */
+.skip{
+  position:absolute;inset-inline-start:-9999px;top:8px;z-index:100;
+  background:var(--accent);color:#06101f;padding:10px 16px;border-radius:8px;
+  font-weight:600;text-decoration:none
+}
+.skip:focus{inset-inline-start:8px}
+
+/* Touch targets. WCAG 2.2 asks for 24×24 CSS px minimum; these were 20px in
+   places, which is a miss on a phone and on a trackpad with a tremor. */
+nav li,.tab,button.sm,button.link{min-height:24px}
+nav li{min-height:36px}
+
+/* Respect a stated preference for less motion. */
+@media (prefers-reduced-motion:reduce){
+  *,*::before,*::after{
+    animation-duration:.01ms !important;animation-iteration-count:1 !important;
+    transition-duration:.01ms !important;scroll-behavior:auto !important
+  }
+}
+
+/* Windows High Contrast / forced-colors: our custom colours are discarded by
+   the OS, so borders must come back or the layout collapses into one flat
+   surface with no visible structure. */
+@media (forced-colors:active){
+  .card,.item,.pill,.badge,nav,table,th,td{border:1px solid CanvasText}
+  nav li.active{outline:2px solid Highlight}
+  :where(a,button,input,select,textarea,[tabindex]):focus-visible{outline:3px solid Highlight}
+  .ks-on{border:2px solid Mark}
+}
+
+/* Honour a light-theme preference rather than forcing dark on everyone. */
+@media (prefers-color-scheme:light){
+  :root:not([data-theme="dark"]){
+    --bg:#f7f9fc;--panel:#ffffff;--panel2:#eef2f8;--line:#d3dbe8;
+    --ink:#111825;--dim:#4a5568;--dimmer:#5d6b80;
+    --accent:#1a5fd0;--green:#127a4b;--amber:#8a6100;--red:#c02434;--purple:#6b39c9;
+    --focus:#8a5a00;
+  }
+}
+
+/* Anything the user prints is evidence. Chrome, navigation and colour go; the
+   content and its structure stay. */
+@media print{
+  nav,.tools,.skip,.toast,button{display:none !important}
+  .app{grid-template-columns:1fr}
+  body{background:#fff;color:#000}
+  .card,.item{border:1px solid #999;break-inside:avoid}
+  a[href]:after{content:" (" attr(href) ")";font-size:10px;color:#555}
 }

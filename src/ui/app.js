@@ -10,6 +10,42 @@
   let me = null;
   let current = 'map';
 
+  // ---- language ----------------------------------------------------------
+  // window.VaultI18n comes from /i18n-bundle.js, which the server generates
+  // from src/ui/i18n.js so the string table has exactly one source.
+  const i18n = new (window.VaultI18n?.I18n || class { constructor() { this.locale = 'en'; this.dir = 'ltr'; } t(k) { return k; } number(n) { return String(n ?? '—'); } date(t) { return t ? new Date(t).toISOString() : '—'; } })(
+    { locale: localStorage.getItem('vault.locale') || (window.VaultI18n?.negotiate?.(navigator.language) ?? 'en') }
+  );
+  const t = (k, vars) => i18n.t(k, vars);
+
+  function applyLocale(locale) {
+    const { dir } = i18n.setLocale(locale);
+    localStorage.setItem('vault.locale', i18n.locale);
+    // Direction goes on the document, not on a stylesheet. That is what flips
+    // scroll gutters, text selection and the logical CSS properties together.
+    document.documentElement.lang = i18n.locale;
+    document.documentElement.dir = dir;
+    document.querySelectorAll('[data-i18n]').forEach((n) => { n.textContent = t(n.dataset.i18n); });
+    document.querySelectorAll('[data-i18n-aria-label]').forEach((n) => { n.setAttribute('aria-label', t(n.dataset.i18nAriaLabel)); });
+    if (me) renderNav();
+  }
+
+  /**
+   * Announce to assistive technology.
+   *
+   * Two channels, because interrupting someone mid-sentence is a cost: routine
+   * results go to the polite region, and only things a person must not miss —
+   * a broken chain, an engaged kill switch — go to the assertive one.
+   */
+  function announce(message, urgent = false) {
+    const region = document.getElementById(urgent ? 'alertLive' : 'live');
+    if (!region) return;
+    // Clearing first forces a re-announcement when the same text repeats;
+    // without it, a second identical failure is silent.
+    region.textContent = '';
+    setTimeout(() => { region.textContent = message; }, 30);
+  }
+
   // ---- api ---------------------------------------------------------------
   async function api(path, opts = {}) {
     const res = await fetch(path, {
@@ -708,39 +744,92 @@ ${Object.entries(p.method).map(([k, v2]) => `  ${k.padEnd(24)}${esc(v2)}`).join(
   };
 
   // ---- helpers -----------------------------------------------------------
+  let cardSeq = 0;
   function card(title, html) {
     const c = el('div', 'card');
-    c.innerHTML = `<h3>${esc(title)}</h3>` + (typeof html === 'string' ? html : '');
+    // A labelled region, so a screen-reader user can jump between cards instead
+    // of reading the whole screen top to bottom to find one number.
+    const id = `card-h-${++cardSeq}`;
+    c.setAttribute('role', 'region');
+    c.setAttribute('aria-labelledby', id);
+    c.innerHTML = `<h3 id="${id}">${esc(title)}</h3>` + (typeof html === 'string' ? html : '');
     if (typeof html !== 'string' && html) c.append(html);
     return c;
   }
   function cards(list) {
     const g = el('div', 'grid g4');
     for (const [label, val, cls] of list) {
-      g.append(el('div', 'card', `<div class="stat ${cls || ''}">${esc(val)}<small>${esc(label)}</small></div>`));
+      // The label is read before the number. Rendered the other way round
+      // visually, but "12 — shadow agents" is the useful reading order and
+      // "12" alone is not, so the accessible name puts the label first.
+      const accessible = `${label}: ${val}`;
+      g.append(el('div', 'card', `<div class="stat ${cls || ''}" role="group" aria-label="${esc(accessible)}"><span aria-hidden="true">${esc(val)}</span><small aria-hidden="true">${esc(label)}</small></div>`));
     }
     const wrap = el('div');
     wrap.append(g);
     wrap.style.marginBottom = '14px';
     return wrap;
   }
-  function table(head, rows) {
-    if (!rows.length) return '<div class="empty">Nothing to show.</div>';
-    return `<div class="scroll"><table><thead><tr>${head.map((h) => `<th>${esc(h)}</th>`).join('')}</tr></thead>
-      <tbody>${rows.map((r) => `<tr>${r.map((c) => `<td>${c}</td>`).join('')}</tr>`).join('')}</tbody></table></div>`;
+  function table(head, rows, caption = null) {
+    if (!rows.length) return `<div class="empty">${esc(t('state.empty'))}</div>`;
+    // scope="col" on every header, and a caption: without them a screen reader
+    // reads a grid of unlabelled values, which for a risk table is worse than
+    // no table at all. The caption is visually hidden, not absent.
+    return `<div class="scroll" tabindex="0" role="region" aria-label="${esc(caption || t('a11y.tableCaption'))}">
+      <table>
+      <caption class="sr-only">${esc(caption || t('a11y.tableCaption'))}</caption>
+      <thead><tr>${head.map((h) => `<th scope="col">${esc(h)}</th>`).join('')}</tr></thead>
+      <tbody>${rows.map((r) => `<tr>${r.map((c, i) => (i === 0 ? `<th scope="row">${c}</th>` : `<td>${c}</td>`)).join('')}</tr>`).join('')}</tbody>
+      </table></div>`;
   }
+  let tabSeq = 0;
   function tabbar(names, onSelect) {
     const wrap = el('div');
     const bar = el('div', 'tabs');
     const body = el('div');
-    names.forEach((n, i) => {
-      const t = el('div', `tab${i === 0 ? ' active' : ''}`, esc(n));
-      t.addEventListener('click', () => {
-        bar.querySelectorAll('.tab').forEach((x) => x.classList.remove('active'));
-        t.classList.add('active');
-        onSelect(i, body).catch((e) => { body.innerHTML = `<div class="bad">${esc(e.message)}</div>`; });
+    const group = ++tabSeq;
+    bar.setAttribute('role', 'tablist');
+    body.setAttribute('role', 'tabpanel');
+    body.id = `tabpanel-${group}`;
+    body.tabIndex = 0;
+
+    const select = (i) => {
+      bar.querySelectorAll('.tab').forEach((x, j) => {
+        x.classList.toggle('active', j === i);
+        x.setAttribute('aria-selected', String(j === i));
+        // Roving tabindex: one stop for the whole tablist, then arrow keys
+        // within it. Fourteen tab stops for fourteen tabs is the pattern that
+        // makes keyboard users give up.
+        x.tabIndex = j === i ? 0 : -1;
       });
-      bar.append(t);
+      body.setAttribute('aria-labelledby', `tab-${group}-${i}`);
+      onSelect(i, body).catch((e) => { body.innerHTML = `<div class="bad">${esc(e.message)}</div>`; });
+    };
+
+    names.forEach((n, i) => {
+      const tab = el('button', `tab${i === 0 ? ' active' : ''}`, esc(n));
+      tab.type = 'button';
+      tab.id = `tab-${group}-${i}`;
+      tab.setAttribute('role', 'tab');
+      tab.setAttribute('aria-controls', `tabpanel-${group}`);
+      tab.setAttribute('aria-selected', String(i === 0));
+      tab.tabIndex = i === 0 ? 0 : -1;
+      tab.addEventListener('click', () => select(i));
+      tab.addEventListener('keydown', (e) => {
+        const step = { ArrowRight: 1, ArrowLeft: -1, Home: -Infinity, End: Infinity }[e.key];
+        if (step === undefined) return;
+        e.preventDefault();
+        const all = [...bar.querySelectorAll('.tab')];
+        // Arrow direction follows reading direction, so in RTL the right arrow
+        // moves the way the eye does.
+        const rtl = document.documentElement.dir === 'rtl';
+        const delta = Number.isFinite(step) && rtl ? -step : step;
+        const next = delta === -Infinity ? 0 : delta === Infinity ? all.length - 1
+          : (all.indexOf(e.currentTarget) + delta + all.length) % all.length;
+        all[next].focus();
+        select(next);
+      });
+      bar.append(tab);
     });
     wrap.append(bar, body);
     onSelect(0, body).catch((e) => { body.innerHTML = `<div class="bad">${esc(e.message)}</div>`; });
@@ -756,17 +845,29 @@ ${Object.entries(p.method).map(([k, v2]) => `  ${k.padEnd(24)}${esc(v2)}`).join(
   async function go(id) {
     current = id;
     const s = SCREENS.find((x) => x.id === id);
-    $('#title').textContent = `${s.icon} ${s.name}`;
-    document.querySelectorAll('#screens li').forEach((li) => li.classList.toggle('active', li.dataset.id === id));
+    const name = screenName(s);
+    document.title = `${name} — Vault`;
+    $('#title').textContent = `${s.icon} ${name}`;
+    markCurrentScreen();
+
     const v = $('#view');
-    v.innerHTML = '<div class="loading">loading…</div>';
+    // aria-busy so assistive technology waits rather than reading a half-built
+    // screen, and an announcement so a screen change is audible at all — this
+    // is a single-page app, so there is no page load to notice.
+    v.setAttribute('aria-busy', 'true');
+    v.innerHTML = `<div class="loading">${esc(t('state.loading'))}</div>`;
+    announce(t('state.loading'));
     try {
       const box = el('div');
       await RENDER[id](box);
       v.innerHTML = '';
       v.append(box);
+      announce(name);
     } catch (e) {
-      v.innerHTML = `<div class="empty">${esc(e.message)}${e.status === 403 ? '<br><span class="tiny">Least privilege applies to your own product too — this role does not see this screen.</span>' : ''}</div>`;
+      v.innerHTML = `<div class="empty">${esc(e.message)}${e.status === 403 ? `<br><span class="tiny">Least privilege applies to your own product too — this role does not see this screen.</span>` : ''}</div>`;
+      announce(`${name}: ${e.message}`, true);
+    } finally {
+      v.setAttribute('aria-busy', 'false');
     }
   }
 
@@ -774,49 +875,120 @@ ${Object.entries(p.method).map(([k, v2]) => `  ${k.padEnd(24)}${esc(v2)}`).join(
     me = await api('/api/whoami');
     $('#login').classList.add('hidden');
     $('#app').classList.remove('hidden');
-    const allowed = SCREENS.filter((s) => !s.roles || s.roles.includes(me.role));
-    $('#screens').innerHTML = SCREENS.map((s) => {
-      const ok = !s.roles || s.roles.includes(me.role);
-      return `<li data-id="${s.id}" class="${ok ? '' : 'locked'}"><span>${s.icon}</span>${esc(s.name)}</li>`;
-    }).join('');
-    document.querySelectorAll('#screens li:not(.locked)').forEach((li) => li.addEventListener('click', () => go(li.dataset.id)));
+    renderNav();
     $('#whoName').textContent = me.name;
     $('#whoRole').textContent = me.role;
     refreshBadges();
+    const allowed = SCREENS.filter((s) => !s.roles || s.roles.includes(me.role));
     go(allowed[0]?.id || 'mydata');
+  }
+
+  function screenName(s) {
+    const translated = t(`screen.${s.id}`);
+    return translated === `screen.${s.id}` ? s.name : translated;
+  }
+
+  function renderNav() {
+    $('#screens').innerHTML = SCREENS.map((s) => {
+      const ok = !s.roles || s.roles.includes(me.role);
+      // Buttons, not clickable divs: they are focusable, Enter and Space work,
+      // and assistive technology announces them as controls. `aria-disabled`
+      // rather than `disabled` on the locked ones, so a keyboard user can still
+      // reach them and hear why they cannot go there.
+      return `<li>
+        <button type="button" class="navbtn" data-id="${s.id}"${ok ? '' : ' aria-disabled="true"'}>
+          <span aria-hidden="true">${s.icon}</span>${esc(screenName(s))}${ok ? '' : `<span class="sr-only"> — not available to the ${esc(me.role)} role</span>`}
+        </button></li>`;
+    }).join('');
+    document.querySelectorAll('#screens .navbtn').forEach((b) => {
+      b.parentElement.classList.toggle('locked', b.getAttribute('aria-disabled') === 'true');
+      if (b.getAttribute('aria-disabled') === 'true') return;
+      b.addEventListener('click', () => go(b.dataset.id));
+    });
+    markCurrentScreen();
+  }
+
+  function markCurrentScreen() {
+    document.querySelectorAll('#screens .navbtn').forEach((b) => {
+      const on = b.dataset.id === current;
+      b.parentElement.classList.toggle('active', on);
+      // aria-current is how a screen reader says "you are here". A CSS class
+      // alone is invisible to everyone not looking at the highlight.
+      if (on) b.setAttribute('aria-current', 'page'); else b.removeAttribute('aria-current');
+    });
   }
 
   async function refreshBadges() {
     try {
       const v = await api('/api/ledger/verify');
       const b = $('#chainBadge');
-      b.textContent = `chain ${v.ok ? '✓' : '✗'} ${fmt(v.checked)}`;
+      b.textContent = `chain ${v.ok ? '✓' : '✗'} ${i18n.number(v.checked)}`;
       b.className = `badge ${v.ok ? 'ok' : 'bad'}`;
+      // A tick and a cross are the same to a screen reader without this.
+      b.setAttribute('aria-label', `${t(v.ok ? 'chain.ok' : 'chain.broken')}, ${i18n.number(v.checked)}`);
+      if (!v.ok) announce(t('chain.broken'), true);
     } catch { /* role may not see the ledger */ }
     try {
       const k = await api('/api/killswitch');
       const b = $('#ksBadge');
-      b.textContent = `Kill switch: ${k.level ? `L${k.level} ${k.label}` : 'normal'}`;
+      const state = k.level ? `L${k.level} ${k.label}` : t('killswitch.normal');
+      b.textContent = `${t('killswitch.label')}: ${state}`;
       b.className = `ks ${k.level ? 'ks-on' : 'ks-0'}`;
+      if (k.level) announce(`${t('killswitch.label')}: ${state}`, true);
     } catch { /* ignore */ }
   }
 
   // ---- login -------------------------------------------------------------
-  $('#signin').addEventListener('click', async () => {
+  // A real form submit, so Enter works, password managers see it and the
+  // browser's own validation applies — none of which a click handler on a
+  // button gives you.
+  $('#loginForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
     token = $('#token').value.trim();
-    $('#loginErr').textContent = '';
+    const err = $('#loginErr');
+    err.textContent = '';
+    $('#token').setAttribute('aria-invalid', 'false');
     try {
-      const whoami = await fetch('/api/health', { headers: { Authorization: `Bearer ${token}` } });
-      if (!whoami.ok) throw new Error('token rejected');
+      const res = await fetch('/api/health', { headers: { Authorization: `Bearer ${token}` } });
+      if (!res.ok) throw new Error(t('auth.failed'));
       localStorage.setItem('vault.token', token);
       boot();
-    } catch (e) {
-      $('#loginErr').textContent = e.message;
+    } catch (ex) {
+      err.textContent = ex.message;
+      $('#token').setAttribute('aria-invalid', 'true');
+      $('#token').focus();
+      announce(ex.message, true);
     }
   });
   $('#signout')?.addEventListener('click', () => { localStorage.clear(); location.reload(); });
   $('#refresh')?.addEventListener('click', () => { refreshBadges(); go(current); });
-  $('#token').addEventListener('keydown', (e) => { if (e.key === 'Enter') $('#signin').click(); });
+
+  // The skip link moves focus, not just the scroll position. Jumping the
+  // viewport while focus stays in the nav is the bug that makes skip links
+  // useless for the people who need them.
+  $('#skipLink')?.addEventListener('click', (e) => {
+    e.preventDefault();
+    const v = $('#view');
+    v.focus();
+    v.scrollIntoView();
+  });
+
+  // ---- language picker ---------------------------------------------------
+  const picker = $('#locale');
+  if (picker && window.VaultI18n) {
+    for (const l of window.VaultI18n.coverage()) {
+      const opt = document.createElement('option');
+      opt.value = l.locale;
+      // The completeness label is shown, not hidden: offering a language that
+      // is 40% translated without saying so is how a works council ends up
+      // reading a half-English screen and concluding nobody checked.
+      opt.textContent = l.status === 'complete' ? l.native : `${l.native} — ${l.status}`;
+      opt.selected = l.locale === i18n.locale;
+      picker.append(opt);
+    }
+    picker.addEventListener('change', () => applyLocale(picker.value));
+  }
+  applyLocale(i18n.locale);
 
   if (token) { $('#token').value = token; boot().catch(() => { localStorage.clear(); }); }
 })();
