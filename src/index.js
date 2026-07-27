@@ -50,6 +50,8 @@ import { ConnectorManager, Gateway } from './connectors/connectors.js';
 import { Notifier } from './notify/notify.js';
 import { Metering } from './billing/metering.js';
 import { BulkImport, Offboarding } from './lifecycle/lifecycle.js';
+import { OnboardingWizard, DemoData, timingReport } from './onboarding/onboarding.js';
+import { StatusPage } from './status/status.js';
 import { RateLimiter, ApiKeyStore } from './api/ratelimit.js';
 import { coverageMap } from './connectors/catalog.js';
 import { now, iso } from './util/time.js';
@@ -346,6 +348,14 @@ export class Vault {
         detail: `rate limit hit on ${path}`
       })
     });
+
+    // Day 0: the guided setup checks live system state rather than a form, and
+    // the sample tenant refuses to seed over real data.
+    this.onboarding = new OnboardingWizard({ vault: this, ledger: this.ledger });
+    this.demo = new DemoData({ vault: this, ledger: this.ledger });
+    // Deliberately NOT `this.status` — that name is already the system-health
+    // summary method, and shadowing it silently broke `vault status` on the CLI.
+    this.statusPage = new StatusPage({ vault: this, ledger: this.ledger, notifier: this.notifier });
 
     this.startedAt = now();
   }

@@ -15,6 +15,7 @@ import { fileURLToPath } from 'node:url';
 import { randomToken, constantTimeEqual, sha256 } from '../util/crypto.js';
 import { now, iso } from '../util/time.js';
 import { VaultError } from '../util/errors.js';
+import { timingReport, recommendedFirstConnectors } from '../onboarding/onboarding.js';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const UI_DIR = join(HERE, '..', 'ui');
@@ -398,6 +399,39 @@ export class ApiServer {
       const residency = await v.bucket.verifyResidency(v.bucket.config.region);
       return { configured: true, health, residency };
     });
+    // ---- day 0: guided setup and the sample tenant ---------------------------
+    this.route('GET', '/api/setup', R('admin', 'platform'), () => v.onboarding.status());
+    this.route('GET', '/api/setup/next', R('admin', 'platform'), () => v.onboarding.next());
+    this.route('POST', '/api/setup/start', R('admin', 'platform'), ({ principal }) => v.onboarding.start({ actor: principal.name }));
+    this.route('POST', '/api/setup/skip', R('admin', 'platform'), ({ body, principal }) =>
+      v.onboarding.skip(body.step, { actor: principal.name, reason: body.reason }));
+    this.route('GET', '/api/setup/timing', R('admin', 'platform'), () => timingReport(v.onboarding));
+    this.route('GET', '/api/setup/connectors', R('admin', 'platform'), () => recommendedFirstConnectors());
+    this.route('GET', '/api/demo', R('admin', 'platform'), () => v.demo.report());
+    this.route('POST', '/api/demo/load', R('admin', 'platform'), ({ body, principal }) =>
+      v.demo.load({ actor: principal.name, force: body?.force === true }));
+    this.route('POST', '/api/demo/purge', R('admin', 'platform'), ({ body, principal }) =>
+      v.demo.purge({ actor: principal.name, reason: body?.reason }));
+
+    // ---- status page ---------------------------------------------------------
+    // Deliberately readable by every role: an outage that only administrators
+    // can see is an outage everyone else experiences as the product being
+    // broken and nobody saying so.
+    this.route('GET', '/api/status/page', null, () => v.statusPage.publicView());
+    this.route('GET', '/api/status/incidents', null, () => v.statusPage.publicView().history);
+    this.route('GET', '/api/status/internal', R('admin', 'platform', 'security'), () => v.statusPage.internalView());
+    this.route('GET', '/api/status/uptime', null, ({ query }) => v.statusPage.uptime(query.days ? { windowMs: Number(query.days) * 86400_000 } : {}));
+    this.route('POST', '/api/status/incidents', R('admin', 'platform', 'security'), ({ body, principal }) =>
+      v.statusPage.declare({ ...body, actor: principal.name }));
+    this.route('POST', '/api/status/incidents/:id/update', R('admin', 'platform', 'security'), ({ params, body, principal }) =>
+      v.statusPage.update(params.id, { ...body, actor: principal.name }));
+    this.route('POST', '/api/status/incidents/:id/resolve', R('admin', 'platform', 'security'), ({ params, body, principal }) =>
+      v.statusPage.resolve(params.id, { ...body, actor: principal.name }));
+    this.route('POST', '/api/status/incidents/:id/post-mortem', R('admin', 'platform', 'security'), ({ params, body, principal }) =>
+      v.statusPage.postMortem(params.id, { ...body, actor: principal.name }));
+    this.route('POST', '/api/status/maintenance', R('admin', 'platform'), ({ body, principal }) =>
+      v.statusPage.scheduleMaintenance({ ...body, actor: principal.name }));
+
     this.route('POST', '/api/admin/keys/health', R('admin', 'platform', 'security'), () => v.keyServiceHealth());
     this.route('POST', '/api/admin/keys/prime', R('admin', 'platform', 'security'), ({ body, principal }) =>
       v.primeKeyScope(body.scope, { actor: principal.name }));

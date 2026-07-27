@@ -9,10 +9,28 @@
  * and a per-connector cost meter.
  */
 import { newId, derivedId } from '../util/id.js';
-import { sha256, randomToken } from '../util/crypto.js';
+import { sha256, randomToken, canonical } from '../util/crypto.js';
 import { now, iso, ago, duration, MINUTE, HOUR, DAY } from '../util/time.js';
 import { VaultError, notFound, forbidden } from '../util/errors.js';
 import { CONNECTORS, connector as catalogEntry, MODES } from './catalog.js';
+
+/**
+ * Reduce a credential of any shape to stable bytes for fingerprinting.
+ *
+ * Only the secret-bearing fields feed the hash, so rotating a token changes the
+ * fingerprint (which is the point) while an unrelated metadata change — a new
+ * `expiresAt`, say — does not falsely read as a rotation.
+ */
+function credentialMaterial(credential) {
+  if (typeof credential === 'string') return credential;
+  if (Buffer.isBuffer(credential)) return credential;
+  if (credential && typeof credential === 'object') {
+    const secretish = ['token', 'accessToken', 'refreshToken', 'apiKey', 'secret', 'clientSecret', 'privateKey', 'password'];
+    const parts = secretish.filter((k) => credential[k] != null).map((k) => `${k}=${credential[k]}`);
+    return parts.length ? parts.join('|') : canonical(credential);
+  }
+  throw new VaultError('validation', 'a credential must be a string, a Buffer, or an object carrying token/apiKey/secret material', { got: typeof credential });
+}
 
 export class ConnectorManager {
   /**
@@ -72,8 +90,12 @@ export class ConnectorManager {
       agentId,
       region,
       scopes: requested,
-      // credential is NOT stored here — only a fingerprint, so rotation is provable
-      credentialFingerprint: credential ? sha256(credential).slice(0, 16) : null,
+      // credential is NOT stored here — only a fingerprint, so rotation is
+      // provable. Fingerprinting canonicalises first: callers legitimately hand
+      // over `{ token, refreshToken, expiresAt }`, and hashing that object
+      // directly used to throw a raw TypeError from node:crypto — a 500 for
+      // what is a perfectly ordinary shape.
+      credentialFingerprint: credential ? sha256(credentialMaterial(credential)).slice(0, 16) : null,
       credentialRotatedAt: credential ? now() : null,
       versionPin: versionPin || 'latest',
       schemaFingerprint: null,
@@ -128,7 +150,7 @@ export class ConnectorManager {
     if (!actor) throw forbidden('credential rotation requires a named actor');
     this.secrets.set(id, credential);
     const updated = this.col.update(id, {
-      credentialFingerprint: sha256(credential).slice(0, 16),
+      credentialFingerprint: sha256(credentialMaterial(credential)).slice(0, 16),
       credentialRotatedAt: now()
     });
     this.ledger.append('connector.connected', { subject: id, actor, reason, event: 'credential_rotated' });
