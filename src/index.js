@@ -13,7 +13,8 @@
  *   L6  hygiene               L12 control surface
  */
 import { Db } from './storage/db.js';
-import { Kms } from './storage/kms.js';
+import { Kms, KEY_MODES } from './storage/kms.js';
+import { createKeyClient, RemoteKeyBridge } from './storage/kmsclient.js';
 import { TieringEngine } from './storage/tiers.js';
 import { createBucket, DRIVERS, HashOnlyBucket as HashOnlyBucketType } from './storage/buckets.js';
 import { Ledger, Witness } from './ledger/ledger.js';
@@ -80,7 +81,26 @@ export class Vault {
     this.corporateDomains = corporateDomains;
 
     // ---- L11 storage ----------------------------------------------------
-    this.kms = new Kms({ ...kmsOpts, onEvent: (e) => this._keyEvent(e) });
+    // A cloud KMS, if one is configured, wraps the key hierarchy rather than
+    // replacing it: scopes, versions and crypto-shredding still work the same
+    // way, but the root material lives in the customer's AWS/Azure/GCP key and
+    // Vault holds only ciphertext. Scopes must be primed before first write —
+    // `await vault.primeKeyScope(scope)` — because an unprimed scope throws
+    // rather than quietly degrading to a Vault-managed key.
+    this.keyClient = null;
+    this.keyBridge = null;
+    if (kmsOpts.provider) {
+      this.keyClient = createKeyClient(kmsOpts.provider, kmsOpts.providerConfig || kmsOpts);
+      this.keyBridge = new RemoteKeyBridge(this.keyClient, {
+        ttlMs: kmsOpts.keyCacheTtlMs, onEvent: (e) => this._keyEvent(e)
+      });
+    }
+    this.kms = new Kms({
+      ...kmsOpts,
+      ...(this.keyBridge ? this.keyBridge.adapters() : {}),
+      ...(this.keyBridge && !KEY_MODES.includes(kmsOpts.mode) ? { mode: 'cmk' } : {}),
+      onEvent: (e) => this._keyEvent(e)
+    });
     this.db = new Db({ dir, kms: this.kms });
     this.signingKey = signingKey;
 
@@ -674,8 +694,45 @@ export class Vault {
           stats: this.bucket.stats
         }
         : { driver: 'vault-managed', note: 'no customer bucket configured — data is in Vault storage' },
-      driversAvailable: Object.keys(DRIVERS)
+      driversAvailable: Object.keys(DRIVERS),
+      keyService: this.keyBridge ? this.keyBridge.status() : { provider: 'vault-managed' }
     };
+  }
+
+  /**
+   * Load the wrapping key for a namespace from the customer's cloud KMS.
+   *
+   * Must be called before the first write to a scope when a provider is
+   * configured. It is deliberately explicit rather than lazy: a lazy fetch on
+   * the write path means a KMS outage turns into a stalled ingest queue with no
+   * obvious cause, whereas a startup call fails at startup, where someone is
+   * looking.
+   */
+  async primeKeyScope(scope, { actor = 'system' } = {}) {
+    if (!this.keyBridge) {
+      throw new VaultError('config', 'no cloud KMS is configured — pass kms: { provider: "aws"|"azure"|"gcp", ... }');
+    }
+    const out = await this.keyBridge.primeScope(scope);
+    this.ledger.append('admin.action', { subject: scope, actor, action: 'key.scope_primed', provider: this.keyClient.provider });
+    return out;
+  }
+
+  /** Prove the customer's KMS credentials, key policy and network path work. */
+  async keyServiceHealth() {
+    if (!this.keyClient) {
+      return {
+        ok: true, provider: 'vault-managed', mode: this.kms.mode,
+        note: 'keys are derived inside Vault. For "the key never leaves our HSM", configure kms.provider.'
+      };
+    }
+    const health = await this.keyClient.healthCheck();
+    if (!health.ok) {
+      this.alerts.raise({
+        kind: 'kms_unreachable', severity: 'critical', subject: this.keyClient.provider,
+        detail: health.message || 'the customer key service did not answer'
+      });
+    }
+    return health;
   }
 
   /** ⚙️ ADMIN → MODULES. */
@@ -815,6 +872,7 @@ function summarise(results) {
 export { Witness } from './ledger/ledger.js';
 export { Ledger } from './ledger/ledger.js';
 export { ExternalKeyService } from './storage/kms.js';
+export { AwsKmsClient, AzureKeyVaultClient, GcpKmsClient, createKeyClient, RemoteKeyBridge, KEY_PROVIDERS } from './storage/kmsclient.js';
 export { RULE_TEMPLATES } from './gate/rules.js';
 export { CHANNEL_TRUST, OUTCOMES } from './gate/gate.js';
 export { CLAIM_TYPES } from './extract/extract.js';

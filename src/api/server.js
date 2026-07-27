@@ -398,6 +398,18 @@ export class ApiServer {
       const residency = await v.bucket.verifyResidency(v.bucket.config.region);
       return { configured: true, health, residency };
     });
+    this.route('POST', '/api/admin/keys/health', R('admin', 'platform', 'security'), () => v.keyServiceHealth());
+    this.route('POST', '/api/admin/keys/prime', R('admin', 'platform', 'security'), ({ body, principal }) =>
+      v.primeKeyScope(body.scope, { actor: principal.name }));
+    this.route('GET', '/api/admin/keys', R('admin', 'platform', 'security'), () => ({
+      mode: v.kms.mode,
+      provider: v.keyClient ? v.keyClient.provider : 'vault-managed',
+      bridge: v.keyBridge ? v.keyBridge.status() : null,
+      inventory: v.kms.inventory()
+    }));
+    this.route('GET', '/api/admin/keys/describe', R('admin', 'platform', 'security'), () =>
+      (v.keyClient ? v.keyClient.describe() : { provider: 'vault-managed', note: 'no external key service configured' }));
+
     this.route('POST', '/api/admin/export', R('admin', 'platform', 'legal'), ({ body, principal }) => {
       const r = v.exportAll({ actor: principal.name, dir: body.dir, reason: body.reason });
       return { ...r, files: r.files ? Object.keys(r.files) : r.files };
