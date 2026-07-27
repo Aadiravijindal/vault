@@ -190,7 +190,17 @@ export class HygieneEngine {
       };
       summaries.push(summary);
       if (!dryRun) {
+        // Persist it. A summary layer agents cannot read is a report, not a
+        // layer — and the whole point is that the next agent inherits it.
+        // It is written as a first-class fact so the read path's wall and
+        // clearance checks apply to it exactly as they do to its inputs.
+        const existing = this.facts.all().find(
+          (f) => f.kind === 'rolling_summary' && f.folder === folder && f.status === 'live'
+        );
+        if (existing) this.facts.supersedeSummary?.(existing.id, summary) ?? this.facts.col.update(existing.id, { status: 'superseded' });
+        this.facts.writeSummary(summary, { actor });
         this.facts.linkDerived(inputs.map((f) => f.id), summary.id);
+        this.search?.index(this.facts.get(summary.id));
         this._log('resummarise', { folder, inputs: inputs.length, summaryId: summary.id }, actor);
       }
     }

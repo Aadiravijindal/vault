@@ -553,6 +553,65 @@ export class FactStore {
     return col.update(id, { readCount: (f.readCount || 0) + 1, readBy });
   }
 
+  /**
+   * Store a rolling summary as a real, readable fact (§11.6).
+   *
+   * It inherits the strictest label and wall of its inputs, which the hygiene
+   * engine computed — writing it through the normal fact shape is what makes
+   * the read path apply those checks to it. A summary that skipped them would
+   * be a cross-wall channel dressed up as a convenience feature.
+   */
+  writeSummary(summary, { actor = 'hygiene' } = {}) {
+    const fact = {
+      id: summary.id,
+      version: 1,
+      createdAt: summary.createdAt ?? now(),
+      updatedAt: now(),
+      status: 'live',
+      kind: 'rolling_summary',
+      claim: summary.claim,
+      structured: null,
+      originalStrings: summary.claim,
+      language: 'en',
+      entities: [],
+      claimType: 'guessed',            // derived, never authoritative
+      saidBy: { name: 'vault-hygiene', kind: 'system' },
+      capturedBy: null,
+      channel: 'derived',
+      channelTrust: 'trusted',
+      source: { kind: 'derived', inputs: summary.inputs },
+      extractionConfidence: 1,
+      // The inheritance the leak depends on.
+      sensitivity: summary.sensitivity,
+      folder: summary.folder,
+      namespace: String(summary.folder || 'company/').split('/')[0],
+      wall: summary.wall ?? null,
+      businessOwner: null, technicalOwner: null, region: null,
+      gateOutcome: 'DERIVED (summary of already-gated facts)',
+      consentBasis: null,
+      expiresAt: null, reviewDueAt: null,
+      confidence: 'medium', decaying: false, lastConfirmedAt: now(),
+      supersedes: [], supersededBy: null,
+      readCount: 0, readBy: [], derivedFacts: [], influencedActions: [],
+      instructionScore: 0, piiFindings: [], anomalyFlags: [],
+      corroboratingSources: summary.inputs.length,
+      sources: [{ kind: 'derived', inputs: summary.inputs.length }],
+      inputs: summary.inputs,
+      note: summary.note,
+      contentHash: null, ledgerPosition: null, prevHash: null, signature: null,
+      legalHold: null, privileged: false, regulatoryRecord: null
+    };
+    fact.contentHash = hashObject(integrityView(fact));
+    const stored = this.col.insert(fact);
+    const entry = this.ledger.append('fact.written', {
+      subject: stored.id, actor, folder: stored.folder, outcome: 'derived',
+      claimType: 'guessed', sensitivity: stored.sensitivity, inputs: summary.inputs.length,
+      claim: stored.claim
+    });
+    this.col.update(stored.id, { ledgerPosition: entry.seq, prevHash: entry.prevHash });
+    return this.col.get(stored.id);
+  }
+
   linkDerived(sourceIds, derivedId) {
     for (const id of sourceIds) {
       const f = this.get(id);

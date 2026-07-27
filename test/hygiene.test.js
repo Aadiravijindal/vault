@@ -110,6 +110,46 @@ describe('hygiene — re-summarisation must not become a cross-wall channel', ()
     }
   });
 
+  test('a persisted summary is a real fact that the read path gates like any other', () => {
+    const { v, w, cred } = seeded();
+    for (const text of DISTINCT.slice(0, 4)) w(text);
+    // A confidential input, so the summary must inherit confidential.
+    w('Dublin renewal pricing is commercially restricted to 120000.', { label: 'confidential' });
+
+    const [summary] = v.hygiene.resummarise({ actor: 'cli', minCluster: 2 });
+    assert.ok(summary, 'no cluster formed');
+
+    // It exists as a readable fact, not just a report object.
+    const stored = v.facts.get(summary.id);
+    assert.ok(stored, 'a summary layer agents cannot read is not a layer');
+    assert.equal(stored.status, 'live');
+    assert.equal(stored.kind, 'rolling_summary');
+    assert.equal(stored.claimType, 'guessed', 'derived content is never authoritative');
+    assert.equal(stored.corroboratingSources, summary.inputs.length);
+
+    // It inherits the strictest label of its inputs...
+    const rank = { public: 0, internal: 1, confidential: 2, secret: 3 };
+    const strictest = summary.inputs
+      .map((id) => v.facts.get(id))
+      .filter(Boolean)
+      .reduce((acc, f) => (rank[f.sensitivity] > rank[acc] ? f.sensitivity : acc), 'public');
+    assert.equal(stored.sensitivity, strictest);
+
+    // ...and the read path enforces that label on the summary itself, which is
+    // the whole reason inheritance matters.
+    if (rank[strictest] > rank.internal) {
+      const low = v.read('renewal', { agentId: 'a-1', credential: cred, actor: 'a-1', clearance: 'internal', purpose: 'memory_governance' });
+      assert.equal(JSON.stringify(low.facts ?? []).includes(stored.claim), false,
+        'a summary above the reader\'s clearance must be withheld like any other fact');
+    }
+
+    // Integrity and the chain both still hold with a derived fact in the store.
+    assert.equal(v.facts.verifyIntegrity().ok, true);
+    assert.equal(v.verifyLedger().ok, true);
+    assert.ok(v.ledger.entries({ limit: Infinity }).some((e) => e.subject === summary.id),
+      'writing a summary is a ledger event like any other write');
+  });
+
   test('a summary is never built from facts an agent could not read anyway', () => {
     const { v, w } = seeded();
     v.registerAgent({ id: 'a-hr', name: 'HR', purpose: 'p', businessOwner: 'o', technicalOwner: 't', department: 'hr', mode: 'inline', folders: ['hr/'] });
