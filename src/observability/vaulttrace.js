@@ -253,8 +253,16 @@ export class VaultTrace {
     this.modules?.dispatch('tracing', 'span', otel);
   }
 
-  /** GenAI semantic conventions. */
-  toOtel(span) {
+  /**
+   * GenAI semantic conventions.
+   * @param {object|string} spanOrId a span, or a span id
+   */
+  toOtel(spanOrId) {
+    const span = typeof spanOrId === 'string' ? this.spans.require(spanOrId) : spanOrId;
+    // An exporter that throws takes observability down with it, and a span
+    // written by an earlier version may predate the memory block.
+    const mem = span.memory ?? {};
+    const n = (k) => (Array.isArray(mem[k]) ? mem[k].length : 0);
     return {
       traceId: span.traceId,
       spanId: span.id,
@@ -273,13 +281,24 @@ export class VaultTrace {
         'gen_ai.usage.cost': span.costUsd,
         'vault.agent.id': span.agentId,
         // memory attributes — the enrichment nobody else can emit
-        'vault.memory.facts_read': span.memory.read.length,
-        'vault.memory.facts_withheld': span.memory.withheld.length,
-        'vault.memory.facts_written': span.memory.written.length,
-        'vault.memory.writes_held': span.memory.held.length,
-        'vault.memory.writes_blocked': span.memory.blocked.length,
-        'vault.memory.golden_used': span.memory.goldenUsed.length
+        'vault.memory.facts_read': n('read'),
+        'vault.memory.facts_withheld': n('withheld'),
+        'vault.memory.facts_written': n('written'),
+        'vault.memory.writes_held': n('held'),
+        'vault.memory.writes_blocked': n('blocked'),
+        'vault.memory.golden_used': n('goldenUsed')
       }
+    };
+  }
+
+  /** Export a whole trace in OTLP shape, ready for any OTel collector. */
+  traceToOtel(traceId) {
+    const spans = this.spans.by('byTrace', traceId).map((sp) => this.toOtel(sp));
+    return {
+      resourceSpans: [{
+        resource: { attributes: { 'service.name': 'vault', 'gen_ai.system': 'vault' } },
+        scopeSpans: [{ scope: { name: 'vault-trace' }, spans }]
+      }]
     };
   }
 

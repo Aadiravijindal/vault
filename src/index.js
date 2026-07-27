@@ -555,6 +555,58 @@ export class Vault {
   exportAll(opts) { return this.continuity.export(opts); }
   coverage() { return coverageMap({ connected: this.connectors.all().map((c) => c.catalogId) }); }
 
+  /**
+   * Risk-score one memory store for the Map (§23).
+   *
+   * Ranked by what actually goes wrong: nobody accountable, nothing expiring,
+   * personal data with no lawful basis, an unlabelled or unwalled store holding
+   * sensitive material. Each factor names its own fix, because a score with no
+   * remedy is just an accusation.
+   */
+  folderRisk(folder) {
+    const f = typeof folder === 'string' ? this.folders.get(folder) : folder;
+    if (!f) throw new VaultError('not_found', 'folder not found', { path: String(folder) });
+    const facts = this.facts.byFolder(f.path);
+    const live = facts.filter((x) => x.status === 'live');
+    const factors = [];
+    const add = (weight, finding, fix) => factors.push({ weight, finding, fix });
+
+    if (!f.businessOwner || !f.technicalOwner) {
+      add(25, `no ${!f.businessOwner ? 'business' : 'technical'} owner — an unowned store is a finding`, 'assign an owner on the Walls screen');
+    }
+    if (!f.retention) add(15, 'no retention schedule — nothing here ever expires', 'set a retention schedule for this folder');
+    if (!f.residency) add(5, 'no residency pinned — cross-border rules cannot be enforced', 'pin a region');
+
+    const withPii = live.filter((x) => (x.piiFindings || []).length > 0);
+    if (withPii.length) {
+      add(Math.min(25, 5 + withPii.length), `${withPii.length} fact(s) carry personal data`, 'confirm a lawful basis and a retention limit');
+    }
+    const noBasis = live.filter((x) => (x.entities || []).some((e) => e.type === 'person') && !x.consentBasis);
+    if (noBasis.length) {
+      add(Math.min(30, 10 + noBasis.length * 2), `${noBasis.length} fact(s) about a person with no recorded lawful basis`, 'record a basis, or erase them');
+    }
+    const sensitive = live.filter((x) => ['confidential', 'secret'].includes(x.sensitivity));
+    if (sensitive.length && !f.hardWall) {
+      add(20, `${sensitive.length} confidential-or-higher fact(s) in a store with no hard wall`, 'promote this folder to a hard wall');
+    }
+    const singleSource = live.filter((x) => (x.corroboratingSources ?? 1) < 2 && x.claimType === 'guessed');
+    if (singleSource.length) add(10, `${singleSource.length} single-source guessed fact(s)`, 'corroborate or demote them');
+    const stale = live.filter((x) => x.decaying);
+    if (stale.length) add(5, `${stale.length} decaying fact(s)`, 'reconfirm or let them expire');
+
+    const score = Math.min(100, factors.reduce((n, x) => n + x.weight, 0));
+    return {
+      path: f.path,
+      businessOwner: f.businessOwner, technicalOwner: f.technicalOwner,
+      wall: f.hardWall ? '🧱 hard wall' : `${f.read.join(', ')} read`,
+      retention: f.retention, residency: f.residency,
+      facts: facts.length, liveFacts: live.length,
+      risk: score,
+      band: score >= 60 ? 'high' : score >= 30 ? 'medium' : score > 0 ? 'low' : 'none',
+      factors: factors.sort((x, y) => y.weight - x.weight)
+    };
+  }
+
   /** Run the tiering lifecycle for real: hot → warm → cold → archive (§5.3). */
   runStorageLifecycle({ actor, dryRun = false } = {}) {
     if (!actor) throw new VaultError('forbidden', 'running the storage lifecycle requires a named actor');
@@ -620,12 +672,7 @@ export class Vault {
           store: c.name, owner: c.owner, governed: true, note: 'Vault sits in front as the gate'
         }))
       ],
-      folders: this.folders.all().map((f) => ({
-        path: f.path, businessOwner: f.businessOwner, technicalOwner: f.technicalOwner,
-        wall: f.hardWall ? '🧱 hard wall' : `${f.read.join(', ')} read`,
-        retention: f.retention, residency: f.residency,
-        facts: this.facts.byFolder(f.path).length
-      })),
+      folders: this.folders.all().map((f) => this.folderRisk(f)),
       findings: [...this.registry.findings(), ...this.folders.findings()],
       health: this.value.health(),
       insuranceReadiness: {
