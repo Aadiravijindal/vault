@@ -28,6 +28,26 @@ export const RECORDKEEPING = {
   'gdpr-minimal': { name: 'GDPR storage limitation', retention: '2y', worm: false, mode: 'governance', note: 'Keep no longer than necessary.' }
 };
 
+/**
+ * Recompute a sealed record's content hash exactly as seal() did.
+ *
+ * The storage layer adds _v/_created/_updated on insert and seal() adds
+ * sealHash afterwards, so all four are excluded — `canonical()` drops
+ * undefined keys, which makes this byte-identical to the original basis.
+ */
+export function recomputeContentHash(rec) {
+  return hashObject({
+    ...rec,
+    contentHash: undefined, prevHash: undefined, sealHash: undefined,
+    _v: undefined, _created: undefined, _updated: undefined
+  });
+}
+
+/** A production's frozen fingerprint, over recomputed content, not stored hashes. */
+export function productionHash(records) {
+  return sha256(records.map((r) => sha256(`${r.prevHash}\n${recomputeContentHash(r)}`)).join('\n'));
+}
+
 export class Archive {
   /**
    * @param {object} opts
@@ -405,7 +425,9 @@ export class Archive {
       id: newId('export'),
       matter, actor, reason, createdAt: now(), batesPrefix,
       itemIds: items.map((i) => i.id),
-      frozenHash: sha256(items.map((i) => i.sealHash).join('\n')),
+      // Frozen over RECOMPUTED content, so verifyProduction can detect an
+      // alteration rather than just a deletion.
+      frozenHash: productionHash(items),
       privilegedWithheld: items.filter((i) => i.privileged).map((i) => ({ id: i.id, reason: 'attorney-client privilege / work product' })),
       frozen: true
     };
@@ -418,11 +440,34 @@ export class Archive {
     return production;
   }
 
+  /**
+   * Prove the set was not altered after freezing.
+   *
+   * The content hash is RECOMPUTED from each record as it stands now. Comparing
+   * the stored sealHash values instead would only ever catch a deleted record —
+   * an altered transcript keeps its stale sealHash and sails through, which
+   * defeats the one thing freezing a production set is for.
+   */
   verifyProduction(productionId) {
     const p = this.productions.get(productionId);
     if (!p) throw notFound('production', productionId);
-    const current = sha256(p.itemIds.map((id) => this.get(id)?.sealHash || 'MISSING').join('\n'));
-    return { productionId, ok: current === p.frozenHash, frozenHash: p.frozenHash, currentHash: current, items: p.itemIds.length };
+    const problems = [];
+    for (const id of p.itemIds) {
+      const rec = this.get(id);
+      if (!rec) { problems.push({ id, problem: 'missing' }); continue; }
+      if (recomputeContentHash(rec) !== rec.contentHash) {
+        problems.push({ id, problem: 'content_altered_after_sealing' });
+      }
+    }
+    const current = productionHash(p.itemIds.map((id) => this.get(id)).filter(Boolean));
+    return {
+      productionId,
+      ok: current === p.frozenHash && problems.length === 0,
+      frozenHash: p.frozenHash,
+      currentHash: current,
+      items: p.itemIds.length,
+      problems
+    };
   }
 
   /**
@@ -455,7 +500,8 @@ export class Archive {
     });
     return {
       productionId, format, items: items.length,
-      withheld: p.privilegedWithheld,
+      withheld: p.privilegedWithheld.length,
+      withheldDetail: p.privilegedWithheld,
       batesRange: items.length ? `${bates(1)}–${bates(items.length)}` : null,
       integrity: this.verifyProduction(productionId),
       payload
@@ -505,8 +551,12 @@ export class Archive {
   }
 
   /** Retention schedules with conflicting obligations surfaced, not resolved. */
-  retentionFor(conversationId) {
-    const rec = this.require(conversationId);
+  retentionFor(conversationOrId) {
+    // Callers legitimately hold the record already; making them re-look-it-up
+    // is a trap, and passing the record used to throw "not found".
+    const rec = typeof conversationOrId === 'string'
+      ? this.require(conversationOrId)
+      : this.require(conversationOrId?.id);
     const obligations = [];
     if (rec.regulatoryRecord && RECORDKEEPING[rec.regulatoryRecord]) {
       const f = RECORDKEEPING[rec.regulatoryRecord];
@@ -517,8 +567,17 @@ export class Archive {
     const minimums = obligations.filter((o) => o.kind === 'minimum');
     const maximums = obligations.filter((o) => o.kind === 'maximum');
     const conflict = minimums.some((mn) => maximums.some((mx) => mn.ms > mx.ms));
+    const framework = rec.regulatoryRecord ? RECORDKEEPING[rec.regulatoryRecord] : null;
     return {
-      conversationId, obligations, conflict,
+      conversationId: rec.id, obligations, conflict,
+      // The storage mode is part of the retention answer, not a separate
+      // lookup: compliance mode means nobody can shorten it, including root.
+      worm: Boolean(framework?.worm) || Boolean(rec.privileged),
+      mode: framework?.mode ?? 'governance',
+      modeMeaning: (framework?.mode ?? 'governance') === 'compliance'
+        ? 'compliance mode — the retention period cannot be shortened by anyone, including an account owner or root'
+        : 'governance mode — a privileged override exists and is loudly logged',
+      framework: framework?.name ?? null,
       resolution: conflict
         ? 'CONFLICT SURFACED — records obligation exceeds privacy maximum. Vault holds both and requires a named decision; it does not silently pick one.'
         : 'no conflict',

@@ -44,7 +44,19 @@ const STATUS = {
 export const err = (code, message, meta) => new VaultError(code, message, meta);
 
 export function notFound(kind, id) {
-  return new VaultError('not_found', `${kind} not found`, { id });
+  // Never widen this beyond an identifier. A caller that passes a whole record
+  // by mistake would otherwise put its content — transcripts included — into an
+  // error body that goes back over the API. Content in an error message is the
+  // classic accidental exfiltration channel (§9.11).
+  return new VaultError('not_found', `${kind} not found`, { id: identifierOf(id) });
+}
+
+/** Reduce anything to a safe, content-free identifier. */
+export function identifierOf(x) {
+  if (x == null) return null;
+  if (typeof x === 'string' || typeof x === 'number') return String(x).slice(0, 128);
+  if (typeof x === 'object' && typeof x.id === 'string') return x.id;
+  return `<${typeof x}>`;
 }
 
 export function forbidden(message, meta) {
