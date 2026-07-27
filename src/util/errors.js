@@ -1,0 +1,61 @@
+/**
+ * Typed errors.
+ *
+ * Two rules enforced here, both from the spec:
+ *  - no content in error messages (§9.11), so an error can never become a leak;
+ *  - every refusal carries a machine-readable code, because "blocked" without a
+ *    reason is indistinguishable from a bug to the agent on the other end.
+ */
+
+export class VaultError extends Error {
+  /**
+   * @param {string} code
+   * @param {string} message safe, content-free
+   * @param {Record<string,any>} [meta] ids and counts only — never content
+   */
+  constructor(code, message, meta = {}) {
+    super(message);
+    this.name = 'VaultError';
+    this.code = code;
+    this.meta = meta;
+    this.status = STATUS[code] ?? 400;
+  }
+  toJSON() {
+    return { error: this.code, message: this.message, ...this.meta };
+  }
+}
+
+const STATUS = {
+  unauthenticated: 401,
+  forbidden: 403,
+  wall_violation: 403,
+  clearance_denied: 403,
+  region_denied: 403,
+  not_found: 404,
+  conflict: 409,
+  immutable: 409,
+  legal_hold: 409,
+  rate_limited: 429,
+  frozen: 503,
+  killswitch: 503,
+  internal: 500
+};
+
+export const err = (code, message, meta) => new VaultError(code, message, meta);
+
+export function notFound(kind, id) {
+  return new VaultError('not_found', `${kind} not found`, { id });
+}
+
+export function forbidden(message, meta) {
+  return new VaultError('forbidden', message, meta);
+}
+
+export function immutable(message, meta) {
+  return new VaultError('immutable', message, meta);
+}
+
+/** Assert without ever interpolating caller-supplied content into the message. */
+export function assert(cond, code, message, meta) {
+  if (!cond) throw new VaultError(code, message, meta);
+}

@@ -1,0 +1,44 @@
+{
+  "name": "vault",
+  "version": "2.0.0",
+  "description": "Vault — the company's shared AI memory, with a gate at the door, a recorder that never stops, and a complete built-in stack you can swap for your own.",
+  "type": "module",
+  "license": "SEE LICENSE IN LICENSE",
+  "engines": {
+    "node": ">=22.0.0"
+  },
+  "main": "src/index.js",
+  "bin": {
+    "vault": "bin/vault.js"
+  },
+  "scripts": {
+    "start": "node bin/vault.js serve",
+    "serve": "node bin/vault.js serve",
+    "demo": "node demo/seed.js",
+    "mcp": "node src/mcp/server.js",
+    "test": "node --test --test-concurrency=1 'test/**/*.test.js'",
+    "test:watch": "node --test --watch 'test/**/*.test.js'",
+    "verify": "node bin/vault.js ledger verify",
+    "doctor": "node bin/vault.js doctor"
+  },
+  "files": [
+    "bin",
+    "src",
+    "docs",
+    "README.md"
+  ],
+  "dependencies": {},
+  "devDependencies": {},
+  "keywords": [
+    "ai-memory",
+    "ai-governance",
+    "prompt-injection",
+    "memory-poisoning",
+    "audit",
+    "compliance",
+    "worm",
+    "gdpr",
+    "dpdp",
+    "mcp"
+  ]
+}

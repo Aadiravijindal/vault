@@ -1,0 +1,793 @@
+/* Vault control surface — all 14 screens. Zero dependencies, no build step. */
+(() => {
+  const $ = (s) => document.querySelector(s);
+  const el = (t, c, h) => { const n = document.createElement(t); if (c) n.className = c; if (h != null) n.innerHTML = h; return n; };
+  const esc = (s) => String(s ?? '').replace(/[<>&"]/g, (c) => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;', '"': '&quot;' }[c]));
+  const fmt = (n) => (typeof n === 'number' ? n.toLocaleString() : (n ?? '—'));
+  const pct = (n) => (n == null ? '—' : `${Math.round(n * 100)}%`);
+
+  let token = localStorage.getItem('vault.token') || '';
+  let me = null;
+  let current = 'map';
+
+  // ---- api ---------------------------------------------------------------
+  async function api(path, opts = {}) {
+    const res = await fetch(path, {
+      method: opts.method || 'GET',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      body: opts.body ? JSON.stringify(opts.body) : undefined
+    });
+    const text = await res.text();
+    let data;
+    try { data = text ? JSON.parse(text) : {}; } catch { data = { raw: text }; }
+    if (!res.ok) throw Object.assign(new Error(data.message || res.statusText), { data, status: res.status });
+    return data;
+  }
+
+  function toast(msg, bad) {
+    const t = el('div', `toast${bad ? ' bad' : ''}`, esc(msg));
+    document.body.appendChild(t);
+    setTimeout(() => t.remove(), 5200);
+  }
+
+  // ---- screens -----------------------------------------------------------
+  const SCREENS = [
+    { id: 'map', icon: '🗺️', name: 'Map', roles: ['platform', 'security', 'admin', 'department_head', 'risk'] },
+    { id: 'memory', icon: '🧠', name: 'Memory', roles: null },
+    { id: 'review', icon: '⏳', name: 'Needs Review', roles: null },
+    { id: 'rules', icon: '📜', name: 'Rules', roles: null },
+    { id: 'trace', icon: '🔍', name: 'Trace', roles: ['security', 'legal', 'compliance', 'auditor', 'platform', 'admin'] },
+    { id: 'archive', icon: '📚', name: 'Archive', roles: ['legal', 'compliance', 'security', 'auditor'] },
+    { id: 'observability', icon: '🔭', name: 'Observability', roles: null },
+    { id: 'cases', icon: '⚖️', name: 'Cases', roles: ['legal', 'compliance', 'admin'] },
+    { id: 'security', icon: '🛡️', name: 'Security', roles: ['security', 'admin', 'platform', 'risk'] },
+    { id: 'comply', icon: '📋', name: 'Comply', roles: ['compliance', 'security', 'auditor', 'admin', 'legal', 'risk'] },
+    { id: 'insure', icon: '🏛️', name: 'Insure', roles: ['risk', 'compliance', 'admin', 'security'] },
+    { id: 'value', icon: '📈', name: 'Value', roles: null },
+    { id: 'mydata', icon: '👤', name: 'My Data', roles: null },
+    { id: 'admin', icon: '⚙️', name: 'Admin', roles: ['admin', 'platform', 'security', 'legal', 'works_council'] }
+  ];
+
+  const RENDER = {};
+
+  // 🗺️ MAP
+  RENDER.map = async (v) => {
+    const m = await api('/api/map');
+    v.append(cards([
+      ['Registered agents', m.agents.length],
+      ['Shadow agents', m.shadowAgents.length, m.shadowAgents.length ? 'bad' : 'good'],
+      ['Folders', m.folders.length],
+      ['Findings', m.findings.length, m.findings.length ? 'warn' : 'good'],
+      ['Memory health', `${m.health.grade}`, m.health.score >= 80 ? 'good' : 'warn'],
+      ['Insurance ready', m.insuranceReadiness.ready ? 'yes' : 'gaps', m.insuranceReadiness.ready ? 'good' : 'warn']
+    ]));
+
+    v.append(card('Agents — mode, owners, coverage, risk', table(
+      ['Agent', 'Mode', 'Owners', 'Model pinned', 'Coverage', 'Risk'],
+      m.agents.map((a) => [
+        `${esc(a.name)}<div class="tiny dimmer">${esc(a.id)}</div>`,
+        `<span class="pill ${a.mode === 'inline' ? 'g' : a.mode === 'gateway' ? 'b' : 'a'}">${a.mode}</span>`,
+        `${esc(a.businessOwner || '⚠️ none')}<div class="tiny dimmer">${esc(a.technicalOwner || '⚠️ none')}</div>`,
+        a.pinnedModel ? `<span class="tiny mono">${esc(a.pinnedModel)}</span>` : '<span class="warn tiny">not pinned</span>',
+        `<span class="tiny">${esc(a.coverage)}</span>`,
+        `<span class="pill ${a.risk.band === 'high' ? 'r' : a.risk.band === 'medium' ? 'a' : 'g'}">${a.risk.score}</span>`
+      ])
+    )));
+
+    if (m.shadowAgents.length) {
+      v.append(card('⚠️ Shadow agents — unregistered, observed writing or calling models', table(
+        ['Identifier', 'First seen', 'Observations', 'Models', 'Finding'],
+        m.shadowAgents.map((s) => [esc(s.identifier), esc(s.age), s.observations, esc((s.models || []).join(', ') || '—'), `<span class="warn tiny">${esc(s.finding)}</span>`])
+      )));
+    }
+
+    v.append(card('Folders & walls', table(
+      ['Folder', 'Wall', 'Business owner', 'Facts'],
+      m.folders.map((f) => [`<span class="mono tiny">${esc(f.path)}</span>`, esc(f.wall), f.businessOwner ? esc(f.businessOwner) : '<span class="warn">⚠️ unowned</span>', f.facts])
+    )));
+
+    const cm = m.coverageMap;
+    v.append(card('Coverage map — what Vault can and cannot see (published, deliberately)', `
+      <p class="muted tiny">${esc(cm.honesty)}</p>
+      ${table(['Tool', 'Convos', 'Memories', 'Can block?', 'Mode', 'Notes'],
+        cm.rows.slice(0, 60).map((r) => [
+          esc(r.tool),
+          badge(r.convos), badge(r.memories), badge(r.canBlock),
+          `<span class="tiny">${esc(r.mode)}</span>`,
+          `<span class="tiny dimmer">${esc(r.notes)}</span>`
+        ]))}
+    `));
+
+    if (m.findings.length) {
+      v.append(card('Findings', table(['Area', 'Finding', 'Severity'],
+        m.findings.map((f) => [esc(f.agentId || f.path || '—'), esc(f.finding), sev(f.severity)]))));
+    }
+  };
+
+  // 🧠 MEMORY
+  RENDER.memory = async (v) => {
+    const tabs = tabbar(['Facts', 'Golden facts', 'Folders', 'Entities', 'Search'], async (i, body) => {
+      body.innerHTML = '';
+      if (i === 0) {
+        const facts = await api('/api/facts?limit=200');
+        body.append(card(`Facts (${facts.length})`, facts.length ? table(
+          ['Claim', 'Type', 'Folder', 'Sensitivity', 'Status', 'Reads'],
+          facts.map((f) => [
+            `<span class="clickable" data-fact="${esc(f.id)}">${esc(f.claim)}</span><div class="tiny dimmer mono">${esc(f.id)}</div>`,
+            claimBadge(f),
+            `<span class="tiny mono">${esc(f.folder || '—')}</span>`,
+            `<span class="pill">${esc(f.sensitivity)}</span>`,
+            statusBadge(f.status),
+            f.readCount
+          ])
+        ) : '<div class="empty">No facts yet — ingest a conversation.</div>'));
+        body.querySelectorAll('[data-fact]').forEach((n) => n.addEventListener('click', () => openFact(n.dataset.fact)));
+      } else if (i === 1) {
+        const g = await api('/api/golden');
+        const due = await api('/api/golden/due');
+        if (due.length) body.append(card('★ Re-attestation due', table(['Fact', 'Owner', 'Message'], due.map((d) => [esc(d.claim), esc(d.owner || '—'), `<span class="warn tiny">${esc(d.message)}</span>`]))));
+        body.append(card(`★ Golden facts (${g.length}) — human-authored, signed, unoverwritable by any AI`,
+          g.length ? table(['Claim', 'Approved by', 'Folder', 'Sensitivity', 'Version'],
+            g.map((f) => [`<span class="gold">${esc(f.claim)}</span>`, `${esc(f.approvedBy)}<div class="tiny dimmer">${esc(f.approverRole || '')}</div>`, `<span class="tiny mono">${esc(f.folder)}</span>`, esc(f.sensitivity), f.version]))
+          : '<div class="empty">No golden facts. This is the strongest single control — define your policies, ceilings and legal names.</div>'));
+      } else if (i === 2) {
+        const folders = await api('/api/folders');
+        body.append(card('Folder tree', table(['Path', 'Read', 'Write', 'Owners', 'Retention'],
+          folders.filter((f) => !f.archived).map((f) => [
+            `<span class="mono tiny">${esc(f.path)}</span> ${f.hardWall ? '🧱' : ''}${f.privileged ? ' ⚖️' : ''}`,
+            `<span class="tiny">${esc((f.read || []).join(', '))}</span>`,
+            `<span class="tiny">${esc((f.write || []).join(', '))}</span>`,
+            f.businessOwner ? esc(f.businessOwner) : '<span class="warn tiny">unowned</span>',
+            `<span class="tiny dimmer">${esc(f.retention || 'inherited')}</span>`
+          ]))));
+      } else if (i === 3) {
+        const ents = await api('/api/entities');
+        body.append(card(`Entities (${ents.length}) — one thing, one entity, across every department`,
+          ents.length ? table(['Name', 'Type', 'Aliases', 'Facts'],
+            ents.map((e) => [esc(e.name), `<span class="pill">${esc(e.type)}</span>`, `<span class="tiny dimmer">${esc((e.aliases || []).join(', ') || '—')}</span>`, e.factCount]))
+            : '<div class="empty">No entities yet.</div>'));
+      } else {
+        body.append(searchPanel());
+      }
+    });
+    v.append(tabs);
+  };
+
+  function searchPanel() {
+    const c = el('div', 'card');
+    c.innerHTML = `<h3>Vault Search — permissions checked at query time, provenance on every result</h3>
+      <div class="row"><input id="q" placeholder="what do we know about…" style="flex:1"><button id="go" style="margin:0">Search</button></div>
+      <div id="results" style="margin-top:16px"></div>`;
+    const run = async () => {
+      const out = c.querySelector('#results');
+      out.innerHTML = '<div class="loading">searching…</div>';
+      try {
+        const r = await api('/api/search', { method: 'POST', body: { query: c.querySelector('#q').value, naturalLanguage: true, limit: 25 } });
+        out.innerHTML = '';
+        out.append(el('div', 'muted tiny', `${r.results.length} returned · ${r.withheld} withheld${r.withheldReasons.length ? ` (${r.withheldReasons.map((w) => esc(w.reason)).join(', ')})` : ''} · ${r.tookMs}ms`));
+        if (r.answer) out.append(el('pre', null, esc(r.answer.text) + (r.answer.caveat ? `\n\n⚠️ ${esc(r.answer.caveat)}` : '')));
+        for (const f of r.results) {
+          if (f.kind !== 'fact') continue;
+          const d = el('div', 'item');
+          d.innerHTML = `<div class="claim">${f.golden ? '<span class="gold">★ GOLDEN</span> ' : ''}${esc(f.claim)}</div>
+            <div class="tiny muted">${esc(f.badge)} · ${esc(f.provenance.saidBy || 'unattributed')} · ${esc(f.provenance.channel)} · ${esc(f.provenance.age)} ago · ${esc(f.folder || '')}</div>
+            ${f.warning ? `<div class="bad tiny" style="margin-top:6px">→ ${esc(f.warning)}</div>` : ''}
+            ${f.stale ? `<div class="warn tiny" style="margin-top:6px">→ stale: ${esc(f.staleReason)}</div>` : ''}`;
+          out.append(d);
+        }
+        if (!r.results.length) out.append(el('div', 'empty', 'Nothing matched — and nothing was invented to fill the gap.'));
+      } catch (e) { out.innerHTML = `<div class="bad">${esc(e.message)}</div>`; }
+    };
+    c.querySelector('#go').addEventListener('click', run);
+    c.querySelector('#q').addEventListener('keydown', (e) => { if (e.key === 'Enter') run(); });
+    return c;
+  }
+
+  // ⏳ NEEDS REVIEW
+  RENDER.review = async (v) => {
+    const [items, stats] = await Promise.all([api('/api/review?status=open'), api('/api/review/stats')]);
+    v.append(cards([
+      ['Open', stats.open],
+      ['High', stats.byPriority.high, stats.byPriority.high ? 'bad' : 'good'],
+      ['Past SLA', stats.breaching, stats.breaching ? 'bad' : 'good'],
+      ['Oldest', stats.oldest || '—'],
+      ['SLA compliance', `${stats.slaCompliance}%`, stats.slaCompliance >= 90 ? 'good' : 'warn'],
+      ['Closed 7d', stats.closedLast7Days]
+    ]));
+    if (stats.volumeAlarm?.alarm) {
+      v.append(card('⚠️ Volume alarm', `<p class="bad">${esc(stats.volumeAlarm.message)}</p>`));
+    }
+    const sug = await api('/api/review/suggestions').catch(() => []);
+    if (sug.length) {
+      v.append(card('Auto-approve suggestions — suggests, never acts alone', table(['Pattern', 'Approvals', 'Rate', 'Suggestion'],
+        sug.map((s) => [`<span class="tiny mono">${esc(s.pattern)}</span>`, `${s.approvals}/${s.total}`, pct(s.rate), `<span class="tiny">${esc(s.suggestion)}</span>`]))));
+    }
+    if (!items.length) { v.append(el('div', 'empty', 'Queue empty. Nothing is waiting on a human.')); return; }
+    for (const r of items) {
+      const d = el('div', `item ${r.priority}`);
+      d.innerHTML = `
+        <div class="row"><span class="pill ${r.priority === 'high' ? 'r' : r.priority === 'medium' ? 'a' : ''}">${r.priority.toUpperCase()}</span>
+          <span class="tiny dimmer">${esc(r.age)} old · SLA ${r.slaBreached ? '<span class="bad">BREACHED</span>' : esc(r.slaIn || '')}</span>
+          <span class="spacer"></span><span class="tiny dimmer">→ ${esc(r.assignedTo || 'unassigned')}</span></div>
+        <div class="claim">"${esc(r.claim)}"</div>
+        <div class="tiny muted">from ${esc([r.source.channel, r.source.sender, r.source.agentId].filter(Boolean).join(' · '))}</div>
+        <ul class="reasons">${r.reasons.map((x) => `<li>${esc(x)}</li>`).join('')}</ul>
+        <div class="tiny">risk <b class="${r.riskScore >= .7 ? 'bad' : r.riskScore >= .35 ? 'warn' : ''}">${r.riskScore}</b> — ${r.riskSignals.map((s) => `<span class="pill ${s.includes('GOLDEN') ? 'r' : ''}">${esc(s)}</span>`).join('')}</div>
+        <details style="margin-top:10px"><summary class="tiny muted" style="cursor:pointer">Explain why · show me the source</summary>
+          <pre>${esc(r.explainWhy)}</pre>
+          ${r.sourceLink ? `<div class="tiny muted">Source: <b>${esc(r.sourceLink.label)}</b> — ${esc(r.sourceLink.speaker || '')}<br><span class="dimmer">…${esc(r.sourceLink.excerpt || '')}…</span></div>` : ''}
+        </details>
+        <div class="row" style="margin-top:12px">${r.actions.map((a) => `<button class="ghost sm" data-act="${esc(a)}" data-id="${esc(r.id)}">${esc(a)}</button>`).join('')}</div>`;
+      d.querySelectorAll('[data-act]').forEach((b) => b.addEventListener('click', async () => {
+        const reason = prompt(`Reason for "${b.dataset.act}"?`, 'reviewed');
+        if (reason === null) return;
+        try {
+          await api(`/api/review/${b.dataset.id}/decide`, { method: 'POST', body: { decision: b.dataset.act, reason } });
+          toast('Decision recorded and logged.');
+          go('review');
+        } catch (e) { toast(e.message, true); }
+      }));
+      v.append(d);
+    }
+  };
+
+  // 📜 RULES
+  RENDER.rules = async (v) => {
+    const [rules, conflicts] = await Promise.all([api('/api/rules'), api('/api/rules/conflicts').catch(() => [])]);
+    const bt = el('div', 'card');
+    bt.innerHTML = `<h3>Dry-run / backtest — nobody enables a rule blind</h3>
+      <label>Plain language (or an expression)</label>
+      <input id="plain" value="No payment authority above $50,000 becomes a fact without sign-off">
+      <div class="row" style="margin-top:10px"><button id="run" style="margin:0">Backtest against history</button></div>
+      <div id="btout" style="margin-top:14px"></div>`;
+    bt.querySelector('#run').addEventListener('click', async () => {
+      const out = bt.querySelector('#btout');
+      out.innerHTML = '<div class="loading">running…</div>';
+      try {
+        const p = bt.querySelector('#plain').value;
+        const body = /[=<>~]|matches|contains/.test(p) && !/^No |^Nothing |^Facts /i.test(p) ? { expression: p, action: 'hold' } : { plain: p };
+        const r = await api('/api/rules/backtest', { method: 'POST', body });
+        out.innerHTML = `<pre>POLICY BACKTEST — ${esc(r.rule.plain || r.rule.expression)}
+Run against: ${esc(r.window)} · ${r.evaluated} evaluated writes
+
+Would have matched:   ${r.wouldMatch}
+   → ${r.legitimate} legitimate
+   → ${r.suspicious} you should look at RIGHT NOW ${r.suspicious ? '⚠️' : ''}
+By outcome:           ${Object.entries(r.byOutcome).filter(([, n]) => n).map(([k, n]) => `${k} ${n}`).join(' · ') || 'none'}
+False positive rate:  est. ${esc(r.estimatedFalsePositiveRate)}
+Reviewer load added:  ${esc(r.reviewerLoadAdded)}
+Agents affected:      ${esc(r.agentsAffected.join(' · ') || 'none')}
+
+${esc(r.recommendation)}</pre>
+        <div class="row">${r.actions.map((a) => `<span class="pill b">${esc(a)}</span>`).join('')}</div>`;
+      } catch (e) { out.innerHTML = `<div class="bad">${esc(e.message)}</div>`; }
+    });
+    v.append(bt);
+
+    if (conflicts.length) {
+      v.append(card('⚠️ Rule conflicts detected at authoring time', table(['Rule A', 'Rule B', 'Overlap', 'Resolution'],
+        conflicts.map((c) => [esc(c.a.name), esc(c.b.name), c.overlap, `<span class="tiny">${esc(c.resolution)}</span>`]))));
+    }
+    v.append(card(`Rules (${rules.length})`, table(
+      ['Name', 'Type', 'State', 'Action', 'Expression', 'v'],
+      rules.map((r) => [
+        esc(r.name),
+        `<span class="pill">${esc(r.type)}</span>`,
+        `<span class="pill ${r.state === 'enforce' ? 'g' : r.state === 'draft' ? '' : 'a'}">${esc(r.state)}</span>`,
+        `<span class="pill ${r.action === 'block' ? 'r' : 'a'}">${esc(r.action)}</span>`,
+        `<span class="tiny mono dimmer">${esc(r.expression)}</span>`,
+        r.version
+      ])
+    )));
+  };
+
+  // 🔍 TRACE
+  RENDER.trace = async (v) => {
+    const c = el('div', 'card');
+    c.innerHTML = `<h3>Trace any fact → its whole life</h3>
+      <div class="row"><input id="fid" placeholder="fact id, e.g. f-…" style="flex:1"><button id="go" style="margin:0">Trace</button></div>
+      <div id="out" style="margin-top:16px"></div>`;
+    c.querySelector('#go').addEventListener('click', () => openFact(c.querySelector('#fid').value, c.querySelector('#out')));
+    v.append(c);
+    const facts = await api('/api/facts?limit=25').catch(() => []);
+    if (facts.length) {
+      v.append(card('Recent facts', table(['Claim', 'Folder', 'Trace'],
+        facts.map((f) => [esc(f.claim), `<span class="tiny mono">${esc(f.folder || '')}</span>`, `<button class="ghost sm" data-t="${esc(f.id)}">trace</button>`]))));
+      v.querySelectorAll('[data-t]').forEach((b) => b.addEventListener('click', () => openFact(b.dataset.t, c.querySelector('#out'))));
+    }
+  };
+
+  async function openFact(id, target) {
+    const out = target || $('#view');
+    if (!target) { out.innerHTML = ''; }
+    const box = el('div');
+    out.prepend(box);
+    box.innerHTML = '<div class="loading">tracing…</div>';
+    try {
+      const [t, cg] = await Promise.all([api(`/api/facts/${encodeURIComponent(id)}/trace`), api(`/api/facts/${encodeURIComponent(id)}/contagion`).catch(() => null)]);
+      box.innerHTML = '';
+      box.append(card(`Trace — ${esc(t.fact.id)}`, `
+        <div class="claim">${esc(t.fact.claim)}</div>
+        <dl class="kv">
+          <dt>Said by</dt><dd>${esc(t.saidBy?.name || '—')} <span class="dimmer tiny">(${esc(t.saidBy?.kind || '')})</span></dd>
+          <dt>Source</dt><dd class="mono tiny">${esc(t.saidBy?.sourceRef?.label || '—')}</dd>
+          <dt>Captured by</dt><dd>${esc(t.capturedBy?.id || '—')} <span class="dimmer tiny">${esc(t.capturedBy?.mode || '')}</span></dd>
+          <dt>Channel</dt><dd>${esc(t.channel.channel)} <span class="pill ${t.channel.trustAtTheTime === 'trusted' ? 'g' : 'a'}">${esc(t.channel.trustAtTheTime)}</span></dd>
+          <dt>Model</dt><dd class="tiny mono">${esc(t.model.version || t.model.model || '—')}</dd>
+          <dt>Gate outcome</dt><dd>${esc(t.gate.outcome)}</dd>
+          <dt>Rules evaluated</dt><dd class="tiny mono">${esc((t.rulesEvaluated || []).join(', ') || 'none matched')}</dd>
+          <dt>Human review</dt><dd>${t.humanReview ? esc(JSON.stringify(t.humanReview)) : 'auto-passed'}</dd>
+          <dt>Reads</dt><dd>${t.readCount} ${t.reads.length ? `<span class="tiny dimmer">(${t.reads.map((r) => esc(r.agentId)).join(', ')})</span>` : ''}</dd>
+          <dt>Ledger position</dt><dd class="mono tiny">#${t.integrity.ledgerPosition} · ${esc(String(t.integrity.contentHash).slice(0, 24))}…</dd>
+          <dt>Integrity</dt><dd>${t.integrity.verified.ok ? '<span class="good">✓ verified</span>' : '<span class="bad">✗ FAILED</span>'}</dd>
+        </dl>
+        <h4>Every check that ran</h4>
+        ${table(['Check', 'Name', 'Result'], (t.gate.checks || []).map((c) => [c.check, esc(c.name), c.result === 'pass' ? '<span class="good">pass</span>' : `<span class="warn">${esc(c.result)}</span>`]))}`));
+      if (cg) {
+        box.append(card('Contagion — who believed it, and what did they do about it?', `
+          <dl class="kv">
+            <dt>Live for</dt><dd>${cg.liveForDays} days (${esc(cg.liveFrom)} → ${esc(cg.liveTo)})</dd>
+            <dt>Origin</dt><dd>${esc(cg.origin.channel)} · ${esc(cg.origin.saidBy || '')} ${cg.origin.gateWarning ? `<div class="bad tiny">${esc(cg.origin.gateWarning)}</div>` : '<span class="good tiny">gate ran</span>'}</dd>
+            <dt>Blast radius</dt><dd>${cg.blastRadius.agents} agents · ${cg.blastRadius.folders} folders · ${cg.blastRadius.derivedFacts} derived facts · ${cg.blastRadius.summaries} summaries</dd>
+          </dl>
+          ${cg.readBy.length ? table(['Agent', 'Reads', 'Window', 'Owner'], cg.readBy.map((r) => [esc(r.agentName), r.reads, esc(r.window), esc(r.owner)])) : '<p class="muted tiny">Never read.</p>'}
+          <div class="row" style="margin-top:12px">${cg.remediation.map((r) => `<button class="ghost sm" ${r.action.startsWith('Export') ? `data-bundle="${esc(cg.factId)}"` : ''}>${esc(r.action)}</button>`).join('')}</div>`));
+        box.querySelectorAll('[data-bundle]').forEach((b) => b.addEventListener('click', async () => {
+          const r = await api(`/api/facts/${encodeURIComponent(b.dataset.bundle)}/incident-bundle`, { method: 'POST', body: { matter: 'ad-hoc' } });
+          box.append(card('Incident bundle', `<pre>${esc(r.humanReadable)}</pre>`));
+          toast('Incident bundle generated and logged.');
+        }));
+      }
+    } catch (e) { box.innerHTML = `<div class="bad">${esc(e.message)}</div>`; }
+  }
+
+  // 📚 ARCHIVE
+  RENDER.archive = async (v) => {
+    const stats = await api('/api/archive/stats');
+    v.append(cards([
+      ['Conversations', stats.conversations], ['Turns', stats.turns],
+      ['WORM copies', stats.worm], ['Privileged', stats.privileged],
+      ['Supervision open', stats.supervisionOpen, stats.supervisionOpen ? 'warn' : 'good'],
+      ['Productions', stats.productions]
+    ]));
+    const c = el('div', 'card');
+    c.innerHTML = `<h3>Search every raw conversation — whole, sealed, chain-verifiable</h3>
+      <div class="row"><input id="aq" placeholder="search transcripts…" style="flex:1"><button id="ago" style="margin:0">Search</button></div>
+      <div id="aout" style="margin-top:14px"></div>`;
+    c.querySelector('#ago').addEventListener('click', async () => {
+      const out = c.querySelector('#aout');
+      out.innerHTML = '<div class="loading">…</div>';
+      try {
+        const rows = await api(`/api/archive/search?q=${encodeURIComponent(c.querySelector('#aq').value)}`);
+        out.innerHTML = rows.length ? table(['Conversation', 'At', 'Channel', 'Turns', 'Snippet', 'Seal'],
+          rows.map((r) => [`<span class="mono tiny">${esc(r.id)}</span>`, esc(r.age), esc(r.channel), r.turns, `<span class="tiny dimmer">${esc(r.snippet)}</span>`, `<span class="mono tiny">${esc(String(r.sealHash).slice(0, 12))}…</span>`]))
+          : '<div class="empty">No conversations matched.</div>';
+      } catch (e) { out.innerHTML = `<div class="bad">${esc(e.message)}</div>`; }
+    });
+    v.append(c);
+    const sup = await api('/api/archive/supervision').catch(() => []);
+    if (sup.length) {
+      v.append(card('Supervision queue — the 2% worth reading', table(['Risk', 'Triggers', 'Age', 'Snippet'],
+        sup.map((s) => [`<span class="pill ${s.riskScore >= .75 ? 'r' : 'a'}">${s.riskScore}</span>`, `<span class="tiny">${esc((s.triggers || []).join(', '))}</span>`, esc(s.age), `<span class="tiny dimmer">${esc(s.conversation?.snippet || '')}</span>`]))));
+    }
+  };
+
+  // 🔭 OBSERVABILITY
+  RENDER.observability = async (v) => {
+    const s = await api('/api/observability/stats');
+    v.append(cards([
+      ['Traces', s.traces], ['Spans', s.spans],
+      ['Memory events', s.memoryEvents], ['Cost', `$${s.totalCostUsd}`],
+      ['Golden sets', s.goldenSets], ['Eval runs', s.evalRuns]
+    ]));
+    const evals = await api('/api/evals').catch(() => []);
+    if (evals.length) {
+      v.append(card('Eval runs', table(['Set', 'Label', 'Passed', 'Scorers'],
+        evals.map((e) => [esc(e.setName), esc(e.label), `${e.passed}/${e.total}`, `<span class="tiny dimmer">${esc(Object.keys(e.aggregate || {}).join(', '))}</span>`]))));
+    }
+    const clusters = await api('/api/observability/clusters').catch(() => []);
+    if (clusters.length) {
+      v.append(card('Failure clusters — fix categories, not instances', table(['Cluster', 'Count', 'Failing scorers'],
+        clusters.map((c) => [`<span class="tiny">${esc(c.exemplar)}</span>`, c.count, `<span class="tiny warn">${esc((c.failingScorers || []).join(', '))}</span>`]))));
+    }
+    v.append(card('Memory-aware tracing', '<p class="muted tiny">Every trace shows which facts were read, withheld, written, held or blocked — inline with the reasoning. No other observability tool can emit these attributes because it does not sit in the memory path.</p>'));
+  };
+
+  // ⚖️ CASES
+  RENDER.cases = async (v) => {
+    const tabs = tabbar(['Legal holds', 'Erasure', 'Subject access', 'Retention', 'Receipts'], async (i, body) => {
+      body.innerHTML = '';
+      if (i === 0) {
+        const holds = await api('/api/legal/holds');
+        body.append(card(`Active legal holds (${holds.length})`, holds.length ? table(['Matter', 'Scope', 'Facts', 'Conversations', 'Placed'],
+          holds.map((h) => [esc(h.matter), `<span class="tiny mono">${esc(JSON.stringify(h.scope))}</span>`, h.factIds.length, h.conversationIds.length, esc(h.age)]))
+          : '<div class="empty">No active holds.</div>'));
+      } else if (i === 1) {
+        const c = el('div', 'card');
+        c.innerHTML = `<h3>Erase a person — delete-vs-keep resolved on screen</h3>
+          <div class="row"><input id="subj" placeholder="subject name" style="flex:1"><button id="plan" style="margin:0">Plan</button></div>
+          <div id="pout" style="margin-top:14px"></div>`;
+        c.querySelector('#plan').addEventListener('click', async () => {
+          const out = c.querySelector('#pout');
+          out.innerHTML = '<div class="loading">…</div>';
+          try {
+            const p = await api(`/api/legal/erasure/plan?subject=${encodeURIComponent(c.querySelector('#subj').value)}`);
+            out.innerHTML = `<pre>[ Erase person ] ${esc(p.subject)}    request ${esc(p.requestId)}
+
+FOUND
+  ${esc(p.found.summary)}
+  → reaches the TRANSCRIPTS, not just the tidy summaries
+
+${p.conflict ? `CONFLICT ⚠️
+  ${p.conflict.count} item(s) under legal hold on a DIFFERENT matter (${esc(p.conflict.matters.join(', '))}).
+  ${esc(p.conflict.statement)}
+  VAULT'S ANSWER
+${p.conflict.vaultsAnswer.map((a) => `  → ${esc(a)}`).join('\n')}
+` : 'NO CONFLICT — everything found is free to delete.\n'}
+METHOD
+${Object.entries(p.method).map(([k, v2]) => `  ${k.padEnd(24)}${esc(v2)}`).join('\n')}
+
+[ ${esc(p.action)} ] → signed receipt</pre>`;
+          } catch (e) { out.innerHTML = `<div class="bad">${esc(e.message)}</div>`; }
+        });
+        body.append(c);
+      } else if (i === 2) {
+        const d = await api('/api/legal/dsar').catch(() => []);
+        body.append(card('Subject access requests', d.length ? table(['Subject', 'Regime', 'Due', 'Days left', 'Status'],
+          d.map((x) => [esc(x.subject), esc(x.regime), esc(x.dueAt), x.overdue ? '<span class="bad">overdue</span>' : x.daysRemaining, esc(x.status)]))
+          : '<div class="empty">No open requests.</div>'));
+      } else if (i === 3) {
+        const r = await api('/api/legal/retention');
+        const p = await api('/api/legal/retention/preview');
+        body.append(card('Retention — conflicting obligations surfaced, never silently resolved', `
+          <p class="${r.conflicts ? 'warn' : 'muted'}">${esc(r.statement)}</p>
+          <p class="tiny dimmer">Rule: ${esc(r.rule)}</p>
+          <div class="sep"></div>
+          <p class="muted">${esc(p.message)}</p>
+          ${p.sample.length ? table(['Fact', 'Expires'], p.sample.map((s) => [esc(s.claim), esc(s.expiresAt)])) : ''}`));
+      } else {
+        const rec = await api('/api/legal/receipts');
+        body.append(card('Receipts — signed, verifiable, exportable', rec.length ? table(['Kind', 'At', 'Signed', 'Proof'],
+          rec.map((x) => [esc(x.kind), esc(x.at), x.signed ? '<span class="good">✓</span>' : '—', `<span class="mono tiny">${esc(String(x.proof).slice(0, 28))}…</span>`]))
+          : '<div class="empty">No receipts yet.</div>'));
+      }
+    });
+    v.append(tabs);
+  };
+
+  // 🛡️ SECURITY
+  RENDER.security = async (v) => {
+    const [alerts, scorecard, detectors] = await Promise.all([
+      api('/api/security/alerts'), api('/api/security/scorecard').catch(() => null), api('/api/security/detectors').catch(() => null)
+    ]);
+    if (scorecard) {
+      v.append(cards([
+        ['Posture', scorecard.grade, scorecard.score >= 80 ? 'good' : 'warn'],
+        ['Score', `${scorecard.score}/100`],
+        ['Controls effective', `${scorecard.controls.effective}/${scorecard.controls.total}`],
+        ['Open alerts', alerts.length, alerts.length ? 'warn' : 'good']
+      ]));
+    }
+    v.append(card(`Alerts (${alerts.length})`, alerts.length ? table(['Severity', 'Kind', 'Detail', 'Actor', 'Age', 'Suggested action'],
+      alerts.map((a) => [sev(a.severity), `<span class="pill">${esc(a.kind)}</span>`, `<span class="tiny">${esc(a.detail)}</span>`, esc(a.actor || '—'), esc(a.age), `<span class="tiny dimmer">${esc(a.suggestedAction)}</span>`]))
+      : '<div class="empty">No open alerts.</div>'));
+    if (detectors?.contradictionRadar?.length) {
+      v.append(card('Contradiction radar — facts quietly conflicting with a golden fact', table(['Fact', 'Golden', 'Why'],
+        detectors.contradictionRadar.map((c) => [esc(c.fact), `<span class="gold">${esc(c.golden)}</span>`, `<span class="warn tiny">${esc(c.why)}</span>`]))));
+    }
+    if (scorecard?.rankedFixes?.length) {
+      v.append(card('Ranked fixes', table(['#', 'Area', 'Finding', 'Severity'],
+        scorecard.rankedFixes.map((f) => [f.rank, esc(f.area), esc(f.finding), sev(f.severity)]))));
+    }
+    const ks = await api('/api/killswitch');
+    v.append(card('Kill switch — graduated, not binary', `
+      <p>Current: <b class="${ks.level ? 'bad' : 'good'}">${ks.level} — ${esc(ks.label || 'Normal')}</b> · administrators: ${esc((ks.administrators || []).join(', ') || '⚠️ none named')}</p>
+      <p class="tiny muted">Last tested: ${esc(ks.spec?.lastTest?.at || '⚠️ never')} · target &lt;60s for transaction-authority agents</p>
+      ${table(['Level', 'Label', 'Effect', 'Business impact'], (ks.spec?.levels || []).map((l) => [l.level, esc(l.label), esc(l.effect), esc(l.impact)]))}
+      <div class="row" style="margin-top:12px"><button class="ghost sm" id="kstest">Run quarterly test</button></div>`));
+    v.querySelector('#kstest')?.addEventListener('click', async () => {
+      try { const r = await api('/api/killswitch/test', { method: 'POST', body: { level: 3, note: 'UI-initiated quarterly test' } }); toast(`Tested in ${r.activationMs}ms — ${r.passed ? 'passed' : 'FAILED'}`); go('security'); }
+      catch (e) { toast(e.message, true); }
+    });
+  };
+
+  // 📋 COMPLY
+  RENDER.comply = async (v) => {
+    const tabs = tabbar(['Controls', 'Crosswalk', 'Gap analysis', 'AI register', 'Board pack'], async (i, body) => {
+      body.innerHTML = '<div class="loading">…</div>';
+      if (i === 0) {
+        const c = await api('/api/comply/controls');
+        body.innerHTML = '';
+        body.append(cards([['Effective', c.effective, 'good'], ['Failing / attention', c.failing, c.failing ? 'warn' : 'good'], ['Total', c.total]]));
+        body.append(card('Continuous control monitoring — a failing control alerts immediately', table(['Control', 'Name', 'Status'],
+          c.results.map((r) => [`<span class="mono tiny">${esc(r.id)}</span>`, esc(r.name), r.status === 'effective' ? '<span class="good">effective</span>' : `<span class="warn">${esc(r.status)}</span>`]))));
+      } else if (i === 1) {
+        const x = await api('/api/comply/crosswalk');
+        body.innerHTML = '';
+        body.append(card(`Crosswalk — ${x.uniqueControls} controls satisfying ${x.frameworks} frameworks`, table(['Control', 'Framework', 'Reference', 'Status'],
+          x.rows.map((r) => [`<span class="mono tiny">${esc(r.control)}</span>`, esc(r.framework), `<span class="tiny">${esc(r.reference)}</span>`, esc(r.status)]))));
+      } else if (i === 2) {
+        const g = await api('/api/comply/gaps?framework=ISO%2042001');
+        body.innerHTML = '';
+        body.append(card(`Gap analysis — ${esc(g.framework)}`, `<p class="stat">${g.score}%</p><p class="muted">${esc(g.statement)}</p>
+          ${g.gaps.length ? table(['Control', 'Reference', 'Effort', 'Fix'], g.gaps.map((x) => [esc(x.name), `<span class="tiny">${esc(x.reference)}</span>`, `<span class="pill">${esc(x.effort)}</span>`, `<span class="tiny">${esc(x.fix)}</span>`])) : '<p class="good">No gaps.</p>'}`));
+      } else if (i === 3) {
+        const r = await api('/api/comply/register');
+        body.innerHTML = '';
+        body.append(card('AI register', table(['Name', 'Kind', 'Owner', 'Risk tier', 'EU AI Act'],
+          r.map((s) => [esc(s.name), esc(s.kind), esc(s.owner || '⚠️ none'), `<span class="pill ${s.riskTier === 'high' ? 'r' : ''}">${esc(s.riskTier)}</span>`, `<span class="tiny">${esc(s.euAiActTier)}</span>`]))));
+      } else {
+        const b = await api('/api/comply/board-pack');
+        body.innerHTML = '';
+        body.append(card('Board reporting pack — plain language, for the risk committee', `
+          ${b.headline.map((h) => `<p>${esc(h)}</p>`).join('')}
+          <div class="sep"></div>
+          <dl class="kv">${Object.entries(b.riskPosture).map(([k, v2]) => `<dt>${esc(k)}</dt><dd>${esc(v2)}</dd>`).join('')}</dl>
+          ${b.decisionsNeeded.length ? `<h4>Decisions needed</h4><ul class="reasons">${b.decisionsNeeded.map((d) => `<li>${esc(d)}</li>`).join('')}</ul>` : ''}
+          <p class="warn tiny">${esc(b.regulatoryExposure)}</p>
+          <p class="muted tiny">${esc(b.plainLanguage)}</p>`));
+      }
+    });
+    v.append(tabs);
+  };
+
+  // 🏛️ INSURE
+  RENDER.insure = async (v) => {
+    const [gaps, q] = await Promise.all([api('/api/insure/gaps'), api('/api/insure/questionnaire').catch(() => [])]);
+    v.append(card('Ranked gaps — by likely premium impact', gaps.length ? table(['Impact', 'Gap', 'Premium effect', 'Fix'],
+      gaps.map((g) => [sev(g.impact), esc(g.gap), `<span class="tiny dimmer">${esc(g.premiumEffect)}</span>`, `<span class="tiny">${esc(g.fix)}</span>`]))
+      : '<div class="good">No open gaps. The pack is renewal-ready.</div>'));
+    if (q.length) {
+      v.append(card('Carrier AI questionnaire — pre-filled from the running system', q.map((x) => `
+        <div style="margin-bottom:14px"><div class="muted tiny">${esc(x.q)}</div><div>${esc(x.a)}</div></div>`).join('')));
+    }
+    const btn = el('button', null, 'Generate the full evidence pack');
+    btn.addEventListener('click', async () => {
+      try { const p = await api('/api/insure/pack'); v.append(card('Evidence pack', `<pre>${esc(JSON.stringify({ inventory: p.inventory.registered, shadow: p.inventory.shadowFound, incidents: p.incidentRegister, killSwitch: p.killSwitch.namedAdministrators, proof: p.proof }, null, 2))}</pre>`)); toast('Pack generated — 1 hour of work, done.'); }
+      catch (e) { toast(e.message, true); }
+    });
+    v.append(btn);
+  };
+
+  // 📈 VALUE
+  RENDER.value = async (v) => {
+    const [r, health, patterns] = await Promise.all([api('/api/value'), api('/api/value/health'), api('/api/value/patterns').catch(() => null)]);
+    v.append(cards([
+      ['Memory health', r.quality.memoryHealth, health.score >= 80 ? 'good' : 'warn'],
+      ['Facts w/ provenance', r.quality.factsWithFullProvenance],
+      ['Writes held', r.risk.writesHeld],
+      ['Writes blocked', r.risk.writesBlocked, r.risk.writesBlocked ? 'warn' : 'good'],
+      ['Credentials caught', r.risk.credentialsCaught, r.risk.credentialsCaught ? 'bad' : 'good'],
+      ['Shadow agents', r.risk.shadowAgentsFound, r.risk.shadowAgentsFound ? 'bad' : 'good']
+    ]));
+    v.append(card('COST', `<dl class="kv">${Object.entries(r.cost).filter(([k]) => k !== 'storageByTier' && k !== 'basis').map(([k, x]) => `<dt>${esc(k)}</dt><dd>${esc(typeof x === 'object' ? JSON.stringify(x) : x)}</dd>`).join('')}</dl><p class="tiny dimmer">${esc(r.cost.basis)}</p>`));
+    v.append(card('TIME', `<dl class="kv">${Object.entries(r.time).filter(([k]) => k !== 'basis').map(([k, x]) => `<dt>${esc(k)}</dt><dd>${esc(x)}</dd>`).join('')}</dl><p class="tiny dimmer">${esc(r.time.basis)}</p>`));
+    v.append(card('QUALITY', `<dl class="kv">${Object.entries(r.quality).filter(([k]) => k !== 'baseline').map(([k, x]) => `<dt>${esc(k)}</dt><dd>${esc(x)}</dd>`).join('')}</dl>`));
+    v.append(card('RISK', `<dl class="kv">${Object.entries(r.risk).map(([k, x]) => `<dt>${esc(k)}</dt><dd>${esc(x)}</dd>`).join('')}</dl>`));
+    if (health.fixes?.length) {
+      v.append(card('Ranked fixes by impact', table(['Fix', 'Impact', 'Effort', 'Detail'],
+        health.fixes.map((f) => [esc(f.fix), f.impact, `<span class="pill">${esc(f.effort)}</span>`, `<span class="tiny dimmer">${esc(f.detail)}</span>`]))));
+    }
+    if (patterns?.contentPatterns?.length) {
+      v.append(card('Patterns — one alert, not N silences', table(['Pattern', 'Occurrences', 'Sources', 'Alert'],
+        patterns.contentPatterns.map((p) => [esc(p.pattern), p.occurrences, p.distinctSources, `<span class="tiny warn">${esc(p.alert)}</span>`]))));
+    }
+  };
+
+  // 👤 MY DATA
+  RENDER.mydata = async (v) => {
+    const d = await api('/api/my-data');
+    v.append(card(`What Vault holds about ${esc(d.employee)}`, `
+      <dl class="kv">${Object.entries(d.whatWeHold).map(([k, x]) => `<dt>${esc(k)}</dt><dd>${esc(x)}</dd>`).join('')}</dl>
+      <h4>What we do NOT hold</h4>
+      <ul class="reasons">${d.whatWeDoNotHold.map((x) => `<li>${esc(x)}</li>`).join('')}</ul>
+      <h4>Your rights</h4>
+      <ul class="reasons">${d.yourRights.map((x) => `<li>${esc(x)}</li>`).join('')}</ul>
+      <p class="muted tiny">${esc(d.purposeLock)}</p>`));
+    if (d.export.facts.length) {
+      v.append(card('Your facts', table(['Claim', 'Type', 'Recorded', 'Object'],
+        d.export.facts.map((f) => [esc(f.claim), esc(f.claimType), esc(f.createdAt), `<button class="ghost sm" data-obj="${esc(f.id)}">object</button>`]))));
+      v.querySelectorAll('[data-obj]').forEach((b) => b.addEventListener('click', async () => {
+        const objection = prompt('What is wrong with this fact?');
+        if (!objection) return;
+        await api('/api/my-data/object', { method: 'POST', body: { factId: b.dataset.obj, objection } });
+        toast('Objection raised — it is tracked and must be answered.');
+      }));
+    }
+  };
+
+  // ⚙️ ADMIN
+  RENDER.admin = async (v) => {
+    const tabs = tabbar(['Modules', 'Employee Privacy Mode', 'Agents', 'Connectors', 'Storage & keys', 'Continuity'], async (i, body) => {
+      body.innerHTML = '<div class="loading">…</div>';
+      if (i === 0) {
+        const m = await api('/api/admin/modules');
+        body.innerHTML = '';
+        body.append(card('Modules — built-in by default, bring-your-own by toggle', `
+          ${table(['Module', 'State', 'Using', 'Action', 'Healthy', 'Vault keeps a copy'],
+            m.map((r) => [esc(r.module), esc(r.state), esc(r.using), `<span class="pill b">${esc(r.action)}</span>`, r.healthy ? '<span class="good">✓</span>' : '<span class="bad">✗</span>', r.keepOwnCopy ? '✓' : '—']))}
+          <p class="tiny dimmer" style="margin-top:12px">Switching a module never loses data. The gate is not a module — it runs in every configuration and cannot be toggled off.</p>`));
+      } else if (i === 1) {
+        const p = await api('/api/admin/privacy');
+        body.innerHTML = '';
+        const opts = (p.available || []).map((j) => `<option value="${esc(j)}"${j === (p.jurisdiction || 'off') ? ' selected' : ''}>${esc(j)}</option>`).join('');
+        body.append(card('🔒 Employee Privacy Mode', `
+          <p>Status: <b class="${p.enabled ? 'good' : 'warn'}">${p.enabled ? '🟢 ON' : '🔴 OFF'}</b> — ${esc(p.jurisdictionName)}</p>
+          <label style="margin-top:14px">Jurisdiction preset</label>
+          <select id="jur">${opts}</select>
+          <div class="row" style="margin-top:12px">
+            <button class="ghost sm" id="prev">Preview what changes</button>
+            <button class="ghost sm" id="apply">Apply</button>
+            <button class="ghost sm" id="pack">Generate compliance pack</button>
+          </div>
+          <div id="pv" style="margin-top:14px"></div>
+          <div class="sep"></div>
+          <h4>Guarantees</h4>
+          <ul class="reasons">${p.guarantees.map((g) => `<li>${esc(g)}</li>`).join('')}</ul>`));
+        const jur = () => body.querySelector('#jur').value;
+        body.querySelector('#prev').addEventListener('click', async () => {
+          const r = await api(`/api/admin/privacy/preview?jurisdiction=${encodeURIComponent(jur())}`);
+          body.querySelector('#pv').innerHTML = `<pre>${esc(JSON.stringify(r, null, 2))}</pre>`;
+        });
+        body.querySelector('#apply').addEventListener('click', async () => {
+          try { const r = await api('/api/admin/privacy', { method: 'POST', body: { jurisdiction: jur(), reason: 'set from the admin screen' } }); toast(r.note); go('admin'); }
+          catch (e) { toast(e.message, true); }
+        });
+        body.querySelector('#pack').addEventListener('click', async () => {
+          const r = await api('/api/admin/privacy/pack');
+          body.querySelector('#pv').innerHTML = `<h4>${esc(r.name)} compliance pack</h4>` +
+            (r.documents || []).map((d) => `<details><summary style="cursor:pointer">${esc(d.name)}</summary><pre>${esc(d.body)}</pre></details>`).join('');
+        });
+      } else if (i === 2) {
+        const a = await api('/api/admin/agents');
+        body.innerHTML = '';
+        body.append(card('Agents', table(['Agent', 'Mode', 'Status', 'Writes', 'Held', 'Blocked', 'Attested'],
+          a.map((x) => [`${esc(x.name)}<div class="tiny dimmer mono">${esc(x.id)}</div>`, esc(x.mode), esc(x.status), x.writes, x.held, x.blocked, x.attestedAt ? esc(x.attestedAt.slice(0, 10)) : '<span class="warn">never</span>']))));
+      } else if (i === 3) {
+        const c = await api('/api/connectors');
+        body.innerHTML = '';
+        body.append(card('Connector health', c.health.length ? table(['Connector', 'Mode', 'Status', 'Events', 'Last event', 'Alert'],
+          c.health.map((h) => [esc(h.name), esc(h.mode), h.healthy ? '<span class="good">healthy</span>' : `<span class="warn">${esc(h.status)}</span>`, h.eventsIngested, esc(h.lastEvent), `<span class="tiny warn">${esc(h.alert || '')}</span>`]))
+          : '<div class="empty">No connectors configured.</div>'));
+      } else if (i === 4) {
+        const s = await api('/api/admin/storage');
+        const k = await api('/api/admin/keys').catch(() => null);
+        body.innerHTML = '';
+        body.append(card('Storage', `<dl class="kv"><dt>Monthly cost</dt><dd>$${esc(s.tiers.monthlyTotal)}</dd><dt>Lifecycle preview</dt><dd>${esc(s.lifecycle.summary)}</dd></dl>
+          ${table(['Collection', 'Records', 'WORM', 'Encrypted'], Object.entries(s.db).map(([n, d]) => [esc(n), d.records, d.worm ? '🔒' : '—', d.encrypted ? '🔑' : '—']))}`));
+        if (k) body.append(card('Keys', table(['Scope', 'Key id', 'Version', 'Mode', 'Destroyed'],
+          k.inventory.map((x) => [esc(x.scope), `<span class="mono tiny">${esc(x.keyId)}</span>`, x.version, esc(x.mode), x.destroyed ? `<span class="bad">${esc(x.destroyed)}</span>` : '—']))));
+      } else {
+        const c = await api('/api/admin/continuity');
+        body.innerHTML = '';
+        body.append(card('🚪 Exit & continuity — publish this page', `
+          <dl class="kv">
+            <dt>Continuous mirror</dt><dd>${esc(c.continuousMirrorExport.guarantee)}</dd>
+            <dt>Open format</dt><dd>${esc(c.openDocumentedFormat.format)} — ${esc(c.openDocumentedFormat.license)}</dd>
+            <dt>Self-host</dt><dd>${esc(c.selfHostEscapeHatch)}</dd>
+            <dt>Ledger without us</dt><dd>${esc(c.ledgerVerifiableWithoutUs.statement)} (${esc(c.ledgerVerifiableWithoutUs.standaloneVerifier)})</dd>
+            <dt>Free export</dt><dd>charge: ${esc(c.freeExport.charge)}, throttling: ${esc(c.freeExport.throttling)}</dd>
+            <dt>Concentration risk</dt><dd>${c.concentrationRiskStatement.percentageInWritePath}% of agents have Vault in the write path</dd>
+          </dl>
+          <h4>If Vault is unavailable</h4>
+          <ul class="reasons">${c.concentrationRiskStatement.ifVaultIsUnavailable.map((x) => `<li>${esc(x)}</li>`).join('')}</ul>
+          <h4>Contract terms, pre-agreed</h4>
+          <ul class="reasons">${c.contractTermsPreAgreed.map((x) => `<li>${esc(x)}</li>`).join('')}</ul>`));
+      }
+    });
+    v.append(tabs);
+  };
+
+  // ---- helpers -----------------------------------------------------------
+  function card(title, html) {
+    const c = el('div', 'card');
+    c.innerHTML = `<h3>${esc(title)}</h3>` + (typeof html === 'string' ? html : '');
+    if (typeof html !== 'string' && html) c.append(html);
+    return c;
+  }
+  function cards(list) {
+    const g = el('div', 'grid g4');
+    for (const [label, val, cls] of list) {
+      g.append(el('div', 'card', `<div class="stat ${cls || ''}">${esc(val)}<small>${esc(label)}</small></div>`));
+    }
+    const wrap = el('div');
+    wrap.append(g);
+    wrap.style.marginBottom = '14px';
+    return wrap;
+  }
+  function table(head, rows) {
+    if (!rows.length) return '<div class="empty">Nothing to show.</div>';
+    return `<div class="scroll"><table><thead><tr>${head.map((h) => `<th>${esc(h)}</th>`).join('')}</tr></thead>
+      <tbody>${rows.map((r) => `<tr>${r.map((c) => `<td>${c}</td>`).join('')}</tr>`).join('')}</tbody></table></div>`;
+  }
+  function tabbar(names, onSelect) {
+    const wrap = el('div');
+    const bar = el('div', 'tabs');
+    const body = el('div');
+    names.forEach((n, i) => {
+      const t = el('div', `tab${i === 0 ? ' active' : ''}`, esc(n));
+      t.addEventListener('click', () => {
+        bar.querySelectorAll('.tab').forEach((x) => x.classList.remove('active'));
+        t.classList.add('active');
+        onSelect(i, body).catch((e) => { body.innerHTML = `<div class="bad">${esc(e.message)}</div>`; });
+      });
+      bar.append(t);
+    });
+    wrap.append(bar, body);
+    onSelect(0, body).catch((e) => { body.innerHTML = `<div class="bad">${esc(e.message)}</div>`; });
+    return wrap;
+  }
+  const badge = (s) => s === '✓' ? '<span class="good">✓</span>' : s === '✗' || s === '✗*' ? `<span class="bad">${esc(s)}</span>` : `<span class="dimmer">${esc(s)}</span>`;
+  const sev = (s) => `<span class="pill ${s === 'critical' || s === 'high' ? 'r' : s === 'medium' ? 'a' : ''}">${esc(s)}</span>`;
+  const statusBadge = (s) => `<span class="pill ${s === 'live' ? 'g' : s === 'held' ? 'a' : s === 'rejected' ? 'r' : ''}">${esc(s)}</span>`;
+  const claimBadge = (f) => f.golden ? '<span class="pill p">★ approved</span>'
+    : `<span class="pill ${f.claimType === 'verified' ? 'g' : f.claimType === 'guessed' ? 'r' : ''}">${esc(f.claimType)}</span>`;
+
+  // ---- shell -------------------------------------------------------------
+  async function go(id) {
+    current = id;
+    const s = SCREENS.find((x) => x.id === id);
+    $('#title').textContent = `${s.icon} ${s.name}`;
+    document.querySelectorAll('#screens li').forEach((li) => li.classList.toggle('active', li.dataset.id === id));
+    const v = $('#view');
+    v.innerHTML = '<div class="loading">loading…</div>';
+    try {
+      const box = el('div');
+      await RENDER[id](box);
+      v.innerHTML = '';
+      v.append(box);
+    } catch (e) {
+      v.innerHTML = `<div class="empty">${esc(e.message)}${e.status === 403 ? '<br><span class="tiny">Least privilege applies to your own product too — this role does not see this screen.</span>' : ''}</div>`;
+    }
+  }
+
+  async function boot() {
+    me = await api('/api/whoami');
+    $('#login').classList.add('hidden');
+    $('#app').classList.remove('hidden');
+    const allowed = SCREENS.filter((s) => !s.roles || s.roles.includes(me.role));
+    $('#screens').innerHTML = SCREENS.map((s) => {
+      const ok = !s.roles || s.roles.includes(me.role);
+      return `<li data-id="${s.id}" class="${ok ? '' : 'locked'}"><span>${s.icon}</span>${esc(s.name)}</li>`;
+    }).join('');
+    document.querySelectorAll('#screens li:not(.locked)').forEach((li) => li.addEventListener('click', () => go(li.dataset.id)));
+    $('#whoName').textContent = me.name;
+    $('#whoRole').textContent = me.role;
+    refreshBadges();
+    go(allowed[0]?.id || 'mydata');
+  }
+
+  async function refreshBadges() {
+    try {
+      const v = await api('/api/ledger/verify');
+      const b = $('#chainBadge');
+      b.textContent = `chain ${v.ok ? '✓' : '✗'} ${fmt(v.checked)}`;
+      b.className = `badge ${v.ok ? 'ok' : 'bad'}`;
+    } catch { /* role may not see the ledger */ }
+    try {
+      const k = await api('/api/killswitch');
+      const b = $('#ksBadge');
+      b.textContent = `Kill switch: ${k.level ? `L${k.level} ${k.label}` : 'normal'}`;
+      b.className = `ks ${k.level ? 'ks-on' : 'ks-0'}`;
+    } catch { /* ignore */ }
+  }
+
+  // ---- login -------------------------------------------------------------
+  $('#signin').addEventListener('click', async () => {
+    token = $('#token').value.trim();
+    $('#loginErr').textContent = '';
+    try {
+      const whoami = await fetch('/api/health', { headers: { Authorization: `Bearer ${token}` } });
+      if (!whoami.ok) throw new Error('token rejected');
+      localStorage.setItem('vault.token', token);
+      boot();
+    } catch (e) {
+      $('#loginErr').textContent = e.message;
+    }
+  });
+  $('#signout')?.addEventListener('click', () => { localStorage.clear(); location.reload(); });
+  $('#refresh')?.addEventListener('click', () => { refreshBadges(); go(current); });
+  $('#token').addEventListener('keydown', (e) => { if (e.key === 'Enter') $('#signin').click(); });
+
+  if (token) { $('#token').value = token; boot().catch(() => { localStorage.clear(); }); }
+})();

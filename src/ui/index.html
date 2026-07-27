@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Vault — shared AI memory governance</title>
+<link rel="stylesheet" href="/app.css">
+</head>
+<body>
+<div id="login" class="login">
+  <div class="login-card">
+    <div class="brand"><span class="lock">🔒</span> VAULT</div>
+    <p class="tagline">The company's shared AI memory — with a guard at the door,<br>a recorder that never stops, and proof you can verify yourself.</p>
+    <label>Access token</label>
+    <input id="token" type="password" placeholder="vlt_…" autocomplete="off">
+    <button id="signin">Sign in</button>
+    <p class="hint" id="loginHint">Run <code>node demo/seed.js</code> to generate demo tokens, or <code>node bin/vault.js serve</code> and use the token it prints.</p>
+    <p class="err" id="loginErr"></p>
+  </div>
+</div>
+
+<div id="app" class="app hidden">
+  <nav id="nav">
+    <div class="brand"><span class="lock">🔒</span> VAULT</div>
+    <div class="who"><span id="whoName"></span><span id="whoRole" class="role"></span></div>
+    <ul id="screens"></ul>
+    <div class="navfoot">
+      <div id="ksBadge" class="ks ks-0">Kill switch: normal</div>
+      <button id="signout" class="link">Sign out</button>
+    </div>
+  </nav>
+  <main>
+    <header>
+      <h1 id="title">Map</h1>
+      <div class="tools">
+        <span id="chainBadge" class="badge">chain …</span>
+        <button id="refresh" class="ghost">Refresh</button>
+      </div>
+    </header>
+    <section id="view"><div class="loading">loading…</div></section>
+  </main>
+</div>
+
+<script src="/app.js"></script>
+</body>
+</html>

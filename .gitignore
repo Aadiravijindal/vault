@@ -1,0 +1,7 @@
+data/
+*.jsonl
+signing-key.json
+vault-export/
+ledger-export.json
+node_modules/
+.DS_Store

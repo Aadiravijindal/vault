@@ -1,0 +1,298 @@
+/**
+ * Append-only, replayable object store.
+ *
+ * Zero external dependencies on purpose: the whole engine has to run from a
+ * fresh clone with `node .`, including on-prem and air-gapped, where "just add a
+ * database" is a six-week procurement.
+ *
+ * On-disk format is one JSONL file per collection, each line an operation:
+ *   {"o":"i","id":"f-1","t":1690000000000,"d":{...}}   insert
+ *   {"o":"u","id":"f-1","t":...,"d":{...}}             new full revision
+ *   {"o":"x","id":"f-1","t":...,"r":"erasure REQ-1"}   physical erasure tombstone
+ *
+ * Properties this buys us, all of which the spec depends on:
+ *  - append-only by construction; "editing" a fact writes a new revision
+ *  - WORM collections reject update and delete at the code level, not by
+ *    permission — there is no code path (§6.2)
+ *  - erasure physically rewrites the segment, so a deleted transcript is gone
+ *    from the bytes, not just from an index (§14.2)
+ *  - optional envelope encryption per record, keyed by scope, so crypto-shred
+ *    reaches backups too (§5.6)
+ */
+import { mkdirSync, existsSync, readFileSync, writeFileSync, appendFileSync, renameSync, statSync } from 'node:fs';
+import { join, dirname } from 'node:path';
+import { newId } from '../util/id.js';
+import { now } from '../util/time.js';
+import { VaultError, immutable, notFound } from '../util/errors.js';
+
+export class Db {
+  /**
+   * @param {object} [opts]
+   * @param {string|null} [opts.dir] null = in-memory only (tests, ephemeral demos)
+   * @param {import('./kms.js').Kms|null} [opts.kms]
+   * @param {(e:object)=>void} [opts.onEvent]
+   */
+  constructor({ dir = null, kms = null, onEvent } = {}) {
+    this.dir = dir;
+    this.kms = kms;
+    this.onEvent = onEvent || (() => {});
+    /** @type {Map<string, Collection>} */
+    this.collections = new Map();
+    if (dir) mkdirSync(dir, { recursive: true });
+  }
+
+  /**
+   * @param {string} name
+   * @param {{worm?:boolean, encrypted?:boolean, keyScope?:(doc:any)=>string}} [opts]
+   * @returns {Collection}
+   */
+  collection(name, opts = {}) {
+    let c = this.collections.get(name);
+    if (!c) {
+      c = new Collection(this, name, opts);
+      this.collections.set(name, c);
+      c._load();
+    }
+    return c;
+  }
+
+  stats() {
+    const out = {};
+    for (const [name, c] of this.collections) {
+      out[name] = { records: c.size, ops: c.opCount, bytes: c.bytesOnDisk(), worm: c.worm, encrypted: c.encrypted };
+    }
+    return out;
+  }
+
+  /** Rewrite every collection with only live records. Reclaims erased space. */
+  compactAll() {
+    let reclaimed = 0;
+    for (const c of this.collections.values()) reclaimed += c.compact();
+    return { reclaimed };
+  }
+}
+
+export class Collection {
+  /**
+   * @param {Db} db
+   * @param {string} name
+   */
+  constructor(db, name, { worm = false, encrypted = false, keyScope } = {}) {
+    this.db = db;
+    this.name = name;
+    this.worm = worm;
+    this.encrypted = encrypted;
+    this.keyScope = keyScope || (() => `collection:${name}`);
+    this.path = db.dir ? join(db.dir, `${name}.jsonl`) : null;
+    /** @type {Map<string, any>} */
+    this.records = new Map();
+    /** @type {Map<string, Map<any, Set<string>>>} */
+    this.indexes = new Map();
+    /** @type {Map<string, (doc:any)=>any|any[]>} */
+    this.indexFns = new Map();
+    this.opCount = 0;
+    this._pendingWrites = [];
+  }
+
+  get size() { return this.records.size; }
+
+  // -- indexing ------------------------------------------------------------
+
+  /**
+   * Declare a secondary index. Rebuilt immediately over existing records.
+   * @param {string} name
+   * @param {(doc:any)=>any|any[]} keyFn
+   */
+  index(name, keyFn) {
+    this.indexFns.set(name, keyFn);
+    const map = new Map();
+    this.indexes.set(name, map);
+    for (const doc of this.records.values()) this._indexDoc(name, doc);
+    return this;
+  }
+
+  _indexDoc(indexName, doc) {
+    const keyFn = this.indexFns.get(indexName);
+    const map = this.indexes.get(indexName);
+    if (!keyFn || !map) return;
+    let keys = keyFn(doc);
+    if (keys == null) return;
+    if (!Array.isArray(keys)) keys = [keys];
+    for (const k of keys) {
+      if (k == null) continue;
+      let set = map.get(k);
+      if (!set) map.set(k, (set = new Set()));
+      set.add(doc.id);
+    }
+  }
+
+  _deindexDoc(doc) {
+    for (const [name, map] of this.indexes) {
+      const keyFn = this.indexFns.get(name);
+      let keys = keyFn?.(doc);
+      if (keys == null) continue;
+      if (!Array.isArray(keys)) keys = [keys];
+      for (const k of keys) map.get(k)?.delete(doc.id);
+    }
+  }
+
+  /** @returns {any[]} */
+  by(indexName, key) {
+    const ids = this.indexes.get(indexName)?.get(key);
+    if (!ids) return [];
+    return [...ids].map((id) => this.records.get(id)).filter(Boolean);
+  }
+
+  // -- reads ---------------------------------------------------------------
+
+  get(id) { return this.records.get(id) || null; }
+  has(id) { return this.records.has(id); }
+  require(id) {
+    const d = this.records.get(id);
+    if (!d) throw notFound(this.name, id);
+    return d;
+  }
+  all() { return [...this.records.values()]; }
+  find(pred) { return [...this.records.values()].filter(pred); }
+  first(pred) { for (const d of this.records.values()) if (pred(d)) return d; return null; }
+  count(pred) { return pred ? this.find(pred).length : this.records.size; }
+  *[Symbol.iterator]() { yield* this.records.values(); }
+
+  // -- writes --------------------------------------------------------------
+
+  /**
+   * @param {object} doc
+   * @returns {object} the stored document (frozen shallow copy semantics: we
+   * store a clone so callers can't mutate history by holding a reference)
+   */
+  insert(doc) {
+    const id = doc.id || newId(this.name.replace(/s$/, ''));
+    if (this.records.has(id)) {
+      throw new VaultError('conflict', `duplicate id in ${this.name}`, { id });
+    }
+    const rec = { ...doc, id, _v: 1, _created: doc._created ?? now(), _updated: now() };
+    this.records.set(id, rec);
+    for (const name of this.indexes.keys()) this._indexDoc(name, rec);
+    this._append({ o: 'i', id, t: rec._updated, d: rec });
+    return rec;
+  }
+
+  /**
+   * Append a new revision. Throws on WORM collections — there is no edit path.
+   * @param {string} id
+   * @param {object|((doc:any)=>object)} patch
+   */
+  update(id, patch) {
+    if (this.worm) {
+      throw immutable(`${this.name} is write-once — no update path exists`, { id, collection: this.name });
+    }
+    const prev = this.require(id);
+    this._deindexDoc(prev);
+    const delta = typeof patch === 'function' ? patch(structuredClone(prev)) : patch;
+    const rec = { ...prev, ...delta, id, _v: prev._v + 1, _created: prev._created, _updated: now() };
+    this.records.set(id, rec);
+    for (const name of this.indexes.keys()) this._indexDoc(name, rec);
+    this._append({ o: 'u', id, t: rec._updated, d: rec });
+    return rec;
+  }
+
+  /** Insert or update. */
+  put(doc) {
+    return this.records.has(doc.id) ? this.update(doc.id, doc) : this.insert(doc);
+  }
+
+  /**
+   * Physically erase a record and rewrite the segment so the bytes are gone.
+   * Only reachable from the receipted erasure path — callers must pass an
+   * authorisation object, and WORM collections additionally require that the
+   * content was crypto-shredded rather than deleted.
+   *
+   * @param {string} id
+   * @param {{actor:string, reason:string, requestId?:string, cryptoShredded?:boolean}} auth
+   */
+  erase(id, auth) {
+    if (!auth?.actor || !auth?.reason) {
+      throw new VaultError('forbidden', 'erasure requires a named actor and a stated reason');
+    }
+    if (this.worm && !auth.cryptoShredded) {
+      throw immutable(`${this.name} is WORM — content is removed by destroying its key, not by deletion`, { id });
+    }
+    const rec = this.records.get(id);
+    if (!rec) return false;
+    this._deindexDoc(rec);
+    this.records.delete(id);
+    this._append({ o: 'x', id, t: now(), r: auth.requestId || auth.reason });
+    this.compact();
+    this.db.onEvent({ type: 'storage.erased', collection: this.name, id, requestId: auth.requestId });
+    return true;
+  }
+
+  // -- persistence ---------------------------------------------------------
+
+  _serialise(op) {
+    if (op.d && this.encrypted && this.db.kms) {
+      const scope = this.keyScope(op.d);
+      const sealed = this.db.kms.seal(scope, JSON.stringify(op.d), op.id);
+      return JSON.stringify({ ...op, d: undefined, e: sealed });
+    }
+    return JSON.stringify(op);
+  }
+
+  _deserialise(line) {
+    const op = JSON.parse(line);
+    if (op.e) {
+      if (!this.db.kms) throw new VaultError('config', `${this.name} is encrypted but no key service is configured`);
+      try {
+        op.d = JSON.parse(this.db.kms.open(op.e));
+      } catch (e) {
+        if (e.code === 'crypto_shredded') return { ...op, o: 'x', d: undefined, shredded: true };
+        throw e;
+      }
+      delete op.e;
+    }
+    return op;
+  }
+
+  _append(op) {
+    this.opCount++;
+    if (!this.path) return;
+    appendFileSync(this.path, this._serialise(op) + '\n');
+  }
+
+  _load() {
+    if (!this.path || !existsSync(this.path)) return;
+    const raw = readFileSync(this.path, 'utf8');
+    for (const line of raw.split('\n')) {
+      if (!line.trim()) continue;
+      let op;
+      try { op = this._deserialise(line); } catch { continue; }
+      this.opCount++;
+      if (op.o === 'x' || op.shredded) { this.records.delete(op.id); continue; }
+      if (op.d) this.records.set(op.id, op.d);
+    }
+    for (const name of this.indexes.keys()) {
+      this.indexes.set(name, new Map());
+      for (const doc of this.records.values()) this._indexDoc(name, doc);
+    }
+  }
+
+  /** Rewrite the segment containing only live records. Returns bytes reclaimed. */
+  compact() {
+    if (!this.path || !existsSync(this.path)) return 0;
+    const before = statSync(this.path).size;
+    const tmp = `${this.path}.compact`;
+    mkdirSync(dirname(tmp), { recursive: true });
+    const lines = [];
+    for (const rec of this.records.values()) {
+      lines.push(this._serialise({ o: 'i', id: rec.id, t: rec._updated, d: rec }));
+    }
+    writeFileSync(tmp, lines.length ? lines.join('\n') + '\n' : '');
+    renameSync(tmp, this.path);
+    this.opCount = lines.length;
+    return Math.max(0, before - statSync(this.path).size);
+  }
+
+  bytesOnDisk() {
+    try { return this.path && existsSync(this.path) ? statSync(this.path).size : 0; } catch { return 0; }
+  }
+}

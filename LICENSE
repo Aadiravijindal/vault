@@ -1,0 +1,28 @@
+Copyright (c) 2026. All rights reserved.
+
+This software and its documentation are proprietary and confidential. No licence,
+express or implied, is granted by this file. Use, copying, modification, distribution
+or disclosure requires a written agreement with the copyright holder.
+
+NOTE FOR THE PROJECT OWNER
+--------------------------
+This is a placeholder so the repository is not published without any licence terms at
+all, which would leave its status ambiguous. Replace it before distributing, and
+decide two things while you do:
+
+  1. The commercial terms for the product itself.
+
+  2. The terms for `bin/vault-verify.js`. The product's proof story depends on that
+     file being independently auditable — the specification calls for a standalone
+     open-source verifier, so that an auditor can check the ledger without trusting
+     either the vendor or the operator. A permissive licence on that one file
+     (Apache-2.0 or MIT) supports that claim; keeping it proprietary undercuts it.
+     It imports nothing from src/ specifically so it can be carved out and published
+     on its own.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED,
+INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A
+PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT
+HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF
+CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE
+OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
