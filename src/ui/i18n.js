@@ -236,7 +236,11 @@ export function coverage() {
   const base = Object.keys(STRINGS.en);
   return Object.entries(LOCALES).map(([id, meta]) => {
     const table = STRINGS[id] || {};
-    const translated = base.filter((k) => table[k] != null && table[k] !== STRINGS.en[k]).length;
+    // Presence, not difference. "Vault" is "Vault" in German, and counting an
+    // identical-but-correct translation as missing made a fully translated
+    // locale permanently report 95% — which is the same dishonesty as the
+    // opposite error, just in the flattering direction.
+    const translated = base.filter((k) => table[k] != null).length;
     return {
       locale: id,
       name: meta.name,

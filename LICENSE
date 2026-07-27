@@ -1,24 +1,49 @@
+VAULT — LICENCE
+===============
+
 Copyright (c) 2026. All rights reserved.
 
 This software and its documentation are proprietary and confidential. No licence,
 express or implied, is granted by this file. Use, copying, modification, distribution
 or disclosure requires a written agreement with the copyright holder.
 
-NOTE FOR THE PROJECT OWNER
---------------------------
-This is a placeholder so the repository is not published without any licence terms at
-all, which would leave its status ambiguous. Replace it before distributing, and
-decide two things while you do:
+Customers licensed under such an agreement receive the rights set out in that
+agreement. Where this file and a signed agreement conflict, the signed agreement
+governs.
 
-  1. The commercial terms for the product itself.
 
-  2. The terms for `bin/vault-verify.js`. The product's proof story depends on that
-     file being independently auditable — the specification calls for a standalone
-     open-source verifier, so that an auditor can check the ledger without trusting
-     either the vendor or the operator. A permissive licence on that one file
-     (Apache-2.0 or MIT) supports that claim; keeping it proprietary undercuts it.
-     It imports nothing from src/ specifically so it can be carved out and published
-     on its own.
+THE VERIFIER IS DELIBERATELY CARVED OUT
+---------------------------------------
+
+`bin/vault-verify.js` is licensed separately under the Apache License 2.0. See
+LICENSE-verifier.
+
+This is not generosity, it is the product working as specified. Vault's central
+claim is that a customer can prove their record is intact without trusting the
+vendor. A verification program the vendor controls cannot support that claim: an
+auditor checking a ledger with a proprietary tool is still trusting us. So the
+verifier imports nothing from `src/`, can be extracted and published on its own,
+and is licensed so that anyone — a customer, their auditor, a regulator, a
+competitor — may read it, run it, fork it and satisfy themselves that it does
+what it says.
+
+If a future maintainer is tempted to bring the verifier back under the
+proprietary licence to protect something: whatever is being protected is worth
+less than the claim it would destroy.
+
+
+SOURCE AVAILABILITY AND ESCROW
+------------------------------
+
+The product ships as readable source with no build step and no runtime
+dependencies, so a licensed customer already holds everything needed to run it
+without the vendor. Escrow arrangements, where a customer requires one, are
+addressed in docs/legal/ESCROW.md — including why the usual escrow model is a
+weaker guarantee than what this architecture already provides.
+
+
+WARRANTY AND LIABILITY
+----------------------
 
 THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED,
 INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A
@@ -26,3 +51,18 @@ PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIG
 HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF
 CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE
 OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+Nothing in this paragraph limits liability that cannot lawfully be limited,
+including liability for death or personal injury caused by negligence, or for
+fraud. In a signed customer agreement, the liability terms of that agreement
+replace this paragraph entirely; see docs/legal/MSA-TERMS.md for the positions
+this product is built to be able to stand behind.
+
+
+A NOTE ON THE COMMERCIAL TERMS
+------------------------------
+
+Pricing, term, territory, permitted user counts and any open-source or
+source-available strategy are commercial decisions for the copyright holder to
+take with counsel. They are not encoded here, and no part of this repository
+should be read as having taken them.
