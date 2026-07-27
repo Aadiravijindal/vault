@@ -15,6 +15,7 @@
 import { Db } from './storage/db.js';
 import { Kms } from './storage/kms.js';
 import { TieringEngine } from './storage/tiers.js';
+import { createBucket, DRIVERS, HashOnlyBucket as HashOnlyBucketType } from './storage/buckets.js';
 import { Ledger, Witness } from './ledger/ledger.js';
 import { Archive } from './archive/archive.js';
 import { Extractor } from './extract/extract.js';
@@ -106,6 +107,11 @@ export class Vault {
       collection: this.db.collection('killswitch'),
       administrators
     });
+
+    // ---- bring your own bucket (§5.2) ------------------------------------
+    // Configured, not compiled in: a customer supplies driver + credentials and
+    // Vault writes there, verifying the write-through on every put.
+    this.bucket = options.bucket ? createBucket(options.bucket.driver, options.bucket) : null;
 
     // ---- storage tiering ------------------------------------------------
     this.tiering = new TieringEngine({
@@ -548,6 +554,40 @@ export class Vault {
   verifyLedger(range) { return this.ledger.verify(range); }
   exportAll(opts) { return this.continuity.export(opts); }
   coverage() { return coverageMap({ connected: this.connectors.all().map((c) => c.catalogId) }); }
+
+  /** Run the tiering lifecycle for real: hot → warm → cold → archive (§5.3). */
+  runStorageLifecycle({ actor, dryRun = false } = {}) {
+    if (!actor) throw new VaultError('forbidden', 'running the storage lifecycle requires a named actor');
+    const preview = this.tiering.previewLifecycle();
+    if (dryRun) return { dryRun: true, ...preview };
+    const result = this.tiering.runLifecycle();
+    this.ledger.append('admin.action', {
+      subject: 'storage', actor, action: 'storage.lifecycle_run',
+      moved: result.moved, heldBack: preview.moves.filter((m) => m.heldBack).length
+    });
+    return { ...result, heldBack: preview.moves.filter((m) => m.heldBack).length };
+  }
+
+  /** ⚙️ ADMIN → STORAGE. What Vault holds, where, and under whose keys. */
+  storage() {
+    return {
+      db: this.db.stats(),
+      tiers: this.tiering.costReport(),
+      lifecycle: this.tiering.previewLifecycle(),
+      keys: { mode: this.kms.mode, shredded: this.kms.inventory().filter((k) => k.shredded).length },
+      bucket: this.bucket
+        ? {
+          driver: this.bucket.config.driver || this.bucket.name,
+          bucket: this.bucket.config.bucket || this.bucket.config.container || null,
+          region: this.bucket.config.region ?? null,
+          immutability: this.bucket.config.objectLockMode || this.bucket.config.immutable || null,
+          contentLeavesTheEstate: !(this.bucket instanceof HashOnlyBucketType),
+          stats: this.bucket.stats
+        }
+        : { driver: 'vault-managed', note: 'no customer bucket configured — data is in Vault storage' },
+      driversAvailable: Object.keys(DRIVERS)
+    };
+  }
 
   /** ⚙️ ADMIN → MODULES. */
   moduleTable() { return this.modules.table(); }

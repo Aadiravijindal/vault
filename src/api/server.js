@@ -349,9 +349,9 @@ export class ApiServer {
     this.route('GET', '/api/admin/keys', R('admin', 'security'), () => ({ inventory: v.kms.inventory(), accessLog: v.kms.accessLog({ limit: 100 }) }));
     this.route('POST', '/api/admin/keys/:scope/rotate', R('admin', 'security'), ({ params, body, principal }) =>
       v.kms.rotate(decodeURIComponent(params.scope), { actor: principal.name, reason: body.reason }));
-    this.route('GET', '/api/admin/storage', R('admin', 'platform', 'finance'), () => ({
-      db: v.db.stats(), tiers: v.tiering.costReport(), lifecycle: v.tiering.previewLifecycle()
-    }));
+    this.route('GET', '/api/admin/storage', R('admin', 'platform', 'finance'), () => v.storage());
+    this.route('POST', '/api/admin/storage/lifecycle', R('admin', 'platform'), ({ body, principal }) =>
+      v.runStorageLifecycle({ ...body, actor: principal.name }));
     this.route('POST', '/api/admin/hygiene', R('admin', 'platform'), ({ body, principal }) =>
       v.runHygiene({ ...body, actor: principal.name }));
     this.route('GET', '/api/admin/continuity', ALL, () => v.continuity.commitments());
