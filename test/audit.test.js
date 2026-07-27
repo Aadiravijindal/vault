@@ -9,23 +9,49 @@
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
+import { readFileSync, rmSync, mkdtempSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { CHECKLIST } from '../src/audit/checklist.js';
 
 const BIN = fileURLToPath(new URL('../bin/vault-audit.js', import.meta.url));
-const run = (args = []) => {
+
+/**
+ * Run the audit and read its structured output.
+ *
+ * Deliberately NOT scraping stdout. Under parallel test load execFileSync can
+ * return a truncated pipe — which showed up here as an intermittent failure
+ * where the console dump stopped twelve items in while the audit itself had
+ * completed fine. The `--json` file is written in one call and is the audit's
+ * actual machine-readable contract, so assert on that and let the console
+ * output be for humans.
+ */
+function run(args = []) {
+  const dir = mkdtempSync(join(tmpdir(), 'vault-audit-'));
+  const jsonPath = join(dir, 'audit.json');
+  let code = 0;
+  let out = '';
   try {
-    return { code: 0, out: execFileSync(process.execPath, [BIN, ...args], { encoding: 'utf8' }) };
+    out = execFileSync(process.execPath, [BIN, ...args, '--json', jsonPath], { encoding: 'utf8', maxBuffer: 32 * 1024 * 1024 });
   } catch (e) {
-    return { code: e.status, out: String(e.stdout) };
+    code = e.status ?? -1;
+    out = String(e.stdout ?? '');
   }
-};
+  let report = null;
+  try { report = JSON.parse(readFileSync(jsonPath, 'utf8')); } catch { /* the audit may have died before writing */ }
+  rmSync(dir, { recursive: true, force: true });
+  return { code, out, report };
+}
 
 describe('the audit runs and covers the checklist', () => {
   test('every item is verified, or is explicitly organisational', () => {
-    const { code, out } = run(['--json', '/dev/null']);
-    assert.equal(code, 0, `the audit reported uncovered items:\n${out.replace(/\x1b\[[0-9;]*m/g, '')}`);
-    assert.match(out, /not covered\s+0/);
+    const { code, report } = run();
+    assert.ok(report, 'the audit did not produce a report');
+    assert.equal(report.totals.notCovered, 0,
+      `uncovered:\n  ${report.results.filter((r) => r.ok === false).map((r) => `${r.item} — ${r.evidence}`).join('\n  ')}`);
+    assert.equal(code, 0, 'and it must exit 0 when nothing is uncovered');
+    assert.equal(report.totals.verified + report.totals.organisational, report.totals.items);
   });
 
   test('a non-zero exit is the failure signal, so this can gate a release', () => {
@@ -62,14 +88,16 @@ describe('the audit runs and covers the checklist', () => {
 
 describe('the audit cannot be made to flatter itself', () => {
   test('organisational items are never counted as covered', () => {
-    const { out } = run([]);
-    const clean = out.replace(/\x1b\[[0-9;]*m/g, '');
-    const verified = Number(/verified in code\s+(\d+)/.exec(clean)[1]);
-    const organisational = Number(/organisational\s+(\d+)/.exec(clean)[1]);
+    const { report } = run();
     const total = CHECKLIST.flatMap((s) => s.items).length;
-    assert.equal(verified + organisational + Number(/not covered\s+(\d+)/.exec(clean)[1]), total);
-    assert.ok(organisational >= 10, 'certifications, pen tests and signed contracts must all land here');
-    assert.match(clean, /a program cannot grant itself a certification/);
+    assert.equal(report.totals.items, total);
+    assert.equal(report.totals.verified + report.totals.organisational + report.totals.notCovered, total);
+    assert.ok(report.totals.organisational >= 10, 'certifications, pen tests and signed contracts must all land here');
+    // An organisational item must carry ok:null — not true — in the machine
+    // output, because that file is what any downstream dashboard would read.
+    const org = report.results.filter((r) => r.kind === 'organisational');
+    assert.equal(org.length, report.totals.organisational);
+    assert.ok(org.every((r) => r.ok === null), 'an organisational item reported as ok:true would launder an opinion into a number');
   });
 
   test('the organisational list names the things a repository genuinely cannot do', () => {
@@ -84,8 +112,9 @@ describe('the audit cannot be made to flatter itself', () => {
     // that does not exist and confirm it reports a miss rather than passing.
     const fake = { kind: 'symbol', check: 'nothing.here.at.all' };
     assert.ok(fake.check.includes('nothing'));
-    const { out } = run(['--section', 'gate']);
-    assert.match(out.replace(/\x1b\[[0-9;]*m/g, ''), /✓|✗/, 'the section filter must still produce results');
+    const { report } = run(['--section', 'gate']);
+    assert.ok(report.results.length > 0, 'the section filter must still produce results');
+    assert.ok(report.results.every((r) => r.section === 'gate'));
   });
 
   test('behaviour checks really call the product, and a broken product fails them', () => {
