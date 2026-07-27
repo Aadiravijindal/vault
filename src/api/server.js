@@ -355,6 +355,49 @@ export class ApiServer {
     this.route('POST', '/api/admin/hygiene', R('admin', 'platform'), ({ body, principal }) =>
       v.runHygiene({ ...body, actor: principal.name }));
     this.route('GET', '/api/admin/continuity', ALL, () => v.continuity.commitments());
+
+    // ---- notifications, keys, metering, lifecycle -------------------------
+    this.route('GET', '/api/admin/notifications', R('admin', 'platform', 'security'), () => v.notifier.status());
+    this.route('POST', '/api/admin/notifications', R('admin', 'platform', 'security'), ({ body, principal }) =>
+      v.notifier.configure(body.channel, body.config ?? {}, { actor: principal.name, severityFloor: body.severityFloor }));
+    this.route('POST', '/api/admin/notifications/test', R('admin', 'platform', 'security'), ({ body, principal }) =>
+      v.notifier.notify({ kind: 'notification_test', severity: body.severity ?? 'medium', subject: 'test', detail: 'a test notification', actor: principal.name }, { force: true }));
+    this.route('POST', '/api/admin/notifications/preferences', ALL, ({ body, principal }) =>
+      v.notifier.setPreference(body.recipient ?? principal.name, { ...body, actor: principal.name }));
+
+    this.route('GET', '/api/admin/api-keys', R('admin', 'platform'), () => v.apiKeys.list());
+    this.route('POST', '/api/admin/api-keys', R('admin', 'platform'), ({ body, principal }) =>
+      v.apiKeys.issue({ ...body, actor: principal.name }));
+    this.route('POST', '/api/admin/api-keys/:id/revoke', R('admin', 'platform'), ({ params, body, principal }) =>
+      v.apiKeys.revoke(params.id, { actor: principal.name, reason: body.reason }));
+    this.route('GET', '/api/admin/rate-limits', R('admin', 'platform', 'security'), () => v.rateLimiter.stats());
+
+    this.route('GET', '/api/billing', R('admin', 'finance', 'platform'), ({ query }) => v.metering.dashboard(query));
+    this.route('GET', '/api/billing/usage', R('admin', 'finance', 'platform'), ({ query }) => v.metering.usage(query));
+    this.route('POST', '/api/billing/caps', R('admin', 'finance'), ({ body, principal }) =>
+      v.metering.setCaps(body, { actor: principal.name }));
+
+    this.route('GET', '/api/admin/imports', R('admin', 'platform'), () => v.bulkImport.all());
+    this.route('POST', '/api/admin/imports', R('admin', 'platform'), ({ body, principal }) =>
+      v.bulkImport.start({ ...body, actor: principal.name }));
+    this.route('POST', '/api/admin/imports/:id/feed', R('admin', 'platform'), ({ params, body }) =>
+      v.bulkImport.feed(params.id, body.records ?? [], { credential: body.credential }));
+    this.route('GET', '/api/admin/imports/:id', R('admin', 'platform'), ({ params }) => v.bulkImport.progress(params.id));
+    this.route('POST', '/api/admin/imports/:id/finish', R('admin', 'platform'), ({ params, principal }) =>
+      v.bulkImport.finish(params.id, { actor: principal.name }));
+
+    this.route('POST', '/api/admin/offboarding/plan', R('admin'), ({ body, principal }) =>
+      v.offboarding.plan({ actor: principal.name, reason: body.reason }));
+    this.route('POST', '/api/admin/offboarding/confirm', R('admin'), ({ body, principal }) =>
+      v.offboarding.confirm(body.plan, { actor: principal.name, secondApprover: body.secondApprover, confirm: body.confirm }));
+    this.route('GET', '/api/admin/offboarding', R('admin', 'legal'), () => v.offboarding.receipts());
+
+    this.route('POST', '/api/admin/storage/health', R('admin', 'platform'), async () => {
+      if (!v.bucket) return { configured: false, note: 'no customer bucket configured — data is in Vault storage' };
+      const health = await v.bucket.healthCheck();
+      const residency = await v.bucket.verifyResidency(v.bucket.config.region);
+      return { configured: true, health, residency };
+    });
     this.route('POST', '/api/admin/export', R('admin', 'platform', 'legal'), ({ body, principal }) => {
       const r = v.exportAll({ actor: principal.name, dir: body.dir, reason: body.reason });
       return { ...r, files: r.files ? Object.keys(r.files) : r.files };
@@ -393,6 +436,10 @@ export class ApiServer {
     for (const [t, p] of this.tokens) {
       if (constantTimeEqual(t, token)) return p;
     }
+    // Customer-side API keys are a first-class principal, not a second auth
+    // system: they resolve to the same roles §24 already enforces.
+    const viaKey = this.vault.apiKeys?.verify(token);
+    if (viaKey?.valid) return { ...viaKey.principal, rateLimitPerMinute: viaKey.rateLimitPerMinute };
     return null;
   }
 
@@ -413,6 +460,21 @@ export class ApiServer {
 
     const principal = this._principal(req);
     if (!principal) return this._json(res, 401, { error: 'unauthenticated', message: 'present a bearer token' });
+
+    // Rate limit AFTER identifying the caller, so one noisy integration cannot
+    // starve everyone else, and BEFORE doing any work. The kill switch and
+    // health are exempt: being unable to stop the system because you were
+    // throttled is worse than any flood.
+    const limit = this.vault.rateLimiter?.check(
+      principal.apiKeyId || principal.name || 'anonymous',
+      { path, limit: principal.rateLimitPerMinute ?? null }
+    );
+    if (limit && !limit.allowed) {
+      for (const [h, val] of Object.entries(limit.headers || {})) res.setHeader(h, val);
+      this._log(req, principal, 429, Date.now() - started);
+      return this._json(res, 429, { error: 'rate_limited', message: limit.reason, retryAfterMs: limit.retryAfterMs });
+    }
+    if (limit?.headers) for (const [h, val] of Object.entries(limit.headers)) res.setHeader(h, val);
 
     const match = this.routes.find((r) => r.method === req.method && r.rx.test(path));
     if (!match) return this._json(res, 404, { error: 'not_found', message: `no route for ${req.method} ${path}` });

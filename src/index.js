@@ -46,6 +46,10 @@ import { VaultInsure } from './insure/insure.js';
 import { ValueEngine } from './value/value.js';
 import { Continuity } from './continuity/continuity.js';
 import { ConnectorManager, Gateway } from './connectors/connectors.js';
+import { Notifier } from './notify/notify.js';
+import { Metering } from './billing/metering.js';
+import { BulkImport, Offboarding } from './lifecycle/lifecycle.js';
+import { RateLimiter, ApiKeyStore } from './api/ratelimit.js';
 import { coverageMap } from './connectors/catalog.js';
 import { now, iso } from './util/time.js';
 import { VaultError } from './util/errors.js';
@@ -183,6 +187,15 @@ export class Vault {
       ...privacyOpts
     });
 
+    // ---- notification delivery (§9.8) -------------------------------------
+    this.notifier = new Notifier({
+      ledger: this.ledger,
+      collection: this.db.collection('notifications'),
+      transport: options.notifyTransport ?? null
+    });
+    // Every alert raised anywhere now has a way out to a human.
+    this.alerts.subscribe((alert) => { this.notifier.notify(alert).catch(() => {}); });
+
     // ---- L3 extraction ----------------------------------------------------
     this.extractor = new Extractor();
 
@@ -290,6 +303,30 @@ export class Vault {
     });
 
     if (seedRules) this._seedRules();
+    // ---- metering, lifecycle, API protection -------------------------------
+    this.metering = new Metering({
+      registry: this.registry, facts: this.facts, tiering: this.tiering,
+      ledger: this.ledger, collection: this.db.collection('billing'),
+      rates: options.rates ?? {}, caps: options.caps ?? {}
+    });
+    this.bulkImport = new BulkImport({
+      ingest: (raw, ctx) => this.ingest(raw, ctx),
+      ledger: this.ledger,
+      collection: this.db.collection('import_jobs')
+    });
+    this.offboarding = new Offboarding({
+      vault: this, ledger: this.ledger,
+      collection: this.db.collection('offboarding'), signingKey
+    });
+    this.apiKeys = new ApiKeyStore({ collection: this.db.collection('api_keys'), ledger: this.ledger });
+    this.rateLimiter = new RateLimiter({
+      perMinute: options.apiRateLimitPerMinute ?? 600,
+      onLimit: ({ key, path }) => this.alerts.raise({
+        severity: 'low', kind: 'api_rate_limited', subject: key,
+        detail: `rate limit hit on ${path}`
+      })
+    });
+
     this.startedAt = now();
   }
 

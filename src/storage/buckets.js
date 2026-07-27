@@ -100,6 +100,64 @@ class BaseBucket {
     this.name = config.name || this.constructor.name;
     this.stats = { puts: 0, gets: 0, verifyFailures: 0, bytes: 0, errors: 0 };
   }
+  /**
+   * Prove the bucket works BEFORE the first real write.
+   *
+   * A misconfigured bucket that only fails on the first genuine put loses that
+   * record, or silently degrades to Vault storage. This does a round trip with
+   * a canary object and fails loudly with the specific permission that is
+   * missing, at setup time when someone is still watching.
+   */
+  async healthCheck({ deleteCanary = true } = {}) {
+    const key = `.vault-healthcheck/${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    const probe = JSON.stringify({ probe: 'vault-health', at: new Date().toISOString() });
+    const result = {
+      driver: this.name, at: iso(), write: false, read: false, roundTrip: false,
+      immutability: null, region: null, problems: []
+    };
+    try {
+      const put = await this.put(key, probe, { retention: '1d' });
+      result.write = true;
+      result.immutability = put.objectLock ?? put.immutability ?? null;
+      if (put.verified === false) result.problems.push({ check: 'write-through', detail: 'the provider returned a digest that does not match what we sent' });
+    } catch (e) {
+      result.problems.push({ check: 'write', detail: e.message, fix: 'grant PutObject (or the provider equivalent) to these credentials' });
+      return { ...result, ok: false };
+    }
+    try {
+      const back = await this.get(key);
+      result.read = true;
+      result.roundTrip = String(back).includes('vault-health');
+      if (!result.roundTrip) result.problems.push({ check: 'round-trip', detail: 'the object read back does not match what was written' });
+    } catch (e) {
+      // A write-only bucket is a legitimate configuration; say so rather than failing.
+      result.problems.push({ check: 'read', detail: e.message, fix: 'grant GetObject if Vault should read back; write-only is supported but disables restore' });
+    }
+    if (deleteCanary) {
+      try { await this._delete(key, { actor: 'system', reason: 'health check canary', requestId: 'healthcheck' }); }
+      catch { /* object-lock will refuse this, which is itself a good sign */ }
+    }
+    return { ...result, ok: result.write && result.problems.filter((p) => p.check !== 'read').length === 0 };
+  }
+
+  /**
+   * Residency check: the bucket's real region must match what was declared.
+   * Getting this wrong is a cross-border transfer, not a config typo.
+   */
+  async verifyResidency(declaredRegion) {
+    const actual = await this.region();
+    const matches = !declaredRegion || !actual || String(actual).toLowerCase().startsWith(String(declaredRegion).toLowerCase().split('-')[0]);
+    return {
+      declared: declaredRegion ?? null, actual: actual ?? null, matches,
+      detail: matches
+        ? 'the bucket is in the declared region'
+        : `the bucket reports region "${actual}" but residency was declared as "${declaredRegion}" — storing there would be a cross-border transfer`
+    };
+  }
+
+  /** Overridden per driver; null means the provider did not tell us. */
+  async region() { return this.config.region ?? null; }
+
   /** Vault never deletes customer objects outside a receipted erasure (§5.2). */
   async delete(key, auth) {
     if (!auth?.actor || !auth?.reason || !auth?.requestId) {
@@ -191,6 +249,24 @@ export class S3Bucket extends BaseBucket {
     const res = await this._fetch(url, { method: 'GET', headers: signed.headers });
     this.stats.gets++;
     return res.text();
+  }
+
+  /** S3 reports the bucket's true region, so residency is checked not assumed. */
+  async region() {
+    try {
+      const base = this.config.endpoint
+        ? `${this.config.endpoint.replace(/\/$/, '')}/${this.config.bucket}?location=`
+        : `https://${this.config.bucket}.s3.${this.config.region}.amazonaws.com/?location=`;
+      const signed = signV4({
+        method: 'GET', url: base, region: this.config.region,
+        accessKeyId: this.config.accessKeyId, secretAccessKey: this.config.secretAccessKey
+      });
+      const res = await fetch(base, { method: 'GET', headers: signed.headers });
+      if (!res.ok) return this.config.region ?? null;
+      const body = await res.text();
+      const m = /<LocationConstraint[^>]*>([^<]*)<\/LocationConstraint>/.exec(body);
+      return (m && m[1]) || 'us-east-1';
+    } catch { return this.config.region ?? null; }
   }
 
   async _delete(key, auth) {
