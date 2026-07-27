@@ -27,6 +27,7 @@
 import { readFileSync, readdirSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { randomBytes } from 'node:crypto';
 import { Vault } from '../src/index.js';
 import { Ledger } from '../src/ledger/ledger.js';
 import { ApiServer } from '../src/api/server.js';
@@ -50,10 +51,16 @@ const blue = (s) => `\x1b[34m${s}\x1b[0m`;
 
 // --- build a live instance to check behaviour against ----------------------
 const signingKey = Ledger.newSigningKey();
+// The chat apps refuse to construct without a secret, and the audit needs them
+// present to check them. Generated per run rather than written down: a literal
+// secret in a bin/ script is a bad pattern whatever its value, and the secret
+// scanner is right to say so — silencing it with an exemption would be the
+// wrong instinct in a repository whose whole argument is not doing that.
+const throwaway = randomBytes(24).toString('hex');
 const vault = new Vault({
   signingKey, administrators: ['ciso', 'cto'], seedRules: true,
-  slack: { signingSecret: 'audit-secret' },
-  teams: { securityToken: Buffer.from('audit').toString('base64') }
+  slack: { signingSecret: throwaway },
+  teams: { securityToken: Buffer.from(throwaway).toString('base64') }
 });
 const server = new ApiServer({ vault, requireAuth: false });
 const routes = new Set(server.routes.map((r) => `${r.method} ${r.pattern}`));
