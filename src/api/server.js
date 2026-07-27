@@ -322,8 +322,16 @@ export class ApiServer {
 
     // ---- ⚙️ ADMIN -------------------------------------------------------------
     this.route('GET', '/api/admin/modules', R('admin', 'platform', 'security'), () => v.moduleTable());
+    // `endpoint` is how a module gets connected over JSON — an adapter object
+    // has functions and cannot survive the wire. See ModuleRegistry#set.
     this.route('POST', '/api/admin/modules/:name', R('admin', 'platform'), ({ params, body, principal }) =>
-      v.setModule(params.name, body.state, { ...body, actor: principal.name }));
+      v.setModule(params.name, body.state, {
+        vendor: body.vendor ?? null,
+        endpoint: body.endpoint ?? null,
+        keepOwnCopy: body.keepOwnCopy,
+        reason: body.reason,
+        actor: principal.name
+      }));
     this.route('GET', '/api/admin/agents', R('admin', 'platform', 'security', 'department_head', 'risk'), () => v.registry.inventory());
     this.route('POST', '/api/admin/agents', R('admin', 'platform'), ({ body, principal }) =>
       v.registerAgent({ ...body, actor: principal.name }));

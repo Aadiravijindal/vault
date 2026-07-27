@@ -24,7 +24,10 @@ export class VaultTrace {
    * @param {import('../ledger/ledger.js').Ledger} opts.ledger
    * @param {import('../modules/modules.js').ModuleRegistry} [opts.modules]
    */
-  constructor({ spans, evals, ledger, modules = null }) {
+  constructor({ spans, evals, ledger, modules = null, state = null }) {
+    // 'active -> acknowledged -> resolved -> regressed, tracked' is not tracking
+    // if the lifecycle resets whenever the process does.
+    this._state = state;
     this.spans = spans;
     this.evalsCol = evals;
     this.ledger = ledger;
@@ -34,10 +37,19 @@ export class VaultTrace {
     this.spans.index('byParent', (s) => s.parentId);
     /** @type {Map<string, object>} open spans */
     this.open = new Map();
-    this.goldenSets = new Map();
-    this.issues = new Map();
+    this.goldenSets = new Map(Object.entries(state?.get('state')?.goldenSets ?? {}));
+    this.issues = new Map(Object.entries(state?.get('state')?.issues ?? {}));
     this.otelExporters = [];
   }
+
+  _persistState() {
+    this._state?.put({
+      id: 'state',
+      goldenSets: Object.fromEntries(this.goldenSets),
+      issues: Object.fromEntries(this.issues)
+    });
+  }
+
 
   // ==== tracing (§17.1) ==================================================
 
@@ -280,6 +292,7 @@ export class VaultTrace {
       cases: cases.map((c, i) => ({ id: `${name}-${i}`, ...c }))
     };
     this.goldenSets.set(set.id, set);
+    this._persistState();
     return set;
   }
 
@@ -458,6 +471,7 @@ export class VaultTrace {
       cluster: null
     };
     this.issues.set(issue.id, issue);
+    this._persistState();
     return issue;
   }
 

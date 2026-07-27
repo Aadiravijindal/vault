@@ -24,19 +24,52 @@ export class PrivacyMode {
    * @param {string} [opts.jurisdiction]
    * @param {boolean} [opts.enabled]
    */
-  constructor({ ledger, jurisdiction = null, enabled = false, kAnonymityFloor = 5, saltRotation = '30d' }) {
+  /**
+   * @param {object} opts
+   * @param {import('../storage/db.js').Collection} [opts.collection] durable state
+   *
+   * Employee Privacy Mode MUST survive a restart. Holding it in process memory
+   * means a redeploy silently switches it off: individual views come back, the
+   * k-anonymity floor disappears, pseudonymisation stops — an instant and
+   * invisible breach of the works agreement in every co-determination country.
+   * The pseudonymisation salt is persisted with it, because a new salt would
+   * silently re-pseudonymise everyone and break every existing token.
+   */
+  constructor({ ledger, collection = null, jurisdiction = null, enabled = false, kAnonymityFloor = 5, saltRotation = '30d' }) {
     this.ledger = ledger;
-    this.enabled = enabled;
-    this.jurisdiction = jurisdiction;
-    this.kFloor = kAnonymityFloor;
+    this.col = collection;
     this.saltRotationMs = duration(saltRotation);
-    this.salt = randomToken(24);
-    this.saltRotatedAt = now();
-    this.settings = enabled && jurisdiction ? jurisdictionPack(jurisdiction).settings : DEFAULT_OFF;
-    this.reidentifications = [];
-    this.objections = [];
-    this.worksCouncil = { members: [], notifications: [] };
-    this.changeLog = [];
+
+    const saved = this.col?.get('state') ?? null;
+    this.enabled = saved ? saved.enabled : enabled;
+    this.jurisdiction = saved ? saved.jurisdiction : jurisdiction;
+    this.kFloor = saved?.kFloor ?? kAnonymityFloor;
+    this.salt = saved?.salt ?? randomToken(24);
+    this.saltRotatedAt = saved?.saltRotatedAt ?? now();
+    this.settings = this.enabled && this.jurisdiction
+      ? jurisdictionPack(this.jurisdiction).settings
+      : DEFAULT_OFF;
+    this.reidentifications = saved?.reidentifications ?? [];
+    this.objections = saved?.objections ?? [];
+    this.worksCouncil = saved?.worksCouncil ?? { members: [], notifications: [] };
+    this.changeLog = saved?.changeLog ?? [];
+    if (!saved) this._persist();
+  }
+
+  /** Every mutator calls this; there is no other durable copy. */
+  _persist() {
+    this.col?.put({
+      id: 'state',
+      enabled: this.enabled,
+      jurisdiction: this.jurisdiction,
+      kFloor: this.kFloor,
+      salt: this.salt,
+      saltRotatedAt: this.saltRotatedAt,
+      reidentifications: this.reidentifications,
+      objections: this.objections,
+      worksCouncil: this.worksCouncil,
+      changeLog: this.changeLog
+    });
   }
 
   isOn() { return this.enabled; }
@@ -89,6 +122,7 @@ export class PrivacyMode {
     // Any change to monitoring-relevant settings notifies employee reps
     // automatically (§15.2).
     if (this.settings.changeNotification) this._notifyWorksCouncil({ actor, reason, change: record });
+    this._persist();
 
     return {
       enabled: this.enabled,
@@ -162,6 +196,7 @@ export class PrivacyMode {
     if (now() - this.saltRotatedAt > this.saltRotationMs) {
       this.salt = randomToken(24);
       this.saltRotatedAt = now();
+      this._persist();
     }
   }
 
@@ -183,6 +218,7 @@ export class PrivacyMode {
       jurisdiction: this.jurisdiction
     };
     this.reidentifications.push(record);
+    this._persist();
     this.ledger.append('privacy.reidentification', {
       subject: token, actor, approvers, legalReason,
       expiresAt: iso(record.expiresAt), jurisdiction: this.jurisdiction
@@ -303,6 +339,7 @@ export class PrivacyMode {
       status: 'open', dueAt: now() + 30 * DAY, response: null, respondedBy: null
     };
     this.objections.push(record);
+    this._persist();
     this.ledger.append('admin.action', { subject: factId, actor: actor || employee, action: 'privacy.objection_raised' });
     return { ...record, raisedAt: iso(record.raisedAt), dueAt: iso(record.dueAt) };
   }
@@ -317,6 +354,7 @@ export class PrivacyMode {
     o.respondedBy = actor;
     o.respondedAt = now();
     this.ledger.append('admin.action', { subject: o.factId, actor, action: 'privacy.objection_answered', outcome });
+    this._persist();
     return o;
   }
 
@@ -333,6 +371,7 @@ export class PrivacyMode {
   addWorksCouncilMember(name, { actor }) {
     if (!actor) throw forbidden('adding a works council member requires a named actor');
     this.worksCouncil.members.push({ name, addedAt: now(), addedBy: actor });
+    this._persist();
     this.ledger.append('admin.action', { subject: name, actor, action: 'privacy.works_council_member_added' });
     return this.worksCouncil.members;
   }
@@ -344,6 +383,7 @@ export class PrivacyMode {
       recipients: this.worksCouncil.members.map((m) => m.name)
     };
     this.worksCouncil.notifications.push(notice);
+    this._persist();
     return notice;
   }
 

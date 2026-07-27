@@ -37,7 +37,8 @@ export class Archive {
    * @param {import('../storage/tiers.js').TieringEngine} opts.tiering
    * @param {import('../modules/modules.js').ModuleRegistry} [opts.modules]
    */
-  constructor({ collection, reviews, ledger, tiering, modules = null, supervision = {} }) {
+  constructor({ collection, reviews, ledger, tiering, modules = null, supervision = {}, state = null }) {
+    this._state = state;
     this.col = collection;
     this.reviews = reviews;
     this.ledger = ledger;
@@ -58,10 +59,24 @@ export class Archive {
     /** @type {Map<string, number>} inverted index: token -> postings (built lazily) */
     this._index = new Map();
     this._indexedIds = new Set();
-    this.productions = new Map();
+    // A frozen production set whose record dies with the process cannot prove
+    // it was not altered after freezing, which is the entire point of freezing
+    // it. Same for gap reports: "we captured everything" is a claim you have to
+    // still be able to make next week.
+    const saved = this._state?.get('state') ?? null;
+    this.productions = new Map(Object.entries(saved?.productions ?? {}));
     /** Employee → accounts (§6.3 employee-to-account linking). */
-    this.identityLinks = new Map();
-    this.gapReports = [];
+    this.identityLinks = new Map(Object.entries(saved?.identityLinks ?? {}).map(([k, v]) => [k, new Set(v)]));
+    this.gapReports = saved?.gapReports ?? [];
+  }
+
+  _persistState() {
+    this._state?.put({
+      id: 'state',
+      productions: Object.fromEntries(this.productions),
+      identityLinks: Object.fromEntries([...this.identityLinks].map(([k, v]) => [k, [...v]])),
+      gapReports: this.gapReports
+    });
   }
 
   // -- capture -------------------------------------------------------------
@@ -395,6 +410,7 @@ export class Archive {
       frozen: true
     };
     this.productions.set(production.id, production);
+    this._persistState();
     this.ledger.append('production.frozen', {
       subject: production.id, actor, matter, items: items.length,
       withheld: production.privilegedWithheld.length, frozenHash: production.frozenHash
@@ -460,6 +476,7 @@ export class Archive {
       expected, actual, gap, complete: gap <= 0, at: iso()
     };
     this.gapReports.push(report);
+    this._persistState();
     if (gap > 0) {
       this.ledger.append('connector.gap', { subject: connector, expected, actual, gap, from: iso(from), to: iso(to) });
     }
@@ -471,6 +488,7 @@ export class Archive {
     const set = this.identityLinks.get(person) || new Set();
     for (const a of accounts) set.add(a);
     this.identityLinks.set(person, set);
+    this._persistState();
     return { person, accounts: [...set] };
   }
 

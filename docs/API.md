@@ -61,6 +61,24 @@ A literal path segment always beats a parameter at the same position, regardless
 registration order — so `/api/review/suggestions` is never swallowed by
 `/api/review/:id`. There is a test for it.
 
+### Connecting a module over the API
+
+An adapter is live functions and cannot cross the wire, so a module is connected with
+a declarative endpoint instead — which is what makes the toggle usable by someone who
+is not deploying code:
+
+```
+POST /api/admin/modules/archive
+{ "state": "connected", "vendor": "Smarsh",
+  "endpoint": { "url": "https://smarsh.example/api", "token": "…",
+                "paths": { "push": "/ingest" } } }
+```
+
+Each required operation becomes one POST to that endpoint. A partial adapter is
+allowed — push-only to an archive is a real integration — and the operations it does
+not implement are listed in `missingOps`, with Vault's own engine still covering them.
+Non-2xx queues the work and flips the module unhealthy; it drains when theirs returns.
+
 ### Errors
 
 `{ "error": "<code>", "message": "<plain language>", …context }`. **No error body ever
@@ -96,7 +114,8 @@ vault serve [--port 8080] [--data ./data]
 vault status | doctor | map | coverage
 vault agent register --name N --owner O --tech-owner T [--department d] [--folder f/]
 vault agent [list|show|credential|revoke|suspend|retire|attest] <id>
-vault golden [list|add "<claim>" --folder f --actor a --approver b]
+vault golden add "<claim>" --folder f --actor who --role CFO [--approver b]
+vault golden [list|due|verify|blast-radius|reattest] <id>
 vault ingest <file.json> [--credential vlt_…]
 vault ask "<query>" [--agent a-…]
 vault review [--folder sales/]

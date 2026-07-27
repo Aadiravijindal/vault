@@ -9,7 +9,9 @@ import { now, iso, ago, DAY, MONTH } from '../util/time.js';
 import { sha256 } from '../util/crypto.js';
 
 export class VaultInsure {
-  constructor({ registry, ledger, gate, review, folders, killswitch, comply, privacy, facts, modules = null, archive = null }) {
+  constructor({ registry, ledger, gate, review, folders, killswitch, comply, privacy, facts, modules = null, archive = null, state = null }) {
+    // A renewal reminder that resets on deploy is how a policy lapses.
+    this._state = state;
     this.registry = registry;
     this.ledger = ledger;
     this.gate = gate;
@@ -21,7 +23,7 @@ export class VaultInsure {
     this.facts = facts;
     this.modules = modules;
     this.archive = archive;
-    this.renewals = [];
+    this.renewals = state?.get('state')?.renewals ?? [];
     this.priorPacks = [];
   }
 
@@ -225,6 +227,7 @@ export class VaultInsure {
   /** Renewal calendar reminders (§20). */
   addRenewal({ policyName, carrier, renewalDate, contact = null }) {
     this.renewals.push({ policyName, carrier, renewalDate, contact });
+    this._state?.put({ id: 'state', renewals: this.renewals });
     return this.renewalCalendar();
   }
 

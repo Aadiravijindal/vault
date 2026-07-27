@@ -23,7 +23,10 @@ export class SearchEngine {
    * @param {import('../modules/modules.js').ModuleRegistry} [opts.modules]
    * @param {import('../ledger/ledger.js').Ledger} opts.ledger
    */
-  constructor({ facts, entities = null, archive = null, modules = null, ledger, k1 = 1.4, b = 0.72 }) {
+  constructor({ facts, entities = null, archive = null, modules = null, ledger, state = null, k1 = 1.4, b = 0.72 }) {
+    // Saved searches and their alerts are a shipped feature; losing them on
+    // restart makes the feature a lie.
+    this._state = state;
     this.facts = facts;
     this.entities = entities;
     this.archive = archive;
@@ -39,7 +42,7 @@ export class SearchEngine {
     this.indexed = new Set();
     /** External sources indexed with their own ACLs respected. */
     this.externalDocs = new Map();
-    this.savedSearches = new Map();
+    this.savedSearches = new Map(Object.entries(state?.get('state')?.savedSearches ?? {}));
     this.auditLog = [];
     this.version = 0;
   }
@@ -360,6 +363,7 @@ export class SearchEngine {
       createdAt: now(), lastRunAt: null, lastSeenIds: []
     };
     this.savedSearches.set(s.id, s);
+    this._state?.put({ id: 'state', savedSearches: Object.fromEntries(this.savedSearches) });
     return s;
   }
 

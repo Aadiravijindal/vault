@@ -21,7 +21,7 @@ vault agent register --name "Sales Copilot" \
       --owner dana --tech-owner sam \
       --department sales --folder sales/       # keep the credential it prints
 vault golden add "Maximum discount without Finance approval is 20%" \
-      --folder sales/pricing/ --actor cfo --approver ceo
+      --folder sales/pricing/ --actor cfo --role CFO --approver ceo
 vault rules backtest "no payment authority above $50k"   # before enabling anything
 vault doctor
 ```
@@ -89,15 +89,16 @@ immutable backups with separate credentials for ransomware.
 
 ```bash
 vault killswitch status
-vault killswitch engage 3 --reason "suspected poisoning in sales/"
-vault killswitch engage 4 --folder sales/ --reason "contained"
-vault killswitch release --reason "cleared"
+vault killswitch engage 3 --actor ciso --reason "suspected poisoning in sales/"
+vault killswitch engage 4 --actor ciso --folder sales/ --reason "contained"
+vault killswitch release --actor ciso --reason "cleared"
 vault killswitch test        # quarterly; the result goes in the ledger
 ```
 
 Six graduated levels — see [SECURITY.md](SECURITY.md). Activation target is under 60
 seconds for agents with transaction authority. In-flight writes are queued, not lost.
-Auto-expiry forces re-authorisation so nobody forgets it's on. Reachable from mobile
+Auto-expiry forces re-authorisation so nobody forgets it's on. The engaged level is
+persisted, so a redeploy never silently lifts a containment. Reachable from mobile
 and from an out-of-band channel, in case the main app is the problem.
 
 ## Monitoring
@@ -140,6 +141,11 @@ registration time.
 **`ledger verify` says TAMPERED with `signature_invalid`** — the data directory is
 being read with a different signing key than the one that wrote it. Check that
 `--data` points where you think, and that `signing-key.json` wasn't replaced.
+
+**A module went back to built-in on its own** — it did not; check that `--data` points
+at the directory the toggle was made in. Module state, the engaged kill-switch level,
+Employee Privacy Mode, legal holds, agent credentials and behavioural baselines are all
+persisted, so none of them reset on restart.
 
 **A rule won't compile** — the error lists every plain-language shape that does work,
 or write it directly in the expression DSL: `claim matches /refund/ and amount > 5000`.

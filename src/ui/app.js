@@ -605,8 +605,37 @@ ${Object.entries(p.method).map(([k, v2]) => `  ${k.padEnd(24)}${esc(v2)}`).join(
         body.innerHTML = '';
         body.append(card('Modules — built-in by default, bring-your-own by toggle', `
           ${table(['Module', 'State', 'Using', 'Action', 'Healthy', 'Vault keeps a copy'],
-            m.map((r) => [esc(r.module), esc(r.state), esc(r.using), `<span class="pill b">${esc(r.action)}</span>`, r.healthy ? '<span class="good">✓</span>' : '<span class="bad">✗</span>', r.keepOwnCopy ? '✓' : '—']))}
+            m.map((r) => [
+              esc(r.module), esc(r.state), esc(r.using),
+              r.noAlternative
+                ? '<span class="pill">—</span>'
+                : `<button class="ghost sm" data-mod="${esc(r.key)}" data-next="${esc(r.nextState)}" data-vendors="${esc((r.vendorOptions || []).join('|'))}">${esc(r.action)}</button>`
+                  + (r.rawState === 'builtin' ? '' : ` <button class="ghost sm" data-mod="${esc(r.key)}" data-next="both">Both</button>`),
+              r.healthy ? '<span class="good">✓</span>' : '<span class="bad">✗</span>',
+              r.keepOwnCopy ? '✓' : '—'
+            ]))}
           <p class="tiny dimmer" style="margin-top:12px">Switching a module never loses data. The gate is not a module — it runs in every configuration and cannot be toggled off.</p>`));
+        body.querySelectorAll('[data-mod]').forEach((b) => b.addEventListener('click', async () => {
+          const next = b.dataset.next;
+          const vendors = (b.dataset.vendors || '').split('|').filter(Boolean);
+          let vendor = null, endpoint = null;
+          if (next !== 'builtin') {
+            vendor = prompt(`Which tool should Vault use?${vendors.length ? `\n\n${vendors.join(' · ')}` : ''}`, vendors[0] || '');
+            if (!vendor) return;
+            const url = prompt(`Endpoint Vault should call for ${vendor}:`, 'https://');
+            if (!url || url === 'https://') return;
+            const token = prompt('Bearer token (leave blank if none):', '') || undefined;
+            endpoint = { url, token };
+          }
+          try {
+            await api(`/api/admin/modules/${encodeURIComponent(b.dataset.mod)}`, {
+              method: 'POST',
+              body: { state: next, vendor, endpoint, reason: 'toggled from the Admin screen' }
+            });
+            toast(`${b.dataset.mod} → ${next}`);
+            go('admin');
+          } catch (e) { toast(e.message, true); }
+        }));
       } else if (i === 1) {
         const p = await api('/api/admin/privacy');
         body.innerHTML = '';

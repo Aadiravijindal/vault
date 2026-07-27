@@ -131,7 +131,12 @@ export class Registry {
     }
     if (entry.revoked) return { valid: false, reason: 'revoked' };
     if (now() > entry.expiresAt) return { valid: false, reason: 'expired' };
-    if (presented && !constantTimeEqual(sha256(presented), entry.hash)) return { valid: false, reason: 'does not match' };
+    // A credential that is only checked when offered is not a credential: it
+    // makes knowing an agent id sufficient to write as that agent, which is the
+    // agent-impersonation case in the threat model. Once one has been issued,
+    // presenting it is mandatory.
+    if (!presented) return { valid: false, reason: 'not presented — this agent has a credential and must use it' };
+    if (!constantTimeEqual(sha256(presented), entry.hash)) return { valid: false, reason: 'does not match' };
     if (entry.origins.length && origin && !entry.origins.includes(origin)) {
       return { valid: false, reason: `presented from an unexpected origin (${origin})` };
     }

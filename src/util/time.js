@@ -5,6 +5,8 @@
  * "45 days later" in a demo is a real 45 days to every retention, decay and
  * temporal detector in the system.
  */
+import { VaultError } from './errors.js';
+
 
 let _now = () => Date.now();
 
@@ -37,7 +39,7 @@ export function duration(spec) {
   if (spec == null || spec === 'never' || spec === Infinity) return null;
   if (typeof spec === 'number') return spec;
   const m = /^(\d+(?:\.\d+)?)\s*(ms|mo|[smhdwy])$/.exec(String(spec).trim());
-  if (!m) throw new Error(`unparseable duration: ${spec}`);
+  if (!m) throw new VaultError('validation', `unparseable duration: ${spec}`, { expected: '30s, 15m, 4h, 7d, 2w, 6mo, 1y' });
   return Math.round(parseFloat(m[1]) * UNITS[m[2]]);
 }
 

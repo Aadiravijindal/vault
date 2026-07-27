@@ -37,14 +37,37 @@ export class LegalOps {
     this.tiering = tiering;
     this.search = search;
     this.signingKey = signingKey;
-    /** @type {Map<string, object>} */
-    this.holds = new Map();
-    this.receipts = [];
-    this.dsars = new Map();
-    this.privilegeLog = [];
+
+    // Holds, receipts and DSARs are durable records, not session state. A hold
+    // that evaporates on restart is a spoliation event: retention resumes
+    // deleting material the court told you to preserve, and nobody is told.
+    // Receipts must outlive the process that issued them or they prove nothing.
+    this._holdCol = db?.collection('legal_holds') ?? null;
+    this._receiptCol = db?.collection('legal_receipts') ?? null;
+    this._dsarCol = db?.collection('legal_dsars') ?? null;
+    this._privilegeCol = db?.collection('legal_privilege') ?? null;
+
+    /** @type {Map<string, object>} in-memory index over the durable collection */
+    this.holds = new Map((this._holdCol?.all() ?? []).map((h) => [h.id, h]));
+    this.receipts = (this._receiptCol?.all() ?? []).sort((a, b) => (a.at ?? 0) - (b.at ?? 0));
+    this.dsars = new Map((this._dsarCol?.all() ?? []).map((d) => [d.id, d]));
+    this.privilegeLog = this._privilegeCol?.all() ?? [];
+
+    // Rebuilt from the holds themselves, so it can never drift out of step.
+    this._conversationHolds = new Map();
+    for (const h of this.holds.values()) {
+      for (const cid of h.conversationIds || []) {
+        const list = this._conversationHolds.get(cid) || [];
+        list.push({ holdId: h.id, matter: h.matter, at: h.placedAt });
+        this._conversationHolds.set(cid, list);
+      }
+    }
+
     /** Third parties we propagate deletions to. */
     this.thirdParties = new Map();
   }
+
+  _saveHold(hold) { this._holdCol?.put({ ...hold }); return hold; }
 
   registerThirdParty(name, handler) {
     this.thirdParties.set(name, handler);
@@ -60,6 +83,18 @@ export class LegalOps {
   placeHold({ matter, scope, actor, reason, custodianNotice = true }) {
     if (!matter || !actor || !reason) {
       throw forbidden('a legal hold requires a matter, a named actor and a reason');
+    }
+    // A hold with no scope freezes nothing while reporting success — legal then
+    // believes material is preserved when it is not, and finds out at
+    // production. Refuse it loudly instead.
+    const SCOPES = ['person', 'entity', 'account', 'project', 'folder', 'dateRange', 'matter', 'channel'];
+    const given = scope && typeof scope === 'object'
+      ? SCOPES.filter((k) => scope[k] !== undefined && scope[k] !== null && scope[k] !== '')
+      : [];
+    if (!given.length) {
+      throw new VaultError('validation',
+        'a legal hold needs a scope — otherwise it would freeze nothing while reporting success',
+        { scopes: SCOPES, example: { person: 'Rodriguez, M.' } });
     }
     const targets = this._resolveScope(scope);
     const hold = {
@@ -90,6 +125,7 @@ export class LegalOps {
     }
 
     this.holds.set(hold.id, hold);
+    this._saveHold(hold);
     const receipt = this._receipt('legal_hold_placed', {
       holdId: hold.id, matter, actor, reason,
       counts: { facts: hold.factIds.length, conversations: hold.conversationIds.length, folders: hold.folders.length }
@@ -120,7 +156,6 @@ export class LegalOps {
     // WORM: we keep hold state in a side index, never by mutating the sealed record.
     const c = this.archive.get(conversationId);
     if (!c) return;
-    if (!this._conversationHolds) this._conversationHolds = new Map();
     const list = this._conversationHolds.get(conversationId) || [];
     list.push({ holdId: hold.id, matter: hold.matter, at: now() });
     this._conversationHolds.set(conversationId, list);
@@ -141,6 +176,7 @@ export class LegalOps {
     hold.liftedAt = now();
     hold.liftedBy = actor;
     hold.liftAuthoriser = authoriser;
+    this._saveHold(hold);
     hold.liftReason = reason;
 
     let released = 0;
@@ -224,7 +260,7 @@ export class LegalOps {
 
   _custodianNotice(hold) {
     return {
-      to: hold.scope.person || hold.scope.entity || 'custodian',
+      to: hold.scope?.person || hold.scope?.entity || hold.scope?.account || 'custodian',
       matter: hold.matter,
       issuedAt: iso(),
       text: `A litigation hold has been placed in connection with ${hold.matter}. Material within its scope must be preserved. `
@@ -240,6 +276,14 @@ export class LegalOps {
    * misses them isn't fulfilled.
    */
   discover(subject) {
+    // A wrongly-shaped subject used to match nothing and return an empty
+    // result, which on the erasure path reads as "this person has no data" —
+    // the one false negative that turns into an unfulfilled request.
+    if (typeof subject !== 'string' || !subject.trim()) {
+      throw new VaultError('validation',
+        'a subject must be a name or an entity id — an empty match here would read as "nothing to erase"',
+        { received: typeof subject });
+    }
     const facts = this.facts.all().filter((f) => (f.entities || []).some((e) => e.name === subject || e.id === subject));
     const conversations = this.archive ? this.archive.conversationsForPerson(subject) : [];
     const derived = facts.flatMap((f) => f.derivedFacts || []);
@@ -505,6 +549,7 @@ export class LegalOps {
       verify: 'vault ledger verify --receipt <proof>'
     };
     this.receipts.push(receipt);
+    this._receiptCol?.put({ ...receipt, id: receipt.id ?? receipt.proof });
     return receipt;
   }
 
@@ -516,6 +561,7 @@ export class LegalOps {
       signature: this.signingKey?.privateKeyPem ? signMessage(this.signingKey.privateKeyPem, proof) : null
     };
     this.receipts.push(receipt);
+    this._receiptCol?.put({ ...receipt, id: receipt.id ?? receipt.proof });
     return receipt;
   }
 
@@ -554,6 +600,7 @@ export class LegalOps {
       response: null
     };
     this.dsars.set(dsar.id, dsar);
+    this._dsarCol?.put({ ...dsar });
     this.ledger.append('privacy.dsar', { subject, actor, dsarId: dsar.id, regime, kind, dueAt: iso(dsar.dueAt) });
     return dsar;
   }
@@ -660,6 +707,7 @@ export class LegalOps {
     }
     const entry = { id, matter, actor, reason, at: now(), kind: fact ? 'fact' : 'conversation' };
     this.privilegeLog.push(entry);
+    this._privilegeCol?.put({ ...entry, id: entry.id ?? newId('priv') });
     this.ledger.append('legal.privilege_tagged', { subject: id, actor, matter, reason });
     return entry;
   }

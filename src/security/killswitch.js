@@ -27,17 +27,42 @@ export class KillSwitch {
    * @param {string[]} opts.administrators named administrator role (an RFP question)
    * @param {(e:object)=>void} [opts.onChange]
    */
-  constructor({ ledger, administrators = [], onChange = () => {}, defaultExpiry = '4h' }) {
+  /**
+   * @param {import('../storage/db.js').Collection} [opts.collection]
+   *
+   * The engaged level is persisted. A kill switch that resets to 0 on restart
+   * silently lifts a containment nobody chose to lift, and the queued writes it
+   * was holding are lost with it. The quarterly test record is persisted for a
+   * different reason: the insurance pack cites "last tested", and an evidence
+   * pack that resets every deploy is worse than none.
+   */
+  constructor({ ledger, collection = null, administrators = [], onChange = () => {}, defaultExpiry = '4h' }) {
     this.ledger = ledger;
-    this.administrators = new Set(administrators);
+    this.col = collection;
     this.onChange = onChange;
     this.defaultExpiry = duration(defaultExpiry);
-    this.current = { level: 0, scope: null, engagedAt: null, engagedBy: null, reason: null, expiresAt: null };
+
+    const saved = this.col?.get('state') ?? null;
+    this.administrators = new Set(saved?.administrators ?? administrators);
+    for (const a of administrators) this.administrators.add(a);
+    this.current = saved?.current ?? { level: 0, scope: null, engagedAt: null, engagedBy: null, reason: null, expiresAt: null };
     /** In-flight writes are queued, not lost (§16.1). */
-    this.queue = [];
-    this.history = [];
-    this.tests = [];
-    this.activationTimes = [];
+    this.queue = saved?.queue ?? [];
+    this.history = saved?.history ?? [];
+    this.tests = saved?.tests ?? [];
+    this.activationTimes = saved?.activationTimes ?? [];
+  }
+
+  _persist() {
+    this.col?.put({
+      id: 'state',
+      current: this.current,
+      administrators: [...this.administrators],
+      queue: this.queue,
+      history: this.history,
+      tests: this.tests,
+      activationTimes: this.activationTimes
+    });
   }
 
   addAdministrator(name, { actor }) {
@@ -45,6 +70,7 @@ export class KillSwitch {
       throw forbidden('only a named administrator may add another administrator');
     }
     this.administrators.add(name);
+    this._persist();
     this.ledger.append('admin.action', { subject: name, actor, action: 'killswitch.administrator_added' });
     return [...this.administrators];
   }
@@ -75,6 +101,7 @@ export class KillSwitch {
     const activationMs = Number(process.hrtime.bigint() - started) / 1e6;
     this.activationTimes.push(activationMs);
     this.history.push({ ...this.current, activationMs });
+    this._persist();
 
     this.ledger.append('killswitch.engaged', {
       subject: scope ? JSON.stringify(scope) : 'global', actor, level, label: spec.label,
@@ -97,6 +124,7 @@ export class KillSwitch {
     }
     const prev = { ...this.current };
     this.current = { level: 0, scope: null, engagedAt: null, engagedBy: null, reason: null, expiresAt: null };
+    this._persist();
     this.ledger.append('killswitch.released', {
       subject: prev.scope ? JSON.stringify(prev.scope) : 'global', actor, reason,
       previousLevel: prev.level, heldForMs: prev.engagedAt ? now() - prev.engagedAt : 0
@@ -111,6 +139,7 @@ export class KillSwitch {
     if (this.current.level > 0 && this.current.expiresAt && now() > this.current.expiresAt) {
       const expired = { ...this.current };
       this.current = { level: 0, scope: null, engagedAt: null, engagedBy: null, reason: null, expiresAt: null, expiredFrom: expired.level };
+      this._persist();
       this.ledger.append('killswitch.released', {
         subject: 'global', actor: 'system', reason: 'auto-expired — re-authorisation required to re-engage',
         previousLevel: expired.level
@@ -163,11 +192,13 @@ export class KillSwitch {
   /** Queue a write rather than losing it. */
   enqueue(item) {
     this.queue.push({ ...item, queuedAt: now(), id: newId('session') });
+    this._persist();
     return { queued: true, position: this.queue.length };
   }
 
   drain() {
     const items = this.queue.splice(0, this.queue.length);
+    this._persist();
     return items;
   }
 
@@ -202,6 +233,7 @@ export class KillSwitch {
       passed: engagedMs < 60_000
     };
     this.tests.push(record);
+    this._persist();
     this.ledger.append('admin.action', { subject: 'killswitch', actor, action: 'killswitch.tested', ...record, at: undefined });
     return { ...record, at: iso(record.at) };
   }

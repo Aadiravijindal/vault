@@ -245,6 +245,9 @@ export class Gate {
       maskedClaim: c4.masked,
       piiFindings: c4.findings,
       instructionScore: c7.score,
+      // Explicit, so callers never have to infer "was this instruction-shaped?"
+      // from a score threshold — the ensemble already decided.
+      instruction: { detected: c7.verdict !== 'clean', score: c7.score, signals: c7.signals ?? [] },
       channelTrust: c2.trust,
       reconciliation: c9,
       consentBasis: c10.basis,

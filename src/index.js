@@ -89,7 +89,11 @@ export class Vault {
     });
 
     // ---- modules (built-in / connected / both) --------------------------
-    this.modules = new ModuleRegistry({ ledger: this.ledger, config: moduleConfig });
+    this.modules = new ModuleRegistry({
+      ledger: this.ledger,
+      collection: this.db.collection('modules'),
+      config: moduleConfig
+    });
 
     // ---- alerts, kill switch --------------------------------------------
     this.alerts = new AlertManager({
@@ -97,7 +101,11 @@ export class Vault {
       cases: this.db.collection('cases'),
       ledger: this.ledger
     });
-    this.killswitch = new KillSwitch({ ledger: this.ledger, administrators });
+    this.killswitch = new KillSwitch({
+      ledger: this.ledger,
+      collection: this.db.collection('killswitch'),
+      administrators
+    });
 
     // ---- storage tiering ------------------------------------------------
     this.tiering = new TieringEngine({
@@ -109,6 +117,7 @@ export class Vault {
     this.archive = new Archive({
       collection: this.db.collection('conversations', { worm: true }),
       reviews: this.db.collection('supervision_reviews'),
+      state: this.db.collection('archive_state'),
       ledger: this.ledger,
       tiering: this.tiering,
       modules: this.modules
@@ -162,7 +171,11 @@ export class Vault {
     };
 
     // ---- privacy ----------------------------------------------------------
-    this.privacy = new PrivacyMode({ ledger: this.ledger, ...privacyOpts });
+    this.privacy = new PrivacyMode({
+      ledger: this.ledger,
+      collection: this.db.collection('privacy'),
+      ...privacyOpts
+    });
 
     // ---- L3 extraction ----------------------------------------------------
     this.extractor = new Extractor();
@@ -195,7 +208,8 @@ export class Vault {
     // ---- L7 read path, search --------------------------------------------
     this.search = new SearchEngine({
       facts: this.facts, entities: this.entities, archive: this.archive,
-      modules: this.modules, ledger: this.ledger
+      modules: this.modules, ledger: this.ledger,
+      state: this.db.collection('search_state')
     });
     this.readPath = new ReadPath({
       facts: this.facts, folders: this.folders, search: this.search, registry: this.registry,
@@ -228,7 +242,8 @@ export class Vault {
       spans: this.db.collection('spans'),
       evals: this.db.collection('eval_runs'),
       ledger: this.ledger,
-      modules: this.modules
+      modules: this.modules,
+      state: this.db.collection('observability_state')
     });
 
     // ---- L10 governance ---------------------------------------------------
@@ -241,7 +256,8 @@ export class Vault {
     this.insure = new VaultInsure({
       registry: this.registry, ledger: this.ledger, gate: this.gate, review: this.review,
       folders: this.folders, killswitch: this.killswitch, comply: this.comply,
-      privacy: this.privacy, facts: this.facts, modules: this.modules, archive: this.archive
+      privacy: this.privacy, facts: this.facts, modules: this.modules, archive: this.archive,
+      state: this.db.collection('insure_state')
     });
     this.value = new ValueEngine({
       facts: this.facts, folders: this.folders, entities: this.entities, registry: this.registry,
@@ -338,6 +354,7 @@ export class Vault {
 
     // ---- L4: the gate, per candidate -------------------------------------
     const results = [];
+    const verdicts = [];
     for (const candidate of candidates) {
       // Folders build themselves as facts arrive (§11.1). Creating it BEFORE the
       // gate matters: otherwise the wall check resolves to the nearest existing
@@ -381,8 +398,29 @@ export class Vault {
         verdict.reasons.push('auto-approved by a human-enabled pattern rule');
       }
 
-      const result = this._applyVerdict(candidate, verdict, gateCtx, conversation);
-      results.push(result);
+      verdicts.push({ candidate, verdict, gateCtx });
+    }
+
+    // A message that carries an instruction is a compromised source, so nothing
+    // extracted from it is trustworthy — not even the sentences that look
+    // innocent. Holding only the payload is exactly the split-message attack:
+    // bundle the poison with the fact you actually want planted, let the poison
+    // be caught, and the fact lands. Contaminate the whole conversation instead.
+    const contaminated = verdicts.find(({ verdict }) => verdict.instruction?.detected);
+    if (contaminated) {
+      for (const item of verdicts) {
+        if (item.verdict.outcome === 'pass' || item.verdict.outcome === 'mask') {
+          item.verdict.outcome = 'hold';
+          item.verdict.reasons.push(
+            'another part of this same message was instruction-shaped — everything extracted from it is held together, '
+            + 'because splitting poison across a message is how a benign-looking fact gets planted'
+          );
+        }
+      }
+    }
+
+    for (const { candidate, verdict, gateCtx } of verdicts) {
+      results.push(this._applyVerdict(candidate, verdict, gateCtx, conversation));
     }
 
     if (agent) {

@@ -967,19 +967,23 @@ describe('the API and MCP surfaces', () => {
       const unreachable = [];
       for (const p of paths) {
         const [method, path] = p.split(' ');
-        let best = 0;
+        let worst = null;
         for (const token of tokens) {
           const res = await fetch(`http://127.0.0.1:${port}${path}`, {
             method,
             headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
             body: method === 'POST' ? '{}' : undefined
           });
-          // 4xx that isn't 404/403 means the route exists and merely disliked
-          // the empty body — that is reachability, which is what we're testing.
-          if (res.status !== 404 && res.status !== 403) { best = res.status; break; }
-          best = res.status;
+          const body = await res.json().catch(() => ({}));
+          // Distinguish "the router has no such route" from "the handler ran and
+          // did not like an empty body" — only the first is a dead screen. A
+          // handler's own 404 means the route matched, which is what we test.
+          const noRoute = res.status === 404 && /no route for/.test(body.message || '');
+          if (!noRoute && res.status !== 403) { worst = null; break; }
+          worst = noRoute ? 'no such route' : 'forbidden for every role';
+          if (res.status >= 500) worst = `server error ${res.status}`;
         }
-        if (best === 404 || best === 403) unreachable.push(`${p} → ${best}`);
+        if (worst) unreachable.push(`${p} → ${worst}`);
       }
       assert.deepEqual(unreachable, [], 'a screen that calls a route nobody can reach is a dead screen');
     } finally { await server.close(); }
@@ -1030,6 +1034,75 @@ describe('the API and MCP surfaces', () => {
 });
 
 // ═══════════════════════════════════════════════════════════════════════════
+describe('defects found by sweeping every surface', () => {
+  test('a legal hold with no scope is refused, not silently empty', () => {
+    const { v } = company();
+    // Worse than an error: legal believes material is preserved, and finds out
+    // at production that the hold froze nothing.
+    assert.throws(() => v.legal.placeHold({ matter: 'Case 1', actor: 'gc', reason: 'litigation' }), /needs a scope/i);
+    assert.throws(() => v.legal.placeHold({ matter: 'Case 1', scope: {}, actor: 'gc', reason: 'x' }), /needs a scope/i);
+    const ok = v.legal.placeHold({ matter: 'Case 1', scope: { person: 'Marcus Chen' }, actor: 'gc', reason: 'litigation' });
+    assert.ok(ok.id);
+    assert.equal(ok.custodianNotice.to, 'Marcus Chen');
+  });
+
+  test('a mistyped jurisdiction is a 400 with the list, not a 500', () => {
+    const { v } = company();
+    let e;
+    try { v.privacyPreview('atlantis'); } catch (caught) { e = caught; }
+    assert.ok(e, 'it must reject an unknown preset');
+    assert.equal(e.status, 404, 'a typed error, so the API maps it to 4xx rather than 500');
+    assert.ok(e.meta.available.includes('uk'), 'the error should tell you what does exist');
+  });
+
+  test('a module can be connected over JSON, which is the only way the UI can do it', () => {
+    const { v } = company();
+    const row = () => v.moduleTable().find((r) => r.key === 'archive');
+    assert.equal(row().rawState, 'builtin');
+    assert.equal(row().nextState, 'connected');
+
+    // No adapter object — a UI only ever has JSON.
+    v.setModule('archive', 'connected', { vendor: 'Smarsh', endpoint: { url: 'https://smarsh.example/api' }, actor: 'admin', reason: 'test' });
+    assert.equal(row().rawState, 'connected');
+    assert.equal(row().using, 'Smarsh');
+    assert.equal(row().nextState, 'builtin');
+    assert.ok(row().vendorOptions.includes('Smarsh'), 'the row carries what to offer');
+
+    // A never-connected module has no adapter to fall back on, so these are the
+    // errors a first-time operator actually meets.
+    const fresh = company().v;
+    assert.throws(() => fresh.setModule('search', 'connected', { vendor: 'X', actor: 'admin' }), /endpoint Vault can call/);
+    assert.throws(() => fresh.setModule('search', 'connected', { vendor: 'X', endpoint: { url: 'ftp://x/' }, actor: 'admin' }), /http or https/);
+    assert.throws(() => fresh.setModule('search', 'connected', { vendor: 'X', adapter: { nope: () => {} }, actor: 'admin' }), /implements none/);
+    // Re-toggling keeps the endpoint already configured — you do not retype it.
+    v.setModule('archive', 'builtin', { actor: 'admin' });
+    assert.equal(v.setModule('archive', 'both', { actor: 'admin' }).state, 'both');
+  });
+
+  test('a partial adapter is allowed, but its gaps are published and covered', () => {
+    const { v } = company();
+    v.setModule('archive', 'connected', { vendor: 'Smarsh', adapter: { push: () => ({ ok: true }) }, actor: 'admin' });
+    const d = v.modules.describe('archive');
+    assert.deepEqual(d.missingOps, ['fetch', 'search']);
+    assert.match(d.coveredByBuiltIn, /does not do fetch, search/);
+    assert.equal(v.modules.useBuiltin('archive', 'search'), true, "Vault's engine covers what theirs does not");
+    assert.equal(v.modules.useBuiltin('archive', 'push'), true, 'keepOwnCopy still applies');
+  });
+
+  test('an async adapter failure reaches the backlog instead of looking healthy', async () => {
+    const { v } = company();
+    v.setModule('archive', 'connected', {
+      vendor: 'Flaky', actor: 'admin',
+      adapter: { push: () => Promise.reject(new Error('their end is down')), fetch: () => null, search: () => [] }
+    });
+    await v.modules.dispatch('archive', 'push', { id: 'c-1' });
+    const d = v.modules.describe('archive');
+    assert.equal(d.healthy, false, 'a rejected promise must not read as success');
+    assert.equal(d.backlog, 1, 'and the work must be queued, not dropped');
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
 describe('persistence and self-check', () => {
   test('a vault reloads from disk with its chain intact', () => {
     const dir = tmp();
@@ -1058,6 +1131,104 @@ describe('persistence and self-check', () => {
     assert.equal(d.checks.factIntegrity, true);
     assert.equal(d.checks.consistency, true);
     assert.ok(d.problems.some((p) => p.area === 'continuity'), 'it should still tell you the mirror is off');
+  });
+
+  test('Employee Privacy Mode survives a restart', () => {
+    const dir = tmp();
+    try {
+      const signingKey = Ledger.newSigningKey();
+      const v1 = new Vault({ dir, signingKey, seedRules: false });
+      v1.applyPrivacyMode('de', { actor: 'ciso', reason: 'works agreement signed' });
+      v1.privacy.objection({ employee: 'sarah', factId: 'f-1', objection: 'this is wrong about me' });
+      const pseudo = v1.privacy.pseudonymise('sarah');
+      v1.close();
+
+      // In memory, a redeploy silently switched this off: individual views came
+      // back and the k-anonymity floor vanished, with nobody told.
+      const v2 = new Vault({ dir, signingKey, seedRules: false });
+      assert.equal(v2.privacy.isOn(), true);
+      assert.equal(v2.privacy.status().jurisdiction, 'de');
+      assert.equal(v2.privacy.kFloor, 10, 'the German floor, not the default 5');
+      assert.throws(() => v2.privacy.individualActivity(), /does not exist/);
+      assert.equal(v2.privacy.objectionQueue().length, 1, "an employee's objection is a durable record");
+      assert.equal(v2.privacy.pseudonymise('sarah'), pseudo, 'a new salt would break every existing token');
+    } finally { rmSync(dir, { recursive: true, force: true }); }
+  });
+
+  test('a legal hold survives a restart — losing one is a spoliation event', () => {
+    const dir = tmp();
+    try {
+      const signingKey = Ledger.newSigningKey();
+      const v1 = new Vault({ dir, signingKey, seedRules: false });
+      v1.registerAgent({ id: 'a-1', name: 'a', purpose: 'p', businessOwner: 'O', technicalOwner: 'T', department: 'sales', mode: 'inline', folders: ['sales/'] });
+      const cred = v1.issueCredential('a-1', {}).credential;
+      v1.consent.record({ subject: 'Marcus Chen', basis: 'contract', purpose: 'memory_governance', actor: 'legal' });
+      write(v1, cred, 'Marcus Chen is the CTO at Acme Corp.');
+      const hold = v1.legal.placeHold({ matter: 'Case 2026-114', scope: { person: 'Marcus Chen' }, actor: 'gc', reason: 'litigation' });
+      const receipts = v1.legal.listReceipts().length;
+      v1.close();
+
+      const v2 = new Vault({ dir, signingKey, seedRules: false });
+      assert.equal(v2.legal.activeHolds().length, 1, 'retention would otherwise resume deleting held material');
+      assert.equal(v2.legal.holds.get(hold.id).matter, 'Case 2026-114');
+      assert.equal(v2.legal.listReceipts().length, receipts, 'a receipt that dies with the process proves nothing');
+      // and the restored hold still surfaces the delete-vs-keep conflict
+      const plan = v2.legal.erasurePlan('Marcus Chen');
+      assert.ok(JSON.stringify(plan).includes('Case 2026-114'), 'the conflict must still surface after a restart');
+      // a wrongly-shaped subject must complain, never quietly find nothing
+      assert.throws(() => v2.legal.erasurePlan({ subject: 'Marcus Chen' }), /must be a name or an entity id/);
+    } finally { rmSync(dir, { recursive: true, force: true }); }
+  });
+
+  test('a connected module stays connected across a restart', () => {
+    const dir = tmp();
+    try {
+      const signingKey = Ledger.newSigningKey();
+      const v1 = new Vault({ dir, signingKey, seedRules: false });
+      v1.setModule('archive', 'connected', { vendor: 'Smarsh', endpoint: { url: 'https://smarsh.example/api' }, actor: 'admin', reason: 'archive of record' });
+      v1.close();
+
+      // Otherwise Vault quietly stops pushing to the archive of record.
+      const v2 = new Vault({ dir, signingKey, seedRules: false });
+      const row = v2.moduleTable().find((r) => r.key === 'archive');
+      assert.equal(row.rawState, 'connected');
+      assert.equal(row.using, 'Smarsh');
+      // rebuilt from the stored endpoint, since functions cannot be serialised
+      assert.equal(typeof v2.modules.get('archive').adapter?.push, 'function');
+      assert.equal(v2.setModule('archive', 'builtin', { actor: 'admin' }).state, 'builtin');
+    } finally { rmSync(dir, { recursive: true, force: true }); }
+  });
+
+  test('nothing a customer configured is lost across a restart', () => {
+    const dir = tmp();
+    try {
+      const signingKey = Ledger.newSigningKey();
+      const v1 = new Vault({ dir, signingKey, administrators: ['ciso'], seedRules: false });
+      v1.registerAgent({ id: 'a-1', name: 'a', purpose: 'p', businessOwner: 'O', technicalOwner: 'T', department: 'sales', mode: 'inline', folders: ['sales/'] });
+      const cred = v1.issueCredential('a-1', {}).credential;
+      write(v1, cred, 'Globex has 340 seats provisioned.');
+
+      v1.killswitch.test({ actor: 'ciso', level: 3 });
+      v1.killswitch.engage(3, { actor: 'ciso', reason: 'suspected poisoning' });
+      v1.search.save('watch Acme', 'Acme', {}, { actor: 'dana', alert: true });
+      v1.insure.addRenewal({ policyName: 'Cyber', carrier: 'Acme Insurance', renewalDate: '2027-01-01', contact: 'broker' });
+      v1.comply.openAuditSession({ auditor: 'ext-auditor', scope: 'controls', purpose: 'ISO 42001 audit', actor: 'ciso' });
+      v1.close();
+
+      const v2 = new Vault({ dir, signingKey, administrators: ['ciso'], seedRules: false });
+      // A containment that lifts itself because someone deployed is the worst
+      // of these: writes resume with nobody told.
+      assert.equal(v2.killswitch.state().level, 3, 'an engaged kill switch must survive a restart');
+      assert.equal(v2.killswitch.state().engagedBy, 'ciso');
+      assert.equal(v2.killswitch.tests.length, 1, 'the insurance pack cites "last tested"');
+      assert.equal(v2.search.savedSearchList().length, 1, 'saved searches are a shipped feature');
+      assert.equal(v2.insure.renewalCalendar().length, 1, 'a renewal reminder that resets is how a policy lapses');
+      assert.equal(v2.comply.auditSessions.size, 1, 'a mid-audit restart must not drop the auditor session');
+
+      v2.killswitch.release({ actor: 'ciso', reason: 'cleared' });
+      const v3 = new Vault({ dir, signingKey, administrators: ['ciso'], seedRules: false });
+      assert.equal(v3.killswitch.state().level, 0, 'and releasing it sticks too');
+    } finally { rmSync(dir, { recursive: true, force: true }); }
   });
 
   test('a credential issued before a restart still works after it', () => {
@@ -1148,6 +1319,40 @@ describe('the command line, against a real data directory', () => {
       assert.match(cli(dir, ['ledger', 'verify']), /✓ CLEAN/);
       assert.match(cli(dir, ['agent', 'list']), /Sales Copilot/);
       assert.match(cli(dir, ['doctor']), /ledger chain\s+✓/);
+    } finally { rmSync(dir, { recursive: true, force: true }); }
+  });
+
+  test('golden facts can be set, listed and verified from the command line', () => {
+    const dir = join(tmp(), 'data');
+    try {
+      // Golden facts live in their own collection and take a separate auth
+      // argument — reading facts.all() or passing one object finds nothing.
+      const added = cli(dir, ['golden', 'add', 'Maximum discount without Finance approval is 20%.',
+        '--folder', 'sales/pricing/', '--actor', 'cfo', '--role', 'CFO', '--approver', 'ceo']);
+      assert.match(added, /★ golden g-/);
+      assert.match(added, /approved by cfo \(CFO\) · four-eyes with ceo/);
+      assert.match(added, /signed ✓/);
+
+      const listed = cli(dir, ['golden', 'list']);
+      assert.match(listed, /Maximum discount without Finance approval is 20%\./);
+      assert.doesNotMatch(listed, /no golden facts yet/);
+
+      const id = /★ golden (g-\S+)/.exec(added)[1];
+      assert.match(cli(dir, ['golden', 'verify', id]), /"contentHashOk": true/);
+      assert.match(cli(dir, ['golden', 'blast-radius', id]), /\{/);
+      assert.throws(() => cli(dir, ['golden', 'add', 'No role given.', '--actor', 'x']), /--role/);
+    } finally { rmSync(dir, { recursive: true, force: true }); }
+  });
+
+  test('ledger export writes a file the standalone verifier accepts', () => {
+    const dir = join(tmp(), 'data');
+    try {
+      cli(dir, ['status']);
+      const target = join(dir, 'led.json');
+      assert.match(cli(dir, ['ledger', 'export', target]), /wrote /);
+      assert.ok(existsSync(target));
+      const out = execFileSync(process.execPath, [new URL('../bin/vault-verify.js', import.meta.url).pathname, target], { encoding: 'utf8' });
+      assert.match(out, /✓ VERIFIED/);
     } finally { rmSync(dir, { recursive: true, force: true }); }
   });
 

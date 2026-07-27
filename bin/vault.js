@@ -6,7 +6,8 @@
  *   vault status | doctor | map | coverage
  *   vault agent register --name N --owner O --tech-owner T [--folder sales/]
  *   vault agent [list|show|credential|revoke|suspend|retire|attest] <id>
- *   vault golden [list|add "<claim>" --folder f --actor a --approver b]
+ *   vault golden add "<claim>" --folder f --actor who --role CFO [--approver b]
+ *   vault golden [list|due|verify|blast-radius|reattest] <id>
  *   vault ingest <file.json> [--credential vlt_…]
  *   vault ask "<query>" [--agent a-…]
  *   vault review [--folder sales/]
@@ -224,38 +225,58 @@ const COMMANDS = {
   },
 
   /**
-   *   vault golden add "<claim>" --folder pricing/ --actor cfo --approver ceo
-   *   vault golden list
+   *   vault golden add "<claim>" --folder sales/pricing/ --actor cfo --role CFO [--approver ceo]
+   *   vault golden list | due | verify <id> | blast-radius <id> | reattest <id>
    */
   async golden() {
     const vault = loadVault();
     const sub = rest[0] || 'list';
-    if (sub === 'list') {
-      const golden = vault.facts.all().filter((f) => f.golden);
-      if (!golden.length) { console.log('\nno golden facts yet\n'); return; }
+    const actor = flags.actor || process.env.VAULT_ADMIN || 'admin';
+
+    if (sub === 'list' || sub === 'due') {
+      // Golden facts live in their own more-restricted collection, not in the
+      // general fact store — reading facts.all() finds none of them.
+      const golden = sub === 'due' ? vault.facts.goldenDue() : vault.facts.goldenFacts();
+      if (!golden.length) { console.log(`\nno golden facts ${sub === 'due' ? 'are due for re-attestation' : 'yet'}\n`); return; }
       for (const g of golden) {
-        console.log(`\n${g.id}  ${g.folder}`);
+        console.log(`\n★ ${g.id}  ${g.folder}  [${g.sensitivity}]`);
         console.log(`  ${g.claim}`);
-        console.log(`  set by ${g.createdBy} · approved by ${g.approvedBy || '—'} · re-attest ${g.reattestAt ? new Date(g.reattestAt).toISOString().slice(0, 10) : 'n/a'}`);
+        console.log(`  approved by ${g.approvedBy} (${g.approverRole})${g.secondApprover ? ` · four-eyes with ${g.secondApprover}` : ''}`);
+        console.log(`  signed ${g.signature ? '✓' : '—'} · review due ${g.reviewDueAt ? new Date(g.reviewDueAt).toISOString().slice(0, 10) : 'n/a'}`);
       }
       console.log('');
       return;
     }
+
     if (sub === 'add') {
       const claim = rest.slice(1).join(' ');
-      if (!claim) throw new Error('usage: vault golden add "<claim>" --folder <f> --actor <who> --approver <who-else>');
-      const g = vault.createGoldenFact({
-        claim,
-        folder: flags.folder || 'company/',
-        actor: flags.actor || process.env.VAULT_ADMIN || 'admin',
-        approvedBy: flags.approver,
-        reason: flags.reason || 'set via CLI',
-        label: flags.label || 'internal'
-      });
-      console.log(`\ngolden ${g.id} created in ${g.folder}\n  ${g.claim}\n`);
+      if (!claim) throw new Error('usage: vault golden add "<claim>" --folder <f> --actor <who> --role <authority> [--approver <who-else>]');
+      if (!flags.role) throw new Error('a golden fact requires --role, the named authority of the person setting it (e.g. --role CFO)');
+      const g = vault.createGoldenFact(
+        {
+          claim,
+          folder: flags.folder || 'company/policies/',
+          sensitivity: flags.sensitivity || 'internal',
+          businessOwner: flags.owner || actor,
+          reviewEvery: flags['review-every'] || '12mo'
+        },
+        { actor, actorKind: 'human', authorityRole: flags.role, secondApprover: flags.approver }
+      );
+      console.log(`\n★ golden ${g.id} created in ${g.folder}`);
+      console.log(`  ${g.claim}`);
+      console.log(`  approved by ${g.approvedBy} (${g.approverRole})${g.secondApprover ? ` · four-eyes with ${g.secondApprover}` : ''}`);
+      console.log(`  signed ${g.signature ? '✓' : '— (no signing key configured)'} · review due ${new Date(g.reviewDueAt).toISOString().slice(0, 10)}\n`);
       return;
     }
-    throw new Error('usage: vault golden [list|add]');
+
+    const id = rest[1];
+    if (!id) throw new Error(`usage: vault golden ${sub} <golden-id>`);
+    if (sub === 'verify') out(vault.facts.verifyGolden(id));
+    else if (sub === 'blast-radius') out(vault.facts.goldenBlastRadius(id));
+    else if (sub === 'reattest') {
+      if (!flags.role) throw new Error('re-attestation requires --role');
+      out(vault.facts.reattest(id, { actor, authorityRole: flags.role, secondApprover: flags.approver, newClaim: flags.claim || null }));
+    } else throw new Error('usage: vault golden [list|due|add|verify|blast-radius|reattest]');
   },
 
   async ingest() {
@@ -338,7 +359,7 @@ const COMMANDS = {
       if (!v.ok) process.exitCode = 1;
     } else if (sub === 'export') {
       const target = rest[1] || 'ledger-export.json';
-      fsMod.writeFileSync(target, JSON.stringify(vault.ledger.export(), null, 2));
+      writeFileSync(target, JSON.stringify(vault.ledger.export(), null, 2));
       console.log(`wrote ${target} — run: node bin/vault-verify.js ${target}`);
     }
   },

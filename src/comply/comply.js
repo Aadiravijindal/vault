@@ -128,7 +128,10 @@ export class VaultComply {
     this.attestations = db.collection('attestations');
     this.controlState = new Map();
     this.frameworkVersions = new Map();
-    this.auditSessions = new Map();
+    // A scoped, time-boxed auditor session that vanishes mid-audit takes its
+    // own access log with it.
+    this._state = db?.collection('comply_state') ?? null;
+    this.auditSessions = new Map(Object.entries(this._state?.get('state')?.auditSessions ?? {}));
   }
 
   // ==== AI register (§18) ================================================
@@ -581,6 +584,7 @@ export class VaultComply {
       accessLog: [], readOnly: true
     };
     this.auditSessions.set(session.id, session);
+    this._state?.put({ id: 'state', auditSessions: Object.fromEntries(this.auditSessions) });
     this.ledger.append('admin.action', { subject: session.id, actor, action: 'comply.audit_session_opened', auditor, scope, purpose });
     return { ...session, openedAt: iso(session.openedAt), expiresAt: iso(session.expiresAt) };
   }

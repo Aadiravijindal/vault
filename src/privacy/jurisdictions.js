@@ -8,6 +8,8 @@
  * Bringing a first draft of the works agreement to the table is what turns an
  * 18-month German blocker into a six-week approval. That draft is in here.
  */
+import { VaultError } from '../util/errors.js';
+
 
 const EU_EXCLUSIONS = [
   'personal_account', 'personal_email', 'union_communications', 'works_council_communications',
@@ -381,7 +383,10 @@ export const SECTOR_PACKS = {
 export function jurisdictionPack(id) {
   const pack = JURISDICTIONS[id] || JURISDICTIONS[String(id).toLowerCase()];
   if (!pack) {
-    throw new Error(`unknown jurisdiction "${id}" — available: ${Object.keys(JURISDICTIONS).join(', ')}`);
+    // A typed error, so a mistyped preset is a 400 with the list of valid ones
+    // rather than a 500 that hides a perfectly good message.
+    throw new VaultError('not_found', `unknown jurisdiction "${id}"`,
+      { available: Object.keys(JURISDICTIONS) });
   }
   return pack;
 }
