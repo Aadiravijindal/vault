@@ -22,6 +22,18 @@ export class TemporalDetector {
     this.coordinationWindowMs = coordinationWindowMs;
     /** @type {Array<{claim:string, at:number, source:string, agentId:string, tokens:Set<string>, attribute:string|null, value:any, folder:string|null}>} */
     this.observations = [];
+    /**
+     * token → the observations containing it.
+     *
+     * Every window scan below needs shared vocabulary to fire at all: drip-feed
+     * requires two overlapping content tokens, and both cosine tests are zero
+     * without overlap. So retrieving by token is not a narrowing of what the
+     * detector examines — it is the same set, reached without walking
+     * observations that could never have matched. The benchmark harness caught
+     * the previous full-array scan making ingest linear in the number of writes.
+     * @type {Map<string, Set<object>>}
+     */
+    this.byToken = new Map();
     /** @type {Map<string, Array<{at:number, value:number, source:string}>>} attribute → trend */
     this.trends = new Map();
     /** @type {Map<string, {approvals:number, rejections:number, totalMs:number, decisions:number, fastDecisions:number}>} */
@@ -45,7 +57,7 @@ export class TemporalDetector {
     const tokens = new Set(contentTokens(candidate.claim));
 
     // -- drip-feed: fragments that assemble into a single claim --------------
-    const window = this.observations.filter((o) => at - o.at <= this.dripWindowMs);
+    const window = this._windowSharingTokens(tokens, at, this.dripWindowMs);
     const fragments = window.filter((o) => {
       const overlap = [...tokens].filter((t) => o.tokens.has(t)).length;
       const sim = cosine(o.claim, candidate.claim);
@@ -92,8 +104,8 @@ export class TemporalDetector {
     }
 
     // -- coordinated: multiple sources asserting the same NOVEL claim --------
-    const recentSame = this.observations.filter(
-      (o) => at - o.at <= this.coordinationWindowMs && o.source !== source && cosine(o.claim, candidate.claim) > 0.72);
+    const recentSame = this._windowSharingTokens(tokens, at, this.coordinationWindowMs)
+      .filter((o) => o.source !== source && cosine(o.claim, candidate.claim) > 0.72);
     const distinctSources = new Set(recentSame.map((o) => o.source));
     if (distinctSources.size >= 2) {
       const priorKnowledge = this.recentFacts().some((f) => cosine(f.claim, candidate.claim) > 0.72 && f.createdAt < at - this.coordinationWindowMs);
@@ -167,15 +179,52 @@ export class TemporalDetector {
       }
     }
 
-    this.observations.push({
+    const observation = {
       claim: candidate.claim, at, source, agentId: ctx.agentId, tokens,
       attribute: attr ?? null, value: val ?? null, claimType: candidate.claimType,
       folder: ctx.folderHint || candidate.proposedFolder || null
-    });
-    while (this.observations.length && at - this.observations[0].at > 90 * DAY) this.observations.shift();
-    if (this.observations.length > 20000) this.observations.splice(0, 5000);
+    };
+    this.observations.push(observation);
+    for (const t of tokens) {
+      let bucket = this.byToken.get(t);
+      if (!bucket) { bucket = new Set(); this.byToken.set(t, bucket); }
+      bucket.add(observation);
+    }
+
+    const evicted = [];
+    while (this.observations.length && at - this.observations[0].at > 90 * DAY) evicted.push(this.observations.shift());
+    if (this.observations.length > 20000) evicted.push(...this.observations.splice(0, 5000));
+    this._forget(evicted);
 
     return { detections };
+  }
+
+  /**
+   * Observations within `windowMs` that share at least one content token.
+   *
+   * Returned in time order, because two of the callers report "over ${ago(...)}"
+   * from the earliest fragment and would otherwise narrate the wrong span.
+   */
+  _windowSharingTokens(tokens, at, windowMs) {
+    const seen = new Set();
+    for (const t of tokens) {
+      const bucket = this.byToken.get(t);
+      if (!bucket) continue;
+      for (const o of bucket) if (at - o.at <= windowMs) seen.add(o);
+    }
+    return [...seen].sort((a, b) => a.at - b.at);
+  }
+
+  /** Drop evicted observations from the token index, so it cannot outgrow the array. */
+  _forget(evicted) {
+    for (const o of evicted) {
+      for (const t of o.tokens) {
+        const bucket = this.byToken.get(t);
+        if (!bucket) continue;
+        bucket.delete(o);
+        if (!bucket.size) this.byToken.delete(t);
+      }
+    }
   }
 
   /** Sleepers: written, never read for months, then suddenly hot (§9.6). */

@@ -432,6 +432,15 @@ export class ApiServer {
     this.route('POST', '/api/status/maintenance', R('admin', 'platform'), ({ body, principal }) =>
       v.statusPage.scheduleMaintenance({ ...body, actor: principal.name }));
 
+    this.route('GET', '/api/ledger/verify/tail', R('security', 'compliance', 'legal', 'auditor', 'admin', 'platform'), () => v.verifyLedgerTail());
+
+    // ---- restore drills ------------------------------------------------------
+    this.route('GET', '/api/continuity/drills', R('admin', 'platform', 'security', 'compliance', 'auditor', 'risk'), () => ({
+      status: v.drill.status(), evidence: v.drill.evidence()
+    }));
+    this.route('POST', '/api/continuity/drills', R('admin', 'platform'), ({ body, principal }) =>
+      v.drill.run({ actor: principal.name, reason: body?.reason, keepArtifacts: body?.keepArtifacts === true }));
+
     this.route('POST', '/api/admin/keys/health', R('admin', 'platform', 'security'), () => v.keyServiceHealth());
     this.route('POST', '/api/admin/keys/prime', R('admin', 'platform', 'security'), ({ body, principal }) =>
       v.primeKeyScope(body.scope, { actor: principal.name }));

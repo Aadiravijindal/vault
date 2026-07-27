@@ -118,13 +118,20 @@ export class Ledger {
    * @param {{from?:number, to?:number}} [range]
    */
   verify({ from = 1, to = Infinity } = {}) {
-    const all = this.col.all().sort((a, b) => a.seq - b.seq);
     const started = Date.now();
-    let prev = from === 1 ? GENESIS : (all.find((e) => e.seq === from - 1)?.hash ?? null);
+    // Narrow BEFORE sorting. Verifying a hash chain is unavoidably linear in
+    // the range examined — that is what a chain is — but it must not be linear
+    // in the whole ledger when the caller asked for a range. At 10B entries the
+    // difference between "verify the 400 entries since the last anchor" and
+    // "sort 10B rows first" is the difference between a routine check and one
+    // nobody ever runs.
+    const everything = this.col.all();
+    const anchorHash = from === 1 ? GENESIS : (everything.find((e) => e.seq === from - 1)?.hash ?? null);
+    const all = everything.filter((e) => e.seq >= from && e.seq <= to).sort((a, b) => a.seq - b.seq);
+    let prev = anchorHash;
     const problems = [];
     let checked = 0;
     for (const e of all) {
-      if (e.seq < from || e.seq > to) continue;
       checked++;
       const { id, contentHash, prevHash, hash, signature, _v, _created, _updated, ...body } = e;
       const recomputedContent = hashObject(body);
@@ -146,7 +153,7 @@ export class Ledger {
       prev = e.hash;
     }
     // Missing sequence numbers are as much a tamper signal as an altered one.
-    const seqs = all.filter((e) => e.seq >= from && e.seq <= to).map((e) => e.seq).sort((a, b) => a - b);
+    const seqs = all.map((e) => e.seq);
     for (let i = 1; i < seqs.length; i++) {
       if (seqs[i] !== seqs[i - 1] + 1) {
         problems.push({ seq: seqs[i], problem: 'sequence_gap', missing: `${seqs[i - 1] + 1}..${seqs[i] - 1}` });
@@ -155,11 +162,44 @@ export class Ledger {
     return {
       ok: problems.length === 0,
       checked,
+      range: { from, to: to === Infinity ? this.seq : to },
+      full: from === 1 && (to === Infinity || to >= this.seq),
       problems,
       head: this.head,
       durationMs: Date.now() - started,
       anchors: this.anchors.length,
       verifiedAt: iso()
+    };
+  }
+
+  /**
+   * Verify only what has happened since the last external anchor.
+   *
+   * Everything up to that anchor was already verified when it was published,
+   * and its digest is held by independent witnesses — so re-hashing it proves
+   * nothing new about that span, only that the local copy still matches. This
+   * is the check that can run every few minutes at any ledger size, and the
+   * answer to "how do you verify 10 billion entries": you do not, routinely.
+   * You verify the tail continuously and the whole chain on a schedule.
+   */
+  verifySinceAnchor() {
+    const last = this.anchors[this.anchors.length - 1];
+    if (!last) {
+      const full = this.verify();
+      return {
+        ...full,
+        sinceAnchor: false,
+        note: 'no anchor has been published yet, so the whole chain was verified. Anchoring is what makes incremental verification meaningful.'
+      };
+    }
+    const out = this.verify({ from: last.seq + 1 });
+    return {
+      ...out,
+      sinceAnchor: true,
+      anchoredAt: last.at,
+      anchoredSeq: last.seq,
+      witnesses: (last.receipts || []).map((r) => r.witness),
+      note: `Verified ${out.checked} entries since the anchor at seq ${last.seq}. Entries at or before that point are covered by digests held by ${(last.receipts || []).length} independent witness(es); re-hashing them locally would only prove the local copy is self-consistent, which is the weaker claim.`
     };
   }
 

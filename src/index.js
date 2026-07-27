@@ -52,6 +52,7 @@ import { Metering } from './billing/metering.js';
 import { BulkImport, Offboarding } from './lifecycle/lifecycle.js';
 import { OnboardingWizard, DemoData, timingReport } from './onboarding/onboarding.js';
 import { StatusPage } from './status/status.js';
+import { RestoreDrill } from './continuity/drill.js';
 import { RateLimiter, ApiKeyStore } from './api/ratelimit.js';
 import { coverageMap } from './connectors/catalog.js';
 import { now, iso } from './util/time.js';
@@ -357,6 +358,15 @@ export class Vault {
     // summary method, and shadowing it silently broke `vault status` on the CLI.
     this.statusPage = new StatusPage({ vault: this, ledger: this.ledger, notifier: this.notifier });
 
+    // The restore drill spawns a *fresh* Vault from the export alone, so it
+    // proves the export is sufficient rather than proving this process still
+    // has the data in memory.
+    this.drill = new RestoreDrill({
+      vault: this, ledger: this.ledger,
+      collection: this.db.collection('restore_drills'),
+      spawn: ({ dir: freshDir }) => new Vault({ dir: freshDir, signingKey, seedRules: false })
+    });
+
     this.startedAt = now();
   }
 
@@ -619,6 +629,8 @@ export class Vault {
   incidentBundle(id, opts) { return this.trace.incidentBundle(id, opts); }
   runHygiene(opts) { return this.hygiene.run(opts); }
   verifyLedger(range) { return this.ledger.verify(range); }
+  /** The routine check: only what has happened since the last external anchor. */
+  verifyLedgerTail() { return this.ledger.verifySinceAnchor(); }
   exportAll(opts) { return this.continuity.export(opts); }
   coverage() { return coverageMap({ connected: this.connectors.all().map((c) => c.catalogId) }); }
 

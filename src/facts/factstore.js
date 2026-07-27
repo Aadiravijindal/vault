@@ -12,7 +12,7 @@ import { newId } from '../util/id.js';
 import { hashObject, sha256, signMessage, verifyMessage } from '../util/crypto.js';
 import { now, iso, ago, duration, DAY, MONTH } from '../util/time.js';
 import { VaultError, notFound, forbidden } from '../util/errors.js';
-import { truncate, cosine } from '../util/text.js';
+import { truncate, cosine, contentTokens } from '../util/text.js';
 
 export const FACT_STATUS = ['live', 'held', 'rejected', 'superseded', 'expired', 'frozen', 'quarantined', 'erased'];
 
@@ -48,6 +48,9 @@ export class FactStore {
     this.col.index('byAgent', (f) => f.capturedBy);
     this.col.index('byConversation', (f) => f.source?.conversationId);
     this.col.index('bySubject', (f) => (f.entities || []).filter((e) => e.type === 'person').map((e) => e.id || e.name));
+    // Content tokens, so the reconciler can retrieve candidates by what a claim
+    // says rather than by scanning the store. See findRelated.
+    this.col.index('byToken', (f) => [...new Set(contentTokens(f.claim || ''))]);
     this.goldenCol.index('byFolder', (f) => f.folder);
   }
 
@@ -186,14 +189,33 @@ export class FactStore {
   bySubject(subject) { return this.col.by('bySubject', subject); }
   held() { return this.col.find((f) => f.status === 'held'); }
 
-  /** Candidate-related facts, for the reconciler. */
+  /**
+   * Candidate-related facts, for the reconciler.
+   *
+   * Retrieval must be *complete* — a duplicate or a contradiction the gate does
+   * not retrieve is a duplicate or contradiction the gate cannot act on — but it
+   * must also not be a full scan, which is what the benchmark harness caught it
+   * being. Two paths used to widen without bound: pulling every fact in the
+   * candidate's folder, and, whenever fewer than three candidates turned up,
+   * scanning every live fact in the store. On a large tenant the second one runs
+   * on every write with a novel entity, which is most of them.
+   *
+   * The content-token index replaces both. Any two claims similar enough to
+   * reconcile share at least one content token — cosine similarity over term
+   * vectors is zero otherwise — so retrieving by token is not a narrowing of
+   * what the reconciler sees, it is the same set reached without reading rows
+   * that could never have matched.
+   */
   findRelated(candidate, { limit = 12 } = {}) {
     const entityKeys = (candidate.entities || []).map((e) => e.id || e.name);
     const pool = new Set();
     for (const k of entityKeys) for (const f of this.col.by('byEntity', k)) pool.add(f);
+    // Golden facts are few by design and authoritative, so they are always in
+    // scope: a candidate that contradicts one must be caught even if it shares
+    // no vocabulary with it.
     for (const g of this.goldenCol.all()) pool.add(g);
-    if (candidate.proposedFolder) for (const f of this.byFolder(candidate.proposedFolder)) pool.add(f);
-    if (pool.size < 3) for (const f of this.live()) pool.add(f);
+    for (const f of this._byContentTokens(candidate.claim)) pool.add(f);
+
     return [...pool]
       .filter((f) => f.status === 'live' || f.golden)
       .map((f) => ({ f, s: cosine(f.claim, candidate.claim) }))
@@ -201,6 +223,28 @@ export class FactStore {
       .sort((a, b) => b.s - a.s)
       .slice(0, limit)
       .map((x) => x.f);
+  }
+
+  /**
+   * Facts sharing at least one content token with `text`.
+   *
+   * Very common tokens are skipped: a token present in most of the store
+   * discriminates nothing and reading its whole posting list is the full scan
+   * again by another name. Rarer tokens in the same claim still retrieve
+   * anything genuinely similar.
+   */
+  _byContentTokens(text) {
+    const tokens = new Set(contentTokens(text || ''));
+    if (!tokens.size) return [];
+    const total = this.col.size ?? this.col.all().length;
+    const ceiling = Math.max(64, Math.floor(total * 0.25));
+    const out = new Set();
+    for (const t of tokens) {
+      const posting = this.col.by('byToken', t);
+      if (posting.length > ceiling) continue;
+      for (const f of posting) out.add(f);
+    }
+    return out;
   }
 
   // -- versioning ----------------------------------------------------------
