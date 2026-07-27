@@ -181,10 +181,16 @@ export class SearchEngine {
       if (claimTypes && !claimTypes.includes(pit.claimType)) continue;
 
       // Permission checks at QUERY time.
-      const allowed = canRead(pit);
-      if (!allowed.allowed) {
+      // canRead may return a boolean or a {allowed, reason} verdict. Reading
+      // `.allowed` off a boolean yields undefined, which silently withheld
+      // EVERY fact and reported the reason as undefined — a caller passing the
+      // obvious predicate got an empty result set and no explanation.
+      const verdict = canRead(pit);
+      const permitted = typeof verdict === 'boolean' ? verdict : Boolean(verdict?.allowed);
+      if (!permitted) {
+        const reason = (typeof verdict === 'object' && verdict?.reason) || 'walled';
         withheld++;
-        withheldReasons.set(allowed.reason, (withheldReasons.get(allowed.reason) || 0) + 1);
+        withheldReasons.set(reason, (withheldReasons.get(reason) || 0) + 1);
         continue;
       }
       if (rank(pit.sensitivity) > rank(clearance)) {
