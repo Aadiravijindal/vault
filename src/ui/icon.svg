@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 192 192" role="img" aria-label="Vault">
+  <rect width="192" height="192" rx="42" fill="#0b0e14"/>
+  <path d="M96 34 32 60v40c0 34 26 66 64 78 38-12 64-44 64-78V60L96 34z"
+        fill="none" stroke="#5b9dff" stroke-width="9" stroke-linejoin="round"/>
+  <rect x="74" y="88" width="44" height="34" rx="6" fill="#5b9dff"/>
+  <path d="M82 88V78a14 14 0 0 1 28 0v10" fill="none" stroke="#5b9dff" stroke-width="8" stroke-linecap="round"/>
+</svg>

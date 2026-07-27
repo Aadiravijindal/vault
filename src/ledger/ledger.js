@@ -27,6 +27,7 @@ export const EVENT_TYPES = [
   'agent.suspended', 'agent.retired', 'agent.discovered',
   'review.decision', 'review.escalated', 'review.sla_breach',
   'hygiene.action',
+  'folder.wall_changed', 'folder.moved', 'folder.merged',
   'admin.action', 'admin.breakglass', 'admin.module_toggled',
   'legal.hold_placed', 'legal.hold_lifted', 'legal.privilege_tagged',
   'privacy.erasure', 'privacy.dsar', 'privacy.consent_recorded', 'privacy.consent_withdrawn',

@@ -16,6 +16,7 @@ import { randomToken, constantTimeEqual, sha256 } from '../util/crypto.js';
 import { now, iso } from '../util/time.js';
 import { VaultError } from '../util/errors.js';
 import { timingReport, recommendedFirstConnectors } from '../onboarding/onboarding.js';
+import { renderPlan } from '../iac/iac.js';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const UI_DIR = join(HERE, '..', 'ui');
@@ -434,6 +435,37 @@ export class ApiServer {
 
     this.route('GET', '/api/ledger/verify/tail', R('security', 'compliance', 'legal', 'auditor', 'admin', 'platform'), () => v.verifyLedgerTail());
 
+    // ---- configuration as code -----------------------------------------------
+    this.route('POST', '/api/config/plan', R('admin', 'platform'), ({ body }) =>
+      ({ ...v.config.plan(body.config ?? body, { prune: body.prune === true }), rendered: renderPlan(v.config.plan(body.config ?? body, { prune: body.prune === true })) }));
+    this.route('POST', '/api/config/apply', R('admin', 'platform'), ({ body, principal }) =>
+      v.config.apply(body.config ?? body, {
+        actor: principal.name, reason: body.reason, approvedBy: body.approvedBy,
+        prune: body.prune === true, allowDestructive: body.allowDestructive === true,
+        credentials: body.credentials, dryRun: body.dryRun === true
+      }));
+    this.route('POST', '/api/config/drift', R('admin', 'platform', 'security', 'auditor'), ({ body }) => v.config.drift(body.config ?? body));
+    this.route('GET', '/api/config/export', R('admin', 'platform'), () => v.config.export());
+    this.route('GET', '/api/config/history', R('admin', 'platform', 'auditor'), () => v.config.history());
+
+    // ---- chat apps -----------------------------------------------------------
+    // These verify their own signature, so they are registered without a role:
+    // the caller is Slack or Teams, not a Vault principal, and the signature IS
+    // the authentication. `rawBody` matters — a re-serialised body produces a
+    // different HMAC and every request would fail.
+    this.route('POST', '/api/integrations/slack/command', 'signed', ({ rawBody, headers }) => {
+      if (!v.slack) throw new VaultError('config', 'the Slack app is not configured');
+      return v.slack.command({ body: rawBody, headers });
+    });
+    this.route('POST', '/api/integrations/slack/interact', 'signed', ({ rawBody, headers }) => {
+      if (!v.slack) throw new VaultError('config', 'the Slack app is not configured');
+      return v.slack.interact({ body: rawBody, headers });
+    });
+    this.route('POST', '/api/integrations/teams/command', 'signed', ({ rawBody, headers }) => {
+      if (!v.teams) throw new VaultError('config', 'the Teams app is not configured');
+      return v.teams.command({ body: rawBody, headers });
+    });
+
     // ---- restore drills ------------------------------------------------------
     this.route('GET', '/api/continuity/drills', R('admin', 'platform', 'security', 'compliance', 'auditor', 'risk'), () => ({
       status: v.drill.status(), evidence: v.drill.evidence()
@@ -513,7 +545,14 @@ export class ApiServer {
 
     if (!path.startsWith('/api/')) return this._serveUi(path, res);
 
-    const principal = this._principal(req);
+    // Signature-verified integration endpoints authenticate by HMAC over the
+    // raw body, not by bearer token: the caller is Slack or Teams, not a Vault
+    // principal. They are identified here so the token check does not reject
+    // them, and they verify their own signature before reading a single field.
+    const signedRoute = this.routes.find((r) => r.roles === 'signed' && r.method === req.method && r.rx.test(path));
+    const principal = signedRoute
+      ? { name: 'integration', role: 'agent', signed: true }
+      : this._principal(req);
     if (!principal) return this._json(res, 401, { error: 'unauthenticated', message: 'present a bearer token' });
 
     // Rate limit AFTER identifying the caller, so one noisy integration cannot
@@ -534,7 +573,7 @@ export class ApiServer {
     const match = this.routes.find((r) => r.method === req.method && r.rx.test(path));
     if (!match) return this._json(res, 404, { error: 'not_found', message: `no route for ${req.method} ${path}` });
 
-    if (match.roles && !match.roles.includes(principal.role)) {
+    if (match.roles && match.roles !== 'signed' && !match.roles.includes(principal.role)) {
       return this._json(res, 403, {
         error: 'forbidden',
         message: `role "${principal.role}" may not access this endpoint`,
@@ -543,8 +582,13 @@ export class ApiServer {
     }
 
     let body = {};
+    let rawBody = '';
     if (req.method !== 'GET') {
-      try { body = await readBody(req); } catch (e) { return this._json(res, 400, { error: 'bad_request', message: e.message }); }
+      try {
+        const read = await readBody(req);
+        body = read.parsed;
+        rawBody = read.raw;
+      } catch (e) { return this._json(res, 400, { error: 'bad_request', message: e.message }); }
     }
 
     const m = match.rx.exec(path);
@@ -552,7 +596,7 @@ export class ApiServer {
     const query = Object.fromEntries(url.searchParams);
 
     try {
-      const result = await match.handler({ params, query, body, principal, req });
+      const result = await match.handler({ params, query, body, rawBody, headers: req.headers, principal, req });
       this._log(req, principal, 200, Date.now() - started);
       this._emitSiem({ at: iso(), actor: principal.name, method: req.method, path, status: 200 });
       return this._json(res, 200, result === undefined ? { ok: true } : result);
@@ -655,6 +699,13 @@ function siemSeverity(type) {
   return 'low';
 }
 
+/**
+ * Read the body, keeping the raw bytes.
+ *
+ * Signature-verified integrations (Slack, Teams) HMAC the RAW body. Handing
+ * them a re-serialised object produces a different digest and every request
+ * fails verification, so the raw string travels alongside the parsed form.
+ */
 function readBody(req) {
   return new Promise((resolve, reject) => {
     let data = '';
@@ -663,8 +714,12 @@ function readBody(req) {
       if (data.length > 8e6) reject(new Error('payload too large'));
     });
     req.on('end', () => {
-      if (!data) return resolve({});
-      try { resolve(JSON.parse(data)); } catch { reject(new Error('invalid JSON body')); }
+      if (!data) return resolve({ parsed: {}, raw: '' });
+      const type = String(req.headers['content-type'] || '');
+      if (type.includes('application/x-www-form-urlencoded')) {
+        return resolve({ parsed: Object.fromEntries(new URLSearchParams(data)), raw: data });
+      }
+      try { resolve({ parsed: JSON.parse(data), raw: data }); } catch { reject(new Error('invalid JSON body')); }
     });
     req.on('error', reject);
   });

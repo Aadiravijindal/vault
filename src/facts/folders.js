@@ -243,6 +243,68 @@ export class FolderTree {
     return { read, write, hardWall, privileged, derivedFrom: folders.map((f) => f.path) };
   }
 
+  /**
+   * Change a folder's wall.
+   *
+   * `ensure` deliberately returns an existing folder untouched, which meant
+   * there was no path at all to change a wall after creation — an estate could
+   * only be walled correctly on the first day. This is that path, and it is
+   * deliberately not a generic update: a wall is the boundary everything else
+   * in the product enforces, so changing one is its own operation with its own
+   * rules.
+   *
+   * The invariant `ensure` applies at creation applies here too: a child may
+   * narrow its parent's wall, never widen it. Otherwise the way to read `hr/`
+   * would be to widen `hr/reviews/`, and the wall would be advisory.
+   */
+  setWalls(path, { read = null, write = null, actor, reason }) {
+    const f = this.get(path);
+    if (!f) throw new VaultError('not_found', 'folder not found', { path });
+    if (!actor || !reason) throw forbidden('changing a wall requires a named actor and a reason');
+    if (read === null && write === null) return f;
+
+    const parent = f.parent ? this.get(f.parent) : null;
+    const nextRead = read ?? f.read;
+    const nextWrite = write ?? f.write;
+
+    if (parent && !parent.read.includes('*')) {
+      const widened = nextRead.filter((r) => r === '*' || !parent.read.includes(r));
+      if (widened.length) {
+        throw forbidden(
+          `a folder cannot be more readable than its parent — ${widened.join(', ')} may not read ${parent.path}`,
+          { path: f.path, parent: parent.path, parentRead: parent.read, attempted: nextRead }
+        );
+      }
+    }
+
+    // Widening is not forbidden, but it is never quiet: someone gained access
+    // to something, and that is exactly the change an auditor asks about.
+    const added = {
+      read: nextRead.filter((r) => !f.read.includes(r)),
+      write: nextWrite.filter((w) => !f.write.includes(w))
+    };
+    const removed = {
+      read: f.read.filter((r) => !nextRead.includes(r)),
+      write: f.write.filter((w) => !nextWrite.includes(w))
+    };
+
+    const updated = this.col.update(f.id, { read: nextRead, write: nextWrite });
+    this.ledger.append('folder.wall_changed', {
+      subject: f.path, actor, reason,
+      before: { read: f.read, write: f.write },
+      after: { read: nextRead, write: nextWrite },
+      widened: added.read.length + added.write.length,
+      narrowed: removed.read.length + removed.write.length
+    });
+    if (added.read.length || added.write.length) {
+      this.onAlert({
+        severity: 'medium', kind: 'wall_widened', subject: f.path, actor,
+        detail: `${f.path} is now readable by ${added.read.join(', ') || '—'} and writable by ${added.write.join(', ') || '—'} — ${reason}`
+      });
+    }
+    return { ...updated, added, removed };
+  }
+
   /** Moving a folder moves its wall, its retention and its history (§8.6). */
   move(fromPath, toPath, { actor, reason }) {
     const from = this.get(fromPath);

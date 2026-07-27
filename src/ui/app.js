@@ -990,5 +990,12 @@ ${Object.entries(p.method).map(([k, v2]) => `  ${k.padEnd(24)}${esc(v2)}`).join(
   }
   applyLocale(i18n.locale);
 
+  // Installable on a phone, so the two things that need a human at 3am — the
+  // review queue and the kill switch — are one tap away. The worker caches the
+  // shell and never an API response; see sw.js for why that line is absolute.
+  if ('serviceWorker' in navigator && location.protocol === 'https:') {
+    navigator.serviceWorker.register('/sw.js').catch(() => { /* offline shell is a bonus, not a requirement */ });
+  }
+
   if (token) { $('#token').value = token; boot().catch(() => { localStorage.clear(); }); }
 })();

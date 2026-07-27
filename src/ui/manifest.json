@@ -1,0 +1,37 @@
+{
+  "name": "Vault — AI memory governance",
+  "short_name": "Vault",
+  "description": "Review held facts and reach the kill switch from a phone.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#0b0e14",
+  "theme_color": "#0b0e14",
+  "lang": "en",
+  "dir": "ltr",
+  "categories": ["business", "security", "productivity"],
+  "icons": [
+    { "src": "/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
+  ],
+  "shortcuts": [
+    {
+      "name": "Needs Review",
+      "short_name": "Review",
+      "description": "What is waiting for a human decision",
+      "url": "/#review"
+    },
+    {
+      "name": "Kill switch",
+      "short_name": "Stop",
+      "description": "Engage or release the kill switch",
+      "url": "/#admin"
+    },
+    {
+      "name": "Status",
+      "short_name": "Status",
+      "description": "Component health and open incidents",
+      "url": "/#status"
+    }
+  ]
+}

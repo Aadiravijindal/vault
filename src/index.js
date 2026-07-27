@@ -53,6 +53,8 @@ import { BulkImport, Offboarding } from './lifecycle/lifecycle.js';
 import { OnboardingWizard, DemoData, timingReport } from './onboarding/onboarding.js';
 import { StatusPage } from './status/status.js';
 import { RestoreDrill } from './continuity/drill.js';
+import { ConfigEngine } from './iac/iac.js';
+import { SlackApp, TeamsApp } from './integrations/chatops.js';
 import { RateLimiter, ApiKeyStore } from './api/ratelimit.js';
 import { coverageMap } from './connectors/catalog.js';
 import { now, iso } from './util/time.js';
@@ -361,6 +363,20 @@ export class Vault {
     // The restore drill spawns a *fresh* Vault from the export alone, so it
     // proves the export is sufficient rather than proving this process still
     // has the data in memory.
+    // Configuration as code: plan/apply/drift against the same API a Terraform
+    // provider would call.
+    this.config = new ConfigEngine({ vault: this, ledger: this.ledger });
+
+    // Chat apps are constructed only when a signing secret is present. An
+    // endpoint that accepts unverified payloads is a remote kill switch for
+    // whoever finds the URL, so there is no "no secret configured" mode.
+    this.slack = options.slack?.signingSecret
+      ? new SlackApp({ vault: this, ledger: this.ledger, ...options.slack })
+      : null;
+    this.teams = options.teams?.securityToken
+      ? new TeamsApp({ vault: this, ledger: this.ledger, ...options.teams })
+      : null;
+
     this.drill = new RestoreDrill({
       vault: this, ledger: this.ledger,
       collection: this.db.collection('restore_drills'),
@@ -893,6 +909,13 @@ function summarise(results) {
 
 export { Witness } from './ledger/ledger.js';
 export { Ledger } from './ledger/ledger.js';
+export { ConfigEngine, RESOURCES, renderPlan } from './iac/iac.js';
+export { SlackApp, TeamsApp } from './integrations/chatops.js';
+export { I18n, LOCALES, coverage as localeCoverage, negotiate } from './ui/i18n.js';
+export { Benchmark, Samples, growth, BUDGETS } from './observability/bench.js';
+export { RestoreDrill } from './continuity/drill.js';
+export { StatusPage, COMPONENTS } from './status/status.js';
+export { OnboardingWizard, DemoData, STEPS as SETUP_STEPS } from './onboarding/onboarding.js';
 export { ExternalKeyService } from './storage/kms.js';
 export { AwsKmsClient, AzureKeyVaultClient, GcpKmsClient, createKeyClient, RemoteKeyBridge, KEY_PROVIDERS } from './storage/kmsclient.js';
 export { RULE_TEMPLATES } from './gate/rules.js';
