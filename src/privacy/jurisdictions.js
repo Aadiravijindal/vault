@@ -9,6 +9,7 @@
  * 18-month German blocker into a six-week approval. That draft is in here.
  */
 import { VaultError } from '../util/errors.js';
+import { CODETERMINATION_DOCS } from './codetermination.js';
 
 
 const EU_EXCLUSIONS = [
@@ -147,13 +148,21 @@ export const JURISDICTIONS = {
       { id: 'at-dsg', control: 'Austrian DSG', applies: 'National employment-context rules documented' }
     ],
     documents: [
-      { name: 'Betriebsvereinbarung (AT) — Entwurf', format: 'markdown', body: betriebsvereinbarung },
-      { name: 'EU DPIA (Art 35)', format: 'markdown', body: euDpia }
+      ...CODETERMINATION_DOCS.at,
+      { name: 'EU DPIA (Art 35)', format: 'markdown', body: euDpia },
+      { name: 'Verbotene Verwendungen (prohibited uses, in German)', format: 'markdown', body: verboteneVerwendungen }
     ],
-    crosswalk: { '§96(1) Z3 ArbVG': 'works agreement requirement', 'GDPR Art 88': 'employment-context rules' },
-    coverage: 'Austrian co-determination and GDPR employment context.',
+    crosswalk: {
+      '§96(1) Z3 ArbVG': 'works agreement, consent-based — cannot be replaced by the Schlichtungsstelle',
+      '§96a(1) Z1 ArbVG': 'automated processing of personal data — arbitration available',
+      '§32(3) ArbVG': 'after-effect of a terminated works agreement, expressly excluded in the draft',
+      'DSG §§ 1, 4': 'Austrian national data protection provisions',
+      'GDPR Art 88': 'employment-context rules'
+    },
+    coverage: 'Austrian co-determination under both §96(1) Z3 and §96a, the DSG assessment, and GDPR employment context.',
+    doesNotCover: 'Collective bargaining agreements (Kollektivverträge) specific to your sector, and questions under the AZG beyond the working-hours limit applied here.',
     requiresConsultation: true,
-    plainLanguage: 'Austria requires a works agreement for monitoring systems that touch human dignity. The draft is included.'
+    plainLanguage: 'Austria is stricter than Germany in one way people miss: under §96(1) Z3 the works council\'s consent cannot be overridden by arbitration. The draft agreement says which paragraph applies and why.'
   },
 
   nl: {
@@ -164,13 +173,20 @@ export const JURISDICTIONS = {
       { id: 'nl-ap', control: 'Autoriteit Persoonsgegevens guidance', applies: 'Proportionality and subsidiarity documented' }
     ],
     documents: [
-      { name: 'Ondernemingsraad instemmingsverzoek (consent request)', format: 'markdown', body: consultationPack },
+      ...CODETERMINATION_DOCS.nl,
       { name: 'EU DPIA (Art 35)', format: 'markdown', body: euDpia }
     ],
-    crosswalk: { 'WOR Art 27': 'works council consent', 'GDPR Art 88': 'employment-context rules' },
-    coverage: 'Dutch works council consent and GDPR employment context.',
+    crosswalk: {
+      'WOR Art 27(1)(k)': 'regulation on processing personal data of persons working in the undertaking',
+      'WOR Art 27(1)(l)': 'facilities capable of observing or controlling presence, behaviour or performance',
+      'WOR Art 27(4)': 'substitute consent from the kantonrechter if the OR withholds instemming',
+      'WOR Art 27(5)': 'one-month nullity window after the OR learns of a decision taken without consent',
+      'GDPR Art 88': 'employment-context rules'
+    },
+    coverage: 'Dutch works council consent under Article 27 WOR, the AP\'s necessity/proportionality/subsidiarity test, and GDPR employment context.',
+    doesNotCover: 'CAO obligations specific to your sector, and the separate advice right under Article 25 WOR where the system accompanies a reorganisation.',
     requiresConsultation: true,
-    plainLanguage: 'The OR must consent before a monitoring system goes live. The consent request is drafted for you.'
+    plainLanguage: 'The OR must consent — not merely advise — and it can void the decision within a month if you skip that. The consent request is drafted, with the nullity clock spelled out.'
   },
 
   se: {
@@ -181,13 +197,21 @@ export const JURISDICTIONS = {
       { id: 'se-imy', control: 'IMY guidance', applies: 'Swedish DPA employment monitoring expectations' }
     ],
     documents: [
-      { name: 'MBL §11 förhandlingsunderlag (negotiation pack)', format: 'markdown', body: consultationPack },
+      ...CODETERMINATION_DOCS.se,
       { name: 'EU DPIA (Art 35)', format: 'markdown', body: euDpia }
     ],
-    crosswalk: { 'MBL §11': 'primary negotiation duty', 'GDPR Art 88': 'employment-context rules' },
-    coverage: 'Swedish co-determination negotiation and GDPR employment context.',
+    crosswalk: {
+      'MBL §11': 'primary duty to negotiate before deciding',
+      'MBL §14': 'central negotiation where local negotiation does not resolve',
+      'MBL §19': 'the information the employer owes the union',
+      'IMY guidance': 'employer control measures — proportionality',
+      'GDPR Art 6(1)(f)': 'intresseavvägning, generated as its own document',
+      'GDPR Art 88': 'employment-context rules'
+    },
+    coverage: 'Swedish primary negotiation (§11), the §19 information duty, the balancing test, and GDPR employment context.',
+    doesNotCover: 'Kollektivavtal terms specific to your sector, and the separate rules for employers not bound by a collective agreement, who must instead negotiate with any union having members affected.',
     requiresConsultation: true,
-    plainLanguage: 'Sweden requires primary negotiation with the union before implementation. The negotiation pack is drafted.'
+    plainLanguage: 'Sweden is not consent and not co-decision: you must negotiate before you decide, and deciding first is itself the breach. The summons and the §19 information are drafted.'
   },
 
   fr: {
@@ -199,13 +223,23 @@ export const JURISDICTIONS = {
       { id: 'fr-deconnexion', control: 'Droit à la déconnexion', applies: 'No capture outside working hours' }
     ],
     documents: [
-      { name: 'Consultation du CSE — dossier', format: 'markdown', body: consultationPack },
+      ...CODETERMINATION_DOCS.fr,
       { name: 'EU DPIA (Art 35)', format: 'markdown', body: euDpia }
     ],
-    crosswalk: { 'C. trav. L2312-38': 'CSE consultation', 'GDPR Art 88': 'employment-context rules' },
-    coverage: 'French CSE consultation, CNIL proportionality, right to disconnect.',
+    crosswalk: {
+      'C. trav. L2312-8': 'consultation on new technology and on changes to working conditions',
+      'C. trav. L2312-38': 'means or techniques permitting control of employee activity',
+      'C. trav. R2312-6': 'one-month opinion deadline, two months with an expert',
+      'C. trav. L1222-4': 'individual information — undisclosed collection cannot be used against an employee',
+      'C. trav. L1121-1': 'restrictions must be justified by the task and proportionate',
+      'C. trav. L2242-17': 'right to disconnect',
+      'GDPR Art 30': 'registre des traitements',
+      'GDPR Art 88': 'employment-context rules'
+    },
+    coverage: 'CSE consultation with the real deadlines, the L.1222-4 individual notice, CNIL proportionality, right to disconnect and the processing register.',
+    doesNotCover: 'Branch-level conventions collectives, and CNIL sectoral référentiels (for example the HR référentiel) beyond the proportionality analysis included here.',
     requiresConsultation: true,
-    plainLanguage: 'The CSE must be consulted before the tool goes live, and nothing is captured outside working hours.'
+    plainLanguage: 'France stacks three duties people conflate: consult the CSE, inform each employee individually, and register the processing. Skipping the individual notice is what gets evidence thrown out at the prud\'hommes — so that note is generated too.'
   },
 
   eu: {
@@ -254,16 +288,24 @@ export const JURISDICTIONS = {
     documents: [
       { name: 'DPDP notice (English + regional language placeholder)', format: 'markdown', body: dpdpNotice },
       { name: 'DPDP DPIA (SDF annual)', format: 'markdown', body: euDpia },
-      { name: 'Consent Manager integration record', format: 'markdown', body: consentManagerRecord }
+      { name: 'Consent Manager integration record', format: 'markdown', body: consentManagerRecord },
+      ...CODETERMINATION_DOCS.in
     ],
     crosswalk: {
       'DPDP §4-§8': 'grounds, notice, obligations of the Data Fiduciary',
       'DPDP §9': 'children\'s data — verifiable parental consent',
       'DPDP §10': 'Significant Data Fiduciary — DPIA, audit, DPO',
       'DPDP §12': 'rights of the Data Principal',
-      'DPDP Rules': '1-year security log retention, 7-year consent records'
+      'DPDP Rules': '1-year security log retention, 7-year consent records',
+      'DPDP §7(i)': 'employment legitimate use — no consent required, but notice is issued anyway',
+      'DPDP §11-§14': 'access, correction, grievance redressal and nomination',
+      'IT Act §43A + SPDI Rules 2011': 'sensitive personal data, reasonable security practices',
+      'IT Act §72A': 'criminal liability for disclosure in breach of contract',
+      'Puttaswamy (2017) 10 SCC 1': 'constitutional proportionality test, applied as a generated document',
+      'Industrial Employment (Standing Orders) Act 1946': 'standing-orders clause supplied for counsel'
     },
-    coverage: 'DPDP Data Fiduciary obligations, consent management, erasure, children\'s data and SDF duties.',
+    coverage: 'DPDP Data Fiduciary obligations, consent management, erasure, children\'s data, SDF duties, and the employee-monitoring position across DPDP §7(i), the IT Act/SPDI Rules, Puttaswamy proportionality and standing orders.',
+    doesNotCover: 'India has no dedicated employee-monitoring statute, so this pack maps five overlapping instruments rather than one. It does not cover CCTV or physical surveillance, TRAI call-recording rules, sector regulators (RBI/SEBI/IRDAI), or cross-border transfer restrictions notified under DPDP §16, which change by government notification.',
     requiresConsultation: false,
     plainLanguage: 'India-specific. Includes the Consent Manager interface and the SDF annual DPIA/audit hooks, plus the 2026/2027 milestone tracker.'
   },
