@@ -53,7 +53,7 @@ export class ScimService {
    * @param {Record<string,string>} [o.groupRoles]
    * @param {string} [o.defaultRole] role for a provisioned user in no mapped group
    */
-  constructor({ sessions, collection = null, ledger = null, groupRoles = DEFAULT_GROUP_ROLES,
+  constructor({ sessions, collection = null, groupCollection = null, ledger = null, groupRoles = DEFAULT_GROUP_ROLES,
     defaultRole = 'end_user', onDeprovision = null, bearerToken = null } = {}) {
     if (!sessions) throw new VaultError('config', 'SCIM needs the session store — deprovisioning that cannot revoke a session is decorative');
     this.sessions = sessions;
@@ -67,15 +67,24 @@ export class ScimService {
      */
     this.bearerToken = bearerToken;
     this.col = collection;
+    this.groupCol = groupCollection;
     this.ledger = ledger;
     this.groupRoles = groupRoles;
     this.defaultRole = defaultRole;
     this.onDeprovision = onDeprovision;
     /** @type {Map<string, object>} */
     this.users = new Map();
-    /** @type {Map<string, object>} */
+    /**
+     * @type {Map<string, object>}
+     *
+     * Groups were in-memory only while users were persisted, so a restart left
+     * every user carrying group names that no longer resolved to a group. The
+     * Groups endpoint then reported an empty directory to the IdP, and the next
+     * sync could re-create groups Vault had silently forgotten.
+     */
     this.groups = new Map();
     if (collection) for (const u of collection.all()) this.users.set(u.id, u);
+    if (groupCollection) for (const g of groupCollection.all()) this.groups.set(g.id, g);
     this.stats = { created: 0, updated: 0, deactivated: 0, deleted: 0, sessionsRevoked: 0 };
   }
 
@@ -387,10 +396,21 @@ export class ScimService {
 
   // -- groups --------------------------------------------------------------
 
+  /**
+   * RFC 7643 §4.2: `members` is a multi-valued attribute of complex values.
+   * Members are held internally as plain ids and presented as `{value}` — and
+   * that has to be the ONLY way they are presented. GET wrapped them while
+   * POST and PATCH returned bare strings, so an IdP reading the response to its
+   * own create call got a body that does not conform to the schema it asked for.
+   */
+  _presentGroup(g) {
+    return { schemas: [SCIM_GROUP], ...g, members: g.members.map((m) => ({ value: m })) };
+  }
+
   getGroup(id) {
     const g = this.groups.get(id);
     if (!g) throw new VaultError('not_found', `no group ${id}`, { status: 404 });
-    return { schemas: [SCIM_GROUP], ...g, members: g.members.map((m) => ({ value: m })) };
+    return this._presentGroup(g);
   }
 
   listGroups({ filter = null, startIndex = 1, count = 100 } = {}) {
@@ -420,6 +440,7 @@ export class ScimService {
     const group = this.groups.get(id);
     if (!group) throw new VaultError('not_found', `no group ${id}`, { status: 404 });
     this.groups.delete(id);
+    this.groupCol?.erase?.(id, { actor, reason: 'SCIM group deleted by the identity provider' });
     for (const uid of group.members) {
       const user = this.users.get(uid);
       if (!user) continue;
@@ -443,9 +464,10 @@ export class ScimService {
       meta: { resourceType: 'Group', created: iso(at), lastModified: iso(at) }
     };
     this.groups.set(group.id, group);
+    this.groupCol?.put({ ...group });
     this._syncGroup(group, { actor, at });
     this.ledger?.append('admin.action', { subject: group.displayName, actor, action: 'scim.group_created', members: group.members.length });
-    return { schemas: [SCIM_GROUP], ...group };
+    return this._presentGroup(group);
   }
 
   patchGroup(id, patchOp, { actor = 'scim', at = now() } = {}) {
@@ -460,8 +482,9 @@ export class ScimService {
       else if (kind === 'replace') group.members = values;
     }
     group.meta.lastModified = iso(at);
+    this.groupCol?.put({ ...group });
     this._syncGroup(group, { actor, at });
-    return { schemas: [SCIM_GROUP], ...group };
+    return this._presentGroup(group);
   }
 
   /**

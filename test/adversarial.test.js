@@ -756,3 +756,114 @@ describe('A5 — deprovisioning takes effect on the NEXT request, by every route
     assert.ok(worst.ms < 1000);
   });
 });
+
+// ===========================================================================
+// A11 — state that must survive a restart
+// ===========================================================================
+
+describe('A11 — identity state survives a restart, or the control is decorative', () => {
+  function roundTrip(seed, read) {
+    const dir = tmp('a11-');
+    const key = Ledger.newSigningKey();
+    const open = () => new Vault({ dir, signingKey: key, administrators: ['ciso', 'cto'], seedRules: false });
+    const first = open();
+    seed(first);
+    const before = read(first);
+    first.close();
+    const second = open();
+    const after = read(second);
+    second.close();
+    rmSync(dir, { recursive: true, force: true });
+    return { before, after };
+  }
+
+  test('an enrolled second factor is still enrolled after a restart', () => {
+    // It was not. `MfaRegistry.factors` was a bare Map, so every restart
+    // unenrolled everyone. With requireMfa on that is a company-wide lockout;
+    // with it off the second factor quietly stops existing.
+    const { before, after } = roundTrip(
+      (v) => v.mfa.enrolTotp('sarah@acme.com', { actor: 'ciso' }),
+      (v) => v.mfa.factorsFor('sarah@acme.com').length
+    );
+    assert.equal(before, 1);
+    assert.equal(after, 1, 'the TOTP enrolment did not survive the restart');
+  });
+
+  test('a passkey survives too, so nobody has to re-register hardware after a deploy', () => {
+    const { after } = roundTrip(
+      (v) => v.mfa.enrolWebauthn('sarah@acme.com', {
+        credentialId: 'cred-1', publicKeyJwk: { kty: 'EC', crv: 'P-256', x: 'a', y: 'b' }, actor: 'ciso'
+      }),
+      (v) => v.mfa.factorsFor('sarah@acme.com').filter((f) => f.kind === 'webauthn').length
+    );
+    assert.equal(after, 1);
+  });
+
+  test('the TOTP shared secret is not readable on disk', () => {
+    const dir = tmp('a11-secret-');
+    const v = new Vault({ dir, signingKey: Ledger.newSigningKey(), administrators: ['a', 'b'], seedRules: false });
+    const { secret } = v.mfa.enrolTotp('sarah@acme.com', { actor: 'ciso' });
+    v.close();
+    const bytes = everyFile(dir).map(([, b]) => b).join('');
+    assert.ok(secret && secret.length > 10);
+    assert.equal(bytes.includes(secret), false,
+      'the TOTP seed is sitting on disk in the clear — persisting it must not mean publishing it');
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  test('a bound device is still bound after a restart', () => {
+    const { after } = roundTrip(
+      (v) => v.accessPolicy.registerDevice('sarah@acme.com', 'dev-1', { actor: 'ciso' }),
+      (v) => v.accessPolicy.knownDevices.has('sarah@acme.com|dev-1')
+    );
+    assert.equal(after, true,
+      'device bindings were forgotten on restart — with requireKnownDevice on, that locks out the whole estate on an ordinary deploy');
+  });
+
+  test('SCIM groups survive, so a user\'s group names still resolve', () => {
+    const { before, after } = roundTrip(
+      (v) => v.scim.createGroup({ displayName: 'vault-admins', members: [] }, { actor: 'idp' }),
+      (v) => v.scim.listGroups().Resources.length
+    );
+    assert.equal(before, 1);
+    assert.equal(after, 1, 'the Groups endpoint reported an empty directory to the IdP after a restart');
+  });
+
+  test('a group membership change survives, not just the group', () => {
+    const dir = tmp('a11-gm-');
+    const key = Ledger.newSigningKey();
+    const first = new Vault({ dir, signingKey: key, administrators: ['a', 'b'], seedRules: false });
+    const u = first.scim.createUser({ userName: 'sarah@acme.com', active: true }, { actor: 'idp' });
+    const g = first.scim.createGroup({ displayName: 'vault-admins', members: [] }, { actor: 'idp' });
+    first.scim.patchGroup(g.id, { Operations: [{ op: 'add', path: 'members', value: [{ value: u.id }] }] }, { actor: 'idp' });
+    assert.equal(first.scim.require(u.id).role, 'admin');
+    first.close();
+
+    const second = new Vault({ dir, signingKey: key, administrators: ['a', 'b'], seedRules: false });
+    assert.deepEqual(second.scim.getGroup(g.id).members, [{ value: u.id }],
+      'the membership edit was lost, so the next IdP sync would see a group it had already populated as empty');
+    // And the internal form must still be plain ids, or _syncGroup's
+    // `members.includes(user.id)` silently stops matching anyone.
+    assert.deepEqual(second.scim.groups.get(g.id).members, [u.id]);
+    assert.equal(second.scim.require(u.id).role, 'admin', 'the role derived from that membership did not survive');
+    second.close();
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  test('MUTATION — drop the MFA collection and the restart test fails', () => {
+    const dir = tmp('a11-mut-');
+    const key = Ledger.newSigningKey();
+    const v = new Vault({ dir, signingKey: key, administrators: ['a', 'b'], seedRules: false });
+    // Reproduce the original shape: enrol into the Map without persisting.
+    v.mfa.col = null;
+    v.mfa.enrolTotp('ghost@acme.com', { actor: 'ciso' });
+    assert.equal(v.mfa.factorsFor('ghost@acme.com').length, 1);
+    v.close();
+
+    const again = new Vault({ dir, signingKey: key, administrators: ['a', 'b'], seedRules: false });
+    assert.equal(again.mfa.factorsFor('ghost@acme.com').length, 0,
+      'without the collection the enrolment must vanish, or this test is not measuring persistence');
+    again.close();
+    rmSync(dir, { recursive: true, force: true });
+  });
+});

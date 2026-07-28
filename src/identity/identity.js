@@ -29,6 +29,7 @@ import { parseXml, find, findAll, verifySignature, local } from './xmldsig.js';
 import { now, iso, duration, MINUTE, HOUR, DAY } from '../util/time.js';
 import { VaultError, forbidden } from '../util/errors.js';
 
+const sha256 = (v) => createHash('sha256').update(String(v)).digest('hex');
 const b64u = (b) => Buffer.from(b).toString('base64url');
 const unb64u = (s) => Buffer.from(String(s), 'base64url');
 const safeEq = (a, b) => {
@@ -584,7 +585,7 @@ export class AccessPolicy {
    */
   constructor({ requireMfa = false, phishingResistantRoles = ['admin', 'security', 'legal'],
     ipAllowlist = [], allowedCountries = [], blockedCountries = [], requireKnownDevice = false,
-    geoLookup = null, ledger = null } = {}) {
+    geoLookup = null, ledger = null, collection = null } = {}) {
     this.requireMfa = requireMfa;
     this.phishingResistantRoles = phishingResistantRoles;
     this.ipAllowlist = ipAllowlist.map(parseCidr);
@@ -593,12 +594,24 @@ export class AccessPolicy {
     this.requireKnownDevice = requireKnownDevice;
     this.geoLookup = geoLookup;
     this.ledger = ledger;
+    this.col = collection;
     this.knownDevices = new Map();
+    /**
+     * Device bindings were in-memory only, so a restart forgot every device.
+     * With `requireKnownDevice` on that locks the whole estate out until each
+     * person re-registers; the failure is loud but total, and it happens on
+     * an ordinary deploy rather than an incident.
+     */
+    for (const rec of this.col?.all() ?? []) {
+      this.knownDevices.set(`${rec.principal}|${rec.deviceId}`, rec);
+    }
   }
 
   registerDevice(principal, deviceId, { actor, at = now() } = {}) {
     const key = `${principal}|${deviceId}`;
-    this.knownDevices.set(key, { principal, deviceId, registeredAt: at, actor: actor ?? principal });
+    const record = { principal, deviceId, registeredAt: at, actor: actor ?? principal };
+    this.knownDevices.set(key, record);
+    this.col?.put({ id: `dev-${sha256(key).slice(0, 24)}`, ...record });
     this.ledger?.append('admin.action', { subject: principal, actor: actor ?? principal, action: 'device.registered', deviceId });
     return { principal, deviceId, registeredAt: iso(at) };
   }
@@ -678,11 +691,35 @@ function inCidr(ip, { base, mask }) {
 // ---------------------------------------------------------------------------
 
 export class MfaRegistry {
-  constructor({ ledger = null } = {}) {
+  /**
+   * @param {object} [o]
+   * @param {import('../storage/db.js').Collection|null} [o.collection] durable store
+   */
+  constructor({ ledger = null, collection = null } = {}) {
     this.ledger = ledger;
-    /** principal → factors */
+    this.col = collection;
+    /** principal → factors. The working index; the collection is the truth. */
     this.factors = new Map();
     this.usedTotp = new Map();
+    /**
+     * Enrolments used to live in this Map and nowhere else, so every restart
+     * silently unenrolled every user. With `requireMfa` on that is a
+     * company-wide lockout; with it off it is worse, because the second factor
+     * quietly stops existing and nothing says so. Passkeys went the same way,
+     * which would have meant re-registering every hardware key after a deploy.
+     *
+     * The collection is sealed by default like every other, so the TOTP shared
+     * secrets are ciphertext at rest rather than a file of seeds.
+     */
+    for (const rec of this.col?.all() ?? []) {
+      this.factors.set(rec.principal, rec.factors ?? []);
+    }
+  }
+
+  _persist(principal) {
+    if (!this.col) return;
+    const id = `mfa-${sha256(principal).slice(0, 24)}`;
+    this.col.put({ id, principal, factors: this.factors.get(principal) ?? [] });
   }
 
   enrolTotp(principal, { actor, secret = null, at = now() } = {}) {
@@ -690,6 +727,7 @@ export class MfaRegistry {
     const list = this.factors.get(principal) ?? [];
     list.push({ kind: 'totp', secret: key, enrolledAt: at, amr: 'otp', phishingResistant: false });
     this.factors.set(principal, list);
+    this._persist(principal);
     this.ledger?.append('admin.action', { subject: principal, actor: actor ?? principal, action: 'mfa.enrolled', kind: 'totp' });
     return {
       kind: 'totp', secret: key,
@@ -713,6 +751,7 @@ export class MfaRegistry {
       amr: 'hwk', phishingResistant: true
     });
     this.factors.set(principal, list);
+    this._persist(principal);
     this.ledger?.append('admin.action', { subject: principal, actor: actor ?? principal, action: 'mfa.enrolled', kind: 'webauthn' });
     return { kind: 'webauthn', credentialId, phishingResistant: true };
   }

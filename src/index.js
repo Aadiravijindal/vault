@@ -530,12 +530,19 @@ export class Vault {
       ledger: this.ledger,
       ...(options.sessions ?? {})
     });
-    this.mfa = new MfaRegistry({ ledger: this.ledger });
-    this.accessPolicy = new AccessPolicy({ ledger: this.ledger, ...(options.accessPolicy ?? {}) });
+    // Both of these were in-memory only, so a restart silently unenrolled every
+    // second factor and forgot every bound device. The collections are sealed
+    // by default, which is what keeps the TOTP shared secrets off disk in the
+    // clear now that they are on disk at all.
+    this.mfa = new MfaRegistry({ ledger: this.ledger, collection: this.db.collection('mfa_factors') });
+    this.accessPolicy = new AccessPolicy({
+      ledger: this.ledger, collection: this.db.collection('known_devices'), ...(options.accessPolicy ?? {})
+    });
     this.saml = options.saml ? new SamlProvider({ ...options.saml, ledger: this.ledger }) : null;
     this.oidc = options.oidc ? new OidcProvider({ ...options.oidc, ledger: this.ledger }) : null;
     this.scim = new ScimService({
       sessions: this.sessions, ledger: this.ledger,
+      groupCollection: this.db.collection('scim_groups'),
       collection: this.db.collection('scim_users', this._fields({
         // displayName defaults to userName, so leaving it out would have put
         // the address back on disk beside the sealed copy of itself.
