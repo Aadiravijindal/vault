@@ -11,7 +11,7 @@
  *   3. external anchoring           — periodic digests to independent witnesses
  *   4. standalone verifier          — bin/vault-verify.js, trusts neither party
  */
-import { hashObject, chainHash, sha256, signMessage, verifyMessage, generateSigningKeyPair } from '../util/crypto.js';
+import { hashObject, chainHash, sha256, canonical, signMessage, verifyMessage, generateSigningKeyPair, pseudonym, randomToken } from '../util/crypto.js';
 import { now, iso } from '../util/time.js';
 import { VaultError } from '../util/errors.js';
 
@@ -50,9 +50,26 @@ export class Ledger {
    * @param {Witness[]} [opts.witnesses]
    * @param {number} [opts.anchorEvery] anchor after N entries
    */
-  constructor({ collection, signingKey = null, witnesses = [], anchorEvery = 250 }) {
+  constructor({ collection, signingKey = null, witnesses = [], anchorEvery = 250, pseudonymSalt = null }) {
     this.col = collection;
     this.signingKey = signingKey;
+    /**
+     * Salt for pseudonymising identifiers that name a person.
+     *
+     * Has to be stable across restart or `entries({subject})` stops finding
+     * yesterday's entries, so the Vault derives it from the persisted root key.
+     * A bare Ledger with no salt gets a per-process one: still no plaintext on
+     * disk, but lookups do not survive a restart — which is why every Ledger
+     * the product constructs is given one.
+     *
+     * Honest limit: this is pseudonymisation, not anonymisation. Whoever holds
+     * the salt can confirm a guessed address by recomputing the HMAC. It stops
+     * `grep` over a data directory and it stops an auditor handed the export
+     * from reading a staff list; it is not a defence against an attacker who
+     * already has the root key.
+     */
+    this.pseudonymSalt = pseudonymSalt || randomToken(32);
+    this._pseudonymise = (v) => pseudonym(this.pseudonymSalt, String(v).trim().toLowerCase());
     this.witnesses = witnesses;
     this.anchorEvery = anchorEvery;
     this.anchors = [];
@@ -82,9 +99,12 @@ export class Ledger {
       seq: this.seq + 1,
       type,
       at: now(),
-      actor: payload.actor ?? null,
-      subject: payload.subject ?? null,
-      ...stripContent(payload)
+      // `actor` and `subject` are the two fields most likely to hold a person
+      // rather than an id, so they get the same shape test as everything else.
+      // A rule id survives verbatim; an email address does not.
+      actor: this._reduceIdentity(payload.actor),
+      subject: this._reduceIdentity(payload.subject),
+      ...stripContent(payload, this._pseudonymise)
     };
     const contentHash = hashObject(body);
     const hash = chainHash(this.head, contentHash);
@@ -104,12 +124,30 @@ export class Ledger {
 
   get length() { return this.seq; }
 
+  /**
+   * The stored form of an identity field.
+   *
+   * Identifiers pass through, so a trace on `f-123` still works. Anything
+   * person-shaped is pseudonymised rather than hashed, because a hash would be
+   * a dead end and the point is that lookups keep working — `entries()` runs
+   * the caller's query through the same function, so searching by an email
+   * address finds the entries written under its pseudonym.
+   */
+  _reduceIdentity(v) {
+    if (v == null) return null;
+    const s = String(v);
+    if (EMAIL.test(s)) return this._pseudonymise(s);
+    return isStructural(s) ? s : this._pseudonymise(s);
+  }
+
   entries({ from = 1, to = Infinity, type = null, subject = null, actor = null, limit = 1000 } = {}) {
+    const wantSubject = subject == null ? null : this._reduceIdentity(subject);
+    const wantActor = actor == null ? null : this._reduceIdentity(actor);
     return this.col.all()
       .filter((e) => e.seq >= from && e.seq <= to)
       .filter((e) => (type ? (Array.isArray(type) ? type.includes(e.type) : e.type === type) : true))
-      .filter((e) => (subject ? e.subject === subject : true))
-      .filter((e) => (actor ? e.actor === actor : true))
+      .filter((e) => (subject ? e.subject === wantSubject : true))
+      .filter((e) => (actor ? e.actor === wantActor : true))
       .sort((a, b) => a.seq - b.seq)
       .slice(0, limit);
   }
@@ -269,8 +307,34 @@ export class Ledger {
   static newSigningKey() { return generateSigningKeyPair(); }
 }
 
-/** Content never enters the ledger. This is enforced, not documented. */
-const CONTENT_KEYS = new Set(['content', 'text', 'claim', 'transcript', 'body', 'raw', 'value', 'plaintext', 'message']);
+/**
+ * Keys that are content by definition, hashed whatever they look like.
+ *
+ * The shape test below is the general defence, but it can be fooled: a claim of
+ * "CONFIDENTIAL-RESTORE-CANARY." has no whitespace and reads as an identifier.
+ * So these names are hashed unconditionally and first. The two rules are not
+ * redundant — this one catches content that looks structural, the shape test
+ * catches content under a key nobody thought to list.
+ */
+const CONTENT_KEYS = new Set(['content', 'text', 'claim', 'transcript', 'body', 'raw', 'value', 'plaintext', 'message', 'query', 'input', 'output', 'prompt', 'transcriptText', 'excerpt', 'snippet']);
+
+/**
+ * Operator-authored prose that stays readable, on purpose.
+ *
+ * These are the fields an auditor actually reads: why break-glass was used, why
+ * a hold was lifted, what a rule is for. Hashing them would leave a chain that
+ * verifies and answers no question anyone has, so they pass through verbatim —
+ * a deliberate trade, not an oversight.
+ *
+ * The trade is only sound because these are written by named operators into an
+ * admin field, never lifted out of a customer conversation. `assertNoContent`
+ * below is what stops the second kind from arriving here by accident.
+ */
+const AUDIT_PROSE = new Set([
+  'reason', 'note', 'notes', 'matter', 'purpose', 'justification', 'resolution',
+  'remediation', 'rootCause', 'detail', 'description', 'title', 'name', 'label',
+  'expression', 'scope', 'disclosure', 'finding', 'findings', 'summary'
+]);
 
 /**
  * The envelope owns these names. A payload key that collides with one silently
@@ -280,17 +344,75 @@ const CONTENT_KEYS = new Set(['content', 'text', 'claim', 'transcript', 'body', 
  */
 const RESERVED = new Set(['id', 'seq', 'contentHash', 'prevHash', 'hash', 'signature', '_v', '_created', '_updated']);
 
-function stripContent(payload) {
+/** RFC-5322-ish, deliberately loose: over-matching here costs a lookup, under-matching costs a leak. */
+const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+/**
+ * A string shaped like an identifier, an enum, a hash, a path or a timestamp.
+ *
+ * Everything the ledger legitimately carries is one of those. Free text is not:
+ * it has whitespace, or it is long, or both. So the test is on the *shape of
+ * the value*, not on the name of the key — which is the whole point, because
+ * the bug this replaces was a denylist of nine key names that a tenth key
+ * walked straight past.
+ */
+const STRUCTURAL = /^[A-Za-z0-9_.:/@+=-]{0,128}$/;
+
+function isStructural(v) {
+  return STRUCTURAL.test(v) && !EMAIL.test(v);
+}
+
+/**
+ * Reduce one payload value to something safe to hand an auditor.
+ *
+ * Fail-safe by construction: a value only survives verbatim if it is a
+ * non-string primitive, an identifier-shaped string, or operator prose on the
+ * explicit list. Anything else — including every key nobody thought about when
+ * this was written — becomes a hash and a length. A new event type carrying a
+ * new free-text field therefore lands here already redacted, rather than
+ * leaking until someone notices.
+ */
+function reduceValue(key, v, pseudonymise) {
+  if (CONTENT_KEYS.has(key)) {
+    const s = v == null ? '' : typeof v === 'string' ? v : canonical(v);
+    return { hash: sha256(s), len: s.length };
+  }
+  if (v == null || typeof v === 'number' || typeof v === 'boolean') return { verbatim: v };
+  if (typeof v === 'string') {
+    if (EMAIL.test(v)) return { verbatim: pseudonymise(v) };
+    if (isStructural(v)) return { verbatim: v };
+    if (AUDIT_PROSE.has(key)) return { verbatim: v };
+    return { hash: sha256(v), len: v.length };
+  }
+  if (Array.isArray(v)) {
+    // An array of ids or counts is structural; an array of sentences is not.
+    const parts = v.map((item) => reduceValue(key, item, pseudonymise));
+    if (parts.every((p) => 'verbatim' in p)) return { verbatim: parts.map((p) => p.verbatim) };
+    return { hash: sha256(canonical(v)), len: v.length };
+  }
+  // Recurse rather than blanket-hash. `before: {read:['sales','support']}` on a
+  // wall change is exactly the field an auditor asks about, and it is entirely
+  // department names; hashing it would leave the chain answering "something
+  // changed" and nothing else. An object survives only if every leaf in it
+  // survives, so one sentence anywhere inside still redacts the whole thing.
+  const reduced = {};
+  for (const [k, item] of Object.entries(v)) {
+    const r = reduceValue(k, item, pseudonymise);
+    if (!('verbatim' in r)) return { hash: sha256(canonical(v)), len: Object.keys(v).length };
+    reduced[k] = r.verbatim;
+  }
+  return { verbatim: reduced };
+}
+
+function stripContent(payload, pseudonymise) {
   const out = {};
   for (const [k, v] of Object.entries(payload)) {
     if (k === 'actor' || k === 'subject') continue;
     const key = RESERVED.has(k) ? `payload_${k}` : k;
-    if (CONTENT_KEYS.has(k)) {
-      out[`${key}Hash`] = sha256(String(v ?? ''));
-      out[`${key}Len`] = String(v ?? '').length;
-      continue;
-    }
-    out[key] = v;
+    const r = reduceValue(k, v, pseudonymise);
+    if ('verbatim' in r) { out[key] = r.verbatim; continue; }
+    out[`${key}Hash`] = r.hash;
+    out[`${key}Len`] = r.len;
   }
   return out;
 }

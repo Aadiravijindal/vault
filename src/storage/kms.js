@@ -139,6 +139,23 @@ export class Kms {
     return entry;
   }
 
+  /**
+   * A stable secret for a named internal purpose, derived from the root.
+   *
+   * Deliberately NOT a KEK: it registers no scope, emits no key event and can
+   * never be crypto-shredded, because the things that use it — the ledger's
+   * pseudonymisation salt, for one — must keep producing the same value for the
+   * life of the store. Shredding a scope makes its data unreadable; shredding
+   * this would make every historical audit lookup silently miss instead.
+   *
+   * In cmk/hyok/hsm modes there is no local root, so callers get null and must
+   * degrade explicitly rather than silently derive from random bytes.
+   */
+  staticSecret(label) {
+    if (this.mode === 'cmk' || this.mode === 'hyok' || this.mode === 'hsm') return null;
+    return sha256(`${this.root.toString('hex')}|static|${label}`);
+  }
+
   _deriveKek(scope, version) {
     // HKDF-ish: root || scope || version. In cmk/hyok modes the root never
     // exists locally and the customer's service does the wrap/unwrap instead.

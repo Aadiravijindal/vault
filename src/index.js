@@ -69,6 +69,27 @@ import { coverageMap } from './connectors/catalog.js';
 import { now, iso } from './util/time.js';
 import { VaultError } from './util/errors.js';
 
+/**
+ * The only collections allowed to sit on disk in the clear, and why.
+ *
+ * Everything else is sealed by default (see `Db.encryptByDefault`). This map is
+ * the exemption list, and the reason string is not decoration: the encryption
+ * test reads it back and fails on any entry whose justification is missing or
+ * empty, so an exemption cannot be added silently.
+ *
+ * The bar for entry is "provably contains no customer content, no employee
+ * identifier and no data-subject identifier". Nothing gets in here because
+ * sealing it would be inconvenient.
+ */
+export const PLAINTEXT_COLLECTIONS = new Map([
+  ['ledger',
+    'the whole point of the chain is that an auditor or a customer can verify it '
+    + 'with bin/vault-verify.js, no Vault code and no key. Sealing it would make '
+    + 'independent verification impossible, so instead the ledger carries no '
+    + 'content: values are shape-tested on the way in, content keys are hashed '
+    + 'unconditionally, and person-shaped identifiers are pseudonymised.'],
+]);
+
 export class Vault {
   /**
    * @param {object} [options]
@@ -131,7 +152,17 @@ export class Vault {
       ...(dir ? { tombstonePath: join(dir, 'shredded.jsonl') } : {}),
       onEvent: (e) => this._keyEvent(e)
     });
-    this.db = new Db({ dir, kms: this.kms });
+    this.encryptAtRest = options.encryptAtRest !== false;
+    this.db = new Db({
+      dir, kms: this.kms,
+      encryptByDefault: this.encryptAtRest,
+      plaintextCollections: PLAINTEXT_COLLECTIONS,
+      // Operational collections have no folder of their own, so they all key to
+      // ns:unfiled. That is deliberate: they are governance records about the
+      // whole tenant, and a per-folder key would mean shredding one department
+      // silently destroyed the tenant's alert history.
+      defaultKeyScope: (doc) => `ns:${String(doc?.folder ?? doc?.namespace ?? 'unfiled').split('/')[0] || 'unfiled'}`
+    });
     this.signingKey = signingKey;
 
     /**
@@ -154,8 +185,14 @@ export class Vault {
      * How much this is worth depends entirely on where the key is, and the
      * product reports which case it is in rather than letting a reader assume
      * the strongest one. See `storage().encryptionAtRest.protectsAgainst`.
+     *
+     * Marking the content collections by hand was itself the second version of
+     * this bug: it sealed the ones somebody remembered, and left data-subject
+     * names in the DSAR register, saved search queries, case notes and agent
+     * owners readable. The default now lives in `Db` and runs the other way —
+     * see PLAINTEXT_COLLECTIONS. `_contentCollection` stays because a few
+     * collections need a key scope other than the default one.
      */
-    this.encryptAtRest = options.encryptAtRest !== false;
     /**
      * The key scope decides what a crypto-shred can actually destroy, so it has
      * to match what the erasure path destroys — otherwise erasure destroys a key
@@ -199,7 +236,12 @@ export class Vault {
       collection: this.db.collection('ledger', { worm: true }),
       signingKey,
       witnesses: this.witnesses,
-      anchorEvery
+      anchorEvery,
+      // Derived from the persisted root, so a pseudonym written today still
+      // resolves after a restart. Without this the ledger would pseudonymise
+      // under a fresh per-process salt and every historical subject lookup
+      // would quietly return nothing.
+      pseudonymSalt: this.kms.staticSecret('ledger:pseudonym')
     });
 
     // ---- modules (built-in / connected / both) --------------------------

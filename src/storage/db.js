@@ -32,13 +32,44 @@ export class Db {
    * @param {import('./kms.js').Kms|null} [opts.kms]
    * @param {(e:object)=>void} [opts.onEvent]
    */
-  constructor({ dir = null, kms = null, onEvent } = {}) {
+  /**
+   * @param {object} [opts]
+   * @param {string|null} [opts.dir] null = in-memory only (tests, ephemeral demos)
+   * @param {import('./kms.js').Kms|null} [opts.kms]
+   * @param {boolean} [opts.encryptByDefault] seal every collection unless allowlisted
+   * @param {Map<string,string>} [opts.plaintextCollections] name -> why it may stay readable
+   * @param {(doc:any)=>string} [opts.defaultKeyScope]
+   * @param {(e:object)=>void} [opts.onEvent]
+   */
+  constructor({ dir = null, kms = null, onEvent, encryptByDefault = false, plaintextCollections = new Map(), defaultKeyScope = null } = {}) {
     this.dir = dir;
     this.kms = kms;
     this.onEvent = onEvent || (() => {});
+    /**
+     * Encryption at rest is opt-OUT, not opt-in.
+     *
+     * It used to be opt-in, and the result was the bug this inverts: the
+     * envelope machinery was correct, tested and wired to nothing, because
+     * every new collection defaulted to plaintext and nobody remembered the
+     * flag. A whole-directory canary scan found employee names, data-subject
+     * names, saved search queries and case notes sitting in readable JSON.
+     *
+     * With the default the other way round, a collection added next year is
+     * sealed unless someone writes down why it should not be — and the reason
+     * is stored here rather than in a commit message, so the A2 test can read
+     * it back and assert every exemption is justified.
+     */
+    this.encryptByDefault = encryptByDefault;
+    this.plaintextCollections = plaintextCollections;
+    this.defaultKeyScope = defaultKeyScope;
     /** @type {Map<string, Collection>} */
     this.collections = new Map();
     if (dir) mkdirSync(dir, { recursive: true });
+  }
+
+  /** Why `name` is allowed to sit on disk in the clear, or null if it is not. */
+  plaintextReason(name) {
+    return this.plaintextCollections.get(name) ?? null;
   }
 
   /**
@@ -49,7 +80,14 @@ export class Db {
   collection(name, opts = {}) {
     let c = this.collections.get(name);
     if (!c) {
-      c = new Collection(this, name, opts);
+      // An explicit `encrypted:` from the caller always wins; the default only
+      // fills the gap where nobody said anything, which is the case that used
+      // to fail silently.
+      const encrypted = opts.encrypted !== undefined
+        ? opts.encrypted
+        : this.encryptByDefault && !this.plaintextCollections.has(name);
+      const keyScope = opts.keyScope ?? (encrypted ? this.defaultKeyScope : null) ?? undefined;
+      c = new Collection(this, name, { ...opts, encrypted, ...(keyScope ? { keyScope } : {}) });
       this.collections.set(name, c);
       c._load();
     }
