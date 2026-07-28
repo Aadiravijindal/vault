@@ -1,0 +1,336 @@
+{
+  "killSwitch": {
+    "drill": "kill-switch quarterly test",
+    "performedAt": "2026-07-28T20:32:47.681Z",
+    "actor": "ciso",
+    "levelsTested": [
+      1,
+      2,
+      3,
+      4,
+      5,
+      6
+    ],
+    "results": [
+      {
+        "level": 1,
+        "label": "Warn",
+        "activationMs": 1.285,
+        "targetMs": 300000,
+        "pass": true,
+        "error": null,
+        "inForce": {
+          "level": 1,
+          "writesBlocked": false,
+          "readsBlocked": false
+        },
+        "agentMessage": "MEMORY FLAGGED: everything is being recorded and flagged. Normal operation otherwise."
+      },
+      {
+        "level": 2,
+        "label": "Review all",
+        "activationMs": 0.49,
+        "targetMs": 300000,
+        "pass": true,
+        "error": null,
+        "inForce": {
+          "level": 2,
+          "writesBlocked": false,
+          "readsBlocked": false
+        },
+        "agentMessage": "MEMORY UNDER REVIEW: every write is queued for a human. Nothing you write is live yet."
+      },
+      {
+        "level": 3,
+        "label": "Read-only",
+        "activationMs": 0.43,
+        "targetMs": 60000,
+        "pass": true,
+        "error": null,
+        "inForce": {
+          "level": 3,
+          "writesBlocked": true,
+          "readsBlocked": false
+        },
+        "agentMessage": "MEMORY READ-ONLY: reads work normally, writes are not being accepted. Do not claim anything was saved."
+      },
+      {
+        "level": 4,
+        "label": "Scoped freeze",
+        "activationMs": 0.904,
+        "targetMs": 60000,
+        "pass": true,
+        "error": null,
+        "inForce": {
+          "level": 4,
+          "writesBlocked": true,
+          "readsBlocked": false
+        },
+        "agentMessage": "MEMORY SCOPE FROZEN: writes to this scope are not being accepted. Reads still work."
+      },
+      {
+        "level": 5,
+        "label": "Read-block on scope",
+        "activationMs": 0.428,
+        "targetMs": 60000,
+        "pass": true,
+        "error": null,
+        "inForce": {
+          "level": 5,
+          "writesBlocked": true,
+          "readsBlocked": true
+        },
+        "agentMessage": "MEMORY SCOPE BLOCKED: this scope cannot be read or written. Do not guess its contents."
+      },
+      {
+        "level": 6,
+        "label": "Full freeze",
+        "activationMs": 0.399,
+        "targetMs": 60000,
+        "pass": true,
+        "error": null,
+        "inForce": {
+          "level": 6,
+          "writesBlocked": true,
+          "readsBlocked": true
+        },
+        "agentMessage": "MEMORY UNAVAILABLE: Vault is fully frozen. Do not assert remembered facts; say you cannot access shared memory."
+      }
+    ],
+    "allPassed": true,
+    "worstActivationMs": 1.285,
+    "target": "level >=3: <60s (transaction-authority agents); levels 1-2: <5min"
+  },
+  "redTeam": {
+    "drill": "quarterly adversarial red-team of the gate",
+    "performedAt": "2026-07-28T20:32:47.780Z",
+    "actor": "ciso",
+    "attacks": 56,
+    "caught": 56,
+    "missed": 0,
+    "missedDetail": [],
+    "byClass": {
+      "instruction/imperative": "1/1",
+      "instruction/authority": "1/1",
+      "instruction/permission": "1/1",
+      "instruction/threshold": "1/1",
+      "instruction/secrecy": "1/1",
+      "instruction/roleplay": "1/1",
+      "instruction/urgency": "1/1",
+      "instruction/future-trigger": "1/1",
+      "instruction/delimiter": "1/1",
+      "evasion/invisible": "1/1",
+      "evasion/bidi": "1/1",
+      "evasion/soft-hyphen": "1/1",
+      "evasion/encoding": "4/4",
+      "evasion/homoglyph": "1/1",
+      "evasion/metadata-channel": "1/1",
+      "evasion/markdown": "1/1",
+      "evasion/code-comment": "1/1",
+      "evasion/whitespace": "1/1",
+      "pii/payment-card": "1/1",
+      "pii/credential": "2/2",
+      "pii/national-id": "1/1",
+      "pii/special-category": "1/1",
+      "reconciliation/golden-overwrite": "1/1",
+      "walls/probe": "1/1",
+      "channel/untrusted-authority": "1/1",
+      "evasion/multi-hop": "1/1",
+      "evasion/multilingual": "1/1",
+      "evasion/nested-encoding": "1/1",
+      "seam/split-payload": "2/2",
+      "seam/structure": "1/1",
+      "seam/fact-shape": "1/1",
+      "seam/quotation": "1/1",
+      "seam/source-verification": "1/1",
+      "seam/trust-laundering": "1/1",
+      "seam/agent-output": "1/1",
+      "seam/corroboration": "1/1",
+      "seam/confidence": "1/1",
+      "seam/pii-cover": "1/1",
+      "seam/retention": "1/1",
+      "seam/consent": "1/1",
+      "seam/labelling": "1/1",
+      "seam/erasure": "1/1",
+      "seam/emergency": "1/1",
+      "seam/model-pin": "1/1",
+      "seam/review-queue": "1/1",
+      "seam/timing": "1/1",
+      "seam/ownership": "1/1",
+      "seam/jurisdiction": "1/1",
+      "seam/provenance": "1/1",
+      "seam/attachment": "1/1",
+      "seam/negation": "1/1"
+    },
+    "pass": true,
+    "p95Ms": 8.71
+  },
+  "quarterlyRestore": {
+    "drill": "quarterly backup-restore test",
+    "performedAt": "2026-07-28T20:32:56.992Z",
+    "actor": "ops",
+    "scale": {
+      "facts": 2000,
+      "conversations": 2000,
+      "ledgerEntries": 6158,
+      "backupBytes": 89247000
+    },
+    "backup": {
+      "ms": 1765.9,
+      "files": 13,
+      "verifyMs": 275.8,
+      "verified": true
+    },
+    "restore": {
+      "ms": 1096.6,
+      "openMs": 1043.9,
+      "filesRestored": 13,
+      "suppressedScopes": 0,
+      "notes": []
+    },
+    "integrity": {
+      "factsBefore": 2000,
+      "factsAfter": 2000,
+      "factsRecovered": true,
+      "conversationsBefore": 2000,
+      "conversationsAfter": 2000,
+      "ledgerBefore": 6158,
+      "ledgerAfter": 6158,
+      "chainVerifies": true
+    },
+    "rpo": {
+      "measuredMs": 0,
+      "measuredSeconds": 0,
+      "targetSeconds": 300,
+      "pass": true
+    },
+    "rto": {
+      "measuredMs": 2140.5,
+      "measuredSeconds": 2.14,
+      "targetSeconds": 3600,
+      "pass": true
+    },
+    "pass": true,
+    "notes": [],
+    "into": "/tmp/drill-restore-cSAyam"
+  },
+  "disasterRecovery": {
+    "drill": "disaster recovery exercise (primary destroyed)",
+    "performedAt": "2026-07-28T20:37:07.376Z",
+    "actor": "ops",
+    "scale": {
+      "facts": 12000,
+      "conversations": 12000,
+      "ledgerEntries": 36277,
+      "backupBytes": 1655095244
+    },
+    "backup": {
+      "ms": 49606.7,
+      "files": 13,
+      "verifyMs": 11537.5,
+      "verified": true
+    },
+    "restore": {
+      "ms": 32991.2,
+      "openMs": 19094.2,
+      "filesRestored": 13,
+      "suppressedScopes": 0,
+      "notes": [
+        "the restore could not be recorded in the source ledger (ENOENT) — expected when recovering from total loss of the primary"
+      ]
+    },
+    "integrity": {
+      "factsBefore": 12000,
+      "factsAfter": 12000,
+      "factsRecovered": true,
+      "conversationsBefore": 12000,
+      "conversationsAfter": 12000,
+      "ledgerBefore": 36277,
+      "ledgerAfter": 36277,
+      "chainVerifies": true
+    },
+    "rpo": {
+      "measuredMs": 0,
+      "measuredSeconds": 0,
+      "targetSeconds": 300,
+      "pass": true
+    },
+    "rto": {
+      "measuredMs": 52085.4,
+      "measuredSeconds": 52.09,
+      "targetSeconds": 3600,
+      "pass": true
+    },
+    "pass": true,
+    "notes": [
+      "The primary data directory was deleted before the restore. This is the case every previous restore test skipped."
+    ],
+    "into": "/tmp/drill-restore-SflsNQ"
+  },
+  "erasureSla": {
+    "drill": "erasure completion SLA",
+    "performedAt": "2026-07-28T20:39:06.979Z",
+    "actor": "dpo",
+    "subject": "Priya Raghunathan",
+    "hotWarm": {
+      "measuredMs": 5.1,
+      "targetMs": 86400000,
+      "targetLabel": "24 hours",
+      "goneFromMemory": true,
+      "goneFromDisk": true,
+      "pass": true
+    },
+    "backupsAndArchive": {
+      "measuredMs": 11.2,
+      "targetMs": 604800000,
+      "targetLabel": "7 days",
+      "goneFromRestoredBackup": true,
+      "pass": true
+    },
+    "receiptMethods": [
+      {
+        "location": "fact store",
+        "reached": true
+      },
+      {
+        "location": "archive:conv-ms54ch5i17go555d",
+        "reached": true
+      },
+      {
+        "location": "archive (WORM)",
+        "reached": true
+      },
+      {
+        "location": "read logs",
+        "reached": true
+      },
+      {
+        "location": "backups and archive tier (all generations)",
+        "reached": true
+      },
+      {
+        "location": "search index",
+        "reached": true
+      }
+    ],
+    "pass": true
+  },
+  "connectorGap": {
+    "drill": "connector gap detection",
+    "performedAt": "2026-07-28T20:39:07.013Z",
+    "actor": "ciso",
+    "connector": {
+      "id": "cx-ms54ch6t17h8d052",
+      "name": "Slack bots"
+    },
+    "simulatedSilenceMinutes": 20,
+    "detectionMs": 1.58,
+    "targetMinutes": 15,
+    "detected": true,
+    "alertRaised": true,
+    "namedOwnerNotified": "silent for its entire lifetime — notify sam",
+    "pass": true,
+    "error": null,
+    "note": "Detection is evaluated on demand rather than by a timer, so this measures that a silent connector IS detected and alerts a named owner. It does not measure the latency of a scheduled poll, which is a deployment configuration."
+  }
+}

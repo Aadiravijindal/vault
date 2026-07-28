@@ -275,24 +275,50 @@ export function erasureSlaDrill({ vault, subject, actor, canary, engine, store, 
 /**
  * §1 / §31 — connector gap detection within 15 minutes.
  */
-export function connectorGapDrill(vault, { actor, connectorId = 'gap-drill', silenceMs = 20 * 60 * 1000 }) {
+export function connectorGapDrill(vault, { actor, catalogId = 'slack-bot', silenceMs = 20 * 60 * 1000 }) {
   const at = now();
-  const t0 = startTimer();
-  let detected = null;
-  let detail = null;
+  let connector = null;
+  let error = null;
   try {
-    const health = vault.connectors.health?.({ at: at + silenceMs }) ?? vault.connectors.gaps?.({ at: at + silenceMs });
-    detected = Array.isArray(health) ? health.length > 0 : Boolean(health);
-    detail = health;
-  } catch (e) { detail = e.message; }
+    // A real connector, actually connected. The first version of this drill
+    // called health() against an empty registry, got an empty array, and
+    // recorded "detected: false" — which measured nothing at all. A drill that
+    // cannot fail is not a drill.
+    connector = vault.connectors.connect({
+      catalogId, mode: 'watch', credential: 'drill-credential',
+      owner: 'dana', technicalOwner: 'sam', actor
+    });
+  } catch (e) { error = e.message; }
+
+  const t0 = startTimer();
+  let health = [];
+  try {
+    // Silence threshold below the simulated silence, so a connector that has
+    // never delivered an event is over it.
+    health = vault.connectors.health({ silentAfterMs: silenceMs }) ?? [];
+  } catch (e) { error = error ?? e.message; }
+
+  const row = health.find((h) => h.id === connector?.id) ?? null;
+  const detected = Boolean(row && row.healthy === false && row.alert);
+  const alerted = vault.alerts.open({ limit: 200 }).some((a) => a.kind === 'connector_silent');
+
   return {
     drill: 'connector gap detection',
     performedAt: iso(at),
-    actor, connectorId,
+    actor,
+    connector: connector ? { id: connector.id, name: connector.name } : null,
     simulatedSilenceMinutes: silenceMs / 60000,
     detectionMs: Number(ms(t0).toFixed(2)),
     targetMinutes: 15,
     detected,
-    detail: typeof detail === 'object' ? JSON.stringify(detail).slice(0, 300) : detail
+    alertRaised: alerted,
+    namedOwnerNotified: row?.alert ?? null,
+    pass: detected && alerted,
+    error,
+    // Honest about what this does and does not establish.
+    note: 'Detection is evaluated on demand rather than by a timer, so this '
+      + 'measures that a silent connector IS detected and alerts a named owner. '
+      + 'It does not measure the latency of a scheduled poll, which is a '
+      + 'deployment configuration.'
   };
 }
