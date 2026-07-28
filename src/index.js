@@ -16,7 +16,7 @@ import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { randomBytes } from 'node:crypto';
 import { Db } from './storage/db.js';
-import { Kms, KEY_MODES } from './storage/kms.js';
+import { Kms, KEY_MODES, subjectScope } from './storage/kms.js';
 import { FieldCrypto, FIELD_POLICIES } from './storage/fields.js';
 import { createKeyClient, RemoteKeyBridge } from './storage/kmsclient.js';
 import { TieringEngine } from './storage/tiers.js';
@@ -206,7 +206,23 @@ export class Vault {
      * exactly the scope `LegalOps.erase` destroys (`conversation:<id>`) when it
      * removes a transcript from the WORM archive.
      */
-    const nsOf = (doc) => `ns:${String(doc?.folder ?? doc?.namespace ?? 'unfiled').split('/')[0] || 'unfiled'}`;
+    const namespaceOf = (doc) => `ns:${String(doc?.folder ?? doc?.namespace ?? 'unfiled').split('/')[0] || 'unfiled'}`;
+    /**
+     * Records about exactly one identifiable person are sealed under that
+     * person's own key, so erasing them destroys the key that actually sealed
+     * them — including in every backup generation holding the same ciphertext.
+     *
+     * Only when there is exactly one. A record naming two people cannot be
+     * crypto-shredded for one of them without destroying the other's copy too,
+     * and a record naming none has no subject to key on; both fall back to the
+     * namespace, and the erasure receipt now says which case each record was in
+     * rather than claiming blanket coverage it does not have.
+     */
+    const nsOf = (doc) => {
+      const people = (doc?.entities ?? []).filter((e) => e?.type === 'person' && e?.name);
+      const named = new Set(people.map((e) => String(e.name).trim().toLowerCase()));
+      return named.size === 1 ? subjectScope([...named][0]) : namespaceOf(doc);
+    };
     const perConversation = (doc) => `conversation:${doc?.id ?? 'unknown'}`;
     this._contentCollection = (name, extra = {}) => this.db.collection(name, {
       encrypted: this.encryptAtRest, keyScope: nsOf, ...extra

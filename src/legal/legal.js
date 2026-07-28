@@ -385,30 +385,53 @@ export class LegalOps {
     const deleted = { facts: 0, conversations: 0, derivedFacts: 0, summaries: 0, consentRecords: 0 };
     const methods = [];
 
+    /**
+     * The key scopes that actually sealed this subject's records.
+     *
+     * Read off the records themselves rather than assumed. The previous version
+     * shredded `subject:<name>` on the assumption that this was the scope, when
+     * facts were sealed under `ns:<department>`: the shred call created the
+     * named scope, destroyed it, and reported success, while the key that could
+     * still decrypt every backup copy was never touched.
+     */
+    const sealedUnder = new Map();
+    const noteScope = (col, doc) => {
+      if (!doc || !col?.keyScope) return;
+      const scope = col.keyScope(doc);
+      if (!sealedUnder.has(scope)) sealedUnder.set(scope, { scope, records: 0, exclusive: scope.startsWith('subject:') || scope.startsWith('conversation:') });
+      sealedUnder.get(scope).records++;
+    };
+
     // 1. Facts — hard delete, physically removing the bytes from the segment.
     for (const item of plan.freeItems.filter((i) => i.kind === 'fact')) {
       const f = this.facts.get(item.id);
       if (!f) continue;
       const col = f.golden ? this.facts.goldenCol : this.facts.col;
+      noteScope(col, col.raw(item.id) ?? f);
       col.erase(item.id, { actor, reason, requestId });
       this.search?._remove?.(item.id);
       this.ledger.append('fact.erased', { subject: item.id, actor, reason, requestId, method: 'hard delete + segment rewrite' });
       deleted.facts++;
     }
-    methods.push({ location: 'fact store', method: 'hard delete + segment rewrite' });
+    if (deleted.facts) {
+      methods.push({ location: 'fact store', method: 'hard delete + segment rewrite', records: deleted.facts });
+    }
 
     // 2. Conversations — WORM, so the content is removed by destroying its key.
     for (const item of plan.freeItems.filter((i) => i.kind === 'conversation')) {
       const c = this.archive?.get(item.id);
       if (!c) continue;
-      const scope = `conversation:${item.id}`;
+      noteScope(this.archive.col, this.archive.col.raw(item.id) ?? c);
+      const scope = this.archive.col.keyScope(this.archive.col.raw(item.id) ?? c);
       let shredded = null;
       try { shredded = this.kms.cryptoShred(scope, { actor, reason, requestId }); } catch { /* no key for this scope */ }
       this.archive.col.erase(item.id, { actor, reason, requestId, cryptoShredded: true });
       deleted.conversations++;
-      if (shredded) methods.push({ location: `archive:${item.id}`, method: 'crypto-shred (key destroyed)', witness: shredded.witness });
+      if (shredded) methods.push({ location: `archive:${item.id}`, method: 'crypto-shred (key destroyed)', scope, witness: shredded.witness });
     }
-    methods.push({ location: 'archive (WORM)', method: 'tombstoned + key destroyed' });
+    if (deleted.conversations) {
+      methods.push({ location: 'archive (WORM)', method: 'tombstoned + key destroyed', records: deleted.conversations });
+    }
 
     // 3. Derived facts — regenerated without them.
     for (const id of plan.found.derivedFactIds) {
@@ -417,26 +440,77 @@ export class LegalOps {
       this.facts.setStatus(id, 'expired', { actor, reason: `derived from erased data (${requestId}) — regenerated without it` });
       deleted.derivedFacts++;
     }
-    methods.push({ location: 'derived facts', method: 'regenerated without the subject' });
-
-    // 4. Read logs — pseudonymise the subject reference, keep the event.
-    const salt = `erasure:${requestId}`;
-    const pseudo = pseudonym(salt, subject);
-    methods.push({ location: 'read logs', method: `subject reference pseudonymised (${pseudo}), event retained for audit integrity` });
-
-    // 5. Backups — reached by crypto-shredding the subject scope.
-    let backupShred = null;
-    try {
-      backupShred = this.kms.cryptoShred(`subject:${subject}`, { actor, reason, requestId });
-      methods.push({ location: 'backups (all generations)', method: 'crypto-shredded — the key is destroyed, so the ciphertext is unrecoverable', witness: backupShred.witness });
-    } catch {
-      methods.push({ location: 'backups', method: 'no subject-scoped key existed; backups carry no separately-keyed copy of this subject' });
+    if (deleted.derivedFacts) {
+      methods.push({ location: 'derived facts', method: 'regenerated without the subject', records: deleted.derivedFacts });
     }
 
-    // 6. Indexes and caches.
+    /**
+     * 4. Read logs.
+     *
+     * The ledger is append-only and hash-chained: rewriting an entry would
+     * break every downstream proof, so the subject reference is not rewritten
+     * here. It does not need to be — the ledger pseudonymises person-shaped
+     * identifiers at write time, so the entries never held the name. The
+     * receipt states which of those two things happened rather than describing
+     * a rewrite that does not occur.
+     */
+    const readLogEntries = this.ledger.entries({ type: 'fact.read', limit: Infinity })
+      .filter((e) => plan.freeItems.some((i) => i.id === e.subject));
+    methods.push({
+      location: 'read logs',
+      method: `subject reference stored pseudonymised at write time (${pseudonym(`erasure:${requestId}`, subject)}); `
+        + 'the events are retained because the chain is append-only and removing them would break every proof derived from it',
+      records: readLogEntries.length
+    });
+
+    /**
+     * 5. Backups.
+     *
+     * A backup is immutable ciphertext, so the only thing that reaches it is
+     * destroying the key. Which key that is has to come from the records — the
+     * previous version destroyed `subject:<name>`, a scope that existed only
+     * because the shred call itself created it, and reported the ciphertext
+     * unrecoverable while `ns:<department>` was still live and would still
+     * decrypt every backup copy. That claim was checked by restoring a
+     * pre-erasure backup, and the record came back verbatim.
+     *
+     * A namespace scope is shared with other people's records, so destroying it
+     * would erase strangers. Those are reported as NOT reached, with the reason,
+     * because a receipt that overstates is worse than one that admits a limit.
+     */
+    const shredded = [];
+    const notReached = [];
+    for (const s of sealedUnder.values()) {
+      if (!s.exclusive) { notReached.push(s); continue; }
+      if (this.kms.isShredded?.(s.scope)) { shredded.push({ ...s, witness: null }); continue; }
+      try {
+        const receipt = this.kms.cryptoShred(s.scope, { actor, reason, requestId });
+        shredded.push({ ...s, witness: receipt.witness });
+      } catch { notReached.push({ ...s, why: 'the key service refused the destroy' }); }
+    }
+    if (shredded.length) {
+      methods.push({
+        location: 'backups and archive tier (all generations)',
+        method: 'crypto-shredded — the keys that sealed these records are destroyed, so every copy of the ciphertext is unrecoverable',
+        scopes: shredded.map((s) => s.scope),
+        records: shredded.reduce((a, s) => a + s.records, 0),
+        witness: shredded.find((s) => s.witness)?.witness ?? null
+      });
+    }
+    for (const s of notReached) {
+      methods.push({
+        location: 'backups (records sealed under a shared key)',
+        method: `NOT crypto-shredded: these records are sealed under ${s.scope}, which also seals other people's data. `
+          + 'Destroying it would erase them too. Copies in backups taken before this request expire with the backup '
+          + 'retention schedule; the live copy is hard-deleted above.',
+        scope: s.scope, records: s.records, reached: false
+      });
+    }
+
+    // 6. Indexes. The search index is rebuilt from the surviving records; there
+    // is no separate cache layer to invalidate, so nothing claims one.
     this.search?.reindexAll?.();
-    methods.push({ location: 'search index', method: 'purged and rebuilt' });
-    methods.push({ location: 'caches', method: 'invalidated' });
+    methods.push({ location: 'search index', method: 'purged and rebuilt from the surviving records' });
 
     // 7. Third parties.
     const propagation = [];

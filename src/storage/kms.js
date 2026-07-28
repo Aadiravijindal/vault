@@ -23,6 +23,24 @@ export const KEY_MODES = /** @type {const} */ ([
   'vault-managed', 'byok', 'cmk', 'hyok', 'hsm', 'split'
 ]);
 
+/**
+ * The key scope that makes a per-person erasure actually reach a backup.
+ *
+ * Everything used to be sealed under `ns:<department>`, and the erasure path
+ * then destroyed `subject:<name>` — a scope that did not exist, was created on
+ * the spot by the shred call, and had encrypted nothing. The receipt said the
+ * backup ciphertext was unrecoverable while the real key, `ns:sales`, was
+ * untouched, so restoring a pre-erasure backup handed the whole record back.
+ *
+ * Sealing a record that names exactly one person under that person's own scope
+ * is what makes destroying it mean something. Normalisation has to match on
+ * both sides or the erasure destroys a neighbouring key instead, which is the
+ * same bug wearing a different name.
+ */
+export function subjectScope(name) {
+  return `subject:${String(name).trim().toLowerCase().replace(/\s+/g, ' ')}`;
+}
+
 export class Kms {
   /**
    * @param {object} opts

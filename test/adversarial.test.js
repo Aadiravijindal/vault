@@ -490,3 +490,139 @@ describe('A3 — an erasure survives a restart and a restore from before it', ()
     restored.close();
   });
 });
+
+// ===========================================================================
+// A4 — the erasure receipt, line by line, against independent evidence
+// ===========================================================================
+
+describe('A4 — every method the erasure receipt claims actually happened', () => {
+  const SUBJECT = 'Priya Raghunathan';
+
+  function erased({ withBackup = false } = {}) {
+    const dir = tmp('a4-');
+    const key = Ledger.newSigningKey();
+    const v = new Vault({ dir, signingKey: key, administrators: ['ciso', 'cto'], seedRules: false });
+    v.registerAgent({ id: 'a-1', name: 'S', purpose: 'p', businessOwner: 'd', technicalOwner: 's', department: 'sales', mode: 'inline', folders: ['sales/'] });
+    const cred = v.issueCredential('a-1', {}).credential;
+    v.ingest({
+      agentId: 'a-1', channel: 'system_of_record',
+      participants: [{ name: SUBJECT, kind: 'customer' }],
+      turns: [{ speaker: SUBJECT, text: `A4CANARY ${SUBJECT} pays 340000` }]
+    }, { credential: cred, folderHint: 'sales/accounts/', sampleRoll: 0 });
+
+    let store = null; let engine = null; const storeDir = tmp('a4-store-');
+    if (withBackup) {
+      store = new BackupStore({ dir: storeDir, writeCredential: 'wr', deleteCredential: 'del' });
+      engine = new BackupEngine({ source: dir, db: v.db, kms: v.kms, ledger: v.ledger, store, credential: 'wr' });
+      engine.full({ actor: 'ops', reason: 'taken BEFORE the erasure request' });
+    }
+
+    const out = v.legal.erase({ subject: SUBJECT, actor: 'dpo', reason: 'GDPR Art 17', confirm: true });
+    const methods = out.receipt.body?.methods ?? out.receipt.methods ?? [];
+    return { v, dir, key, out, methods, storeDir };
+  }
+
+  test('the crypto-shred claim is true: a pre-erasure backup no longer yields the record', () => {
+    // This is the line that was false. The receipt said the ciphertext was
+    // unrecoverable while the key that sealed it, ns:sales, was untouched —
+    // the shred had destroyed `subject:<name>`, a scope created by the shred
+    // call itself, which had encrypted nothing.
+    const { v, dir, key, methods, storeDir } = erased({ withBackup: true });
+    const claim = methods.find((m) => /all generations/.test(m.location));
+    assert.ok(claim, 'the receipt makes no crypto-shred claim at all');
+    v.close();
+
+    rmSync(dir, { recursive: true, force: true });
+    const engine = new BackupEngine({
+      source: dir, credential: 'wr',
+      store: new BackupStore({ dir: storeDir, writeCredential: 'wr', deleteCredential: 'del' })
+    });
+    const into = tmp('a4-into-');
+    engine.restore({ into, actor: 'dr', reason: 'verify the receipt' });
+    const restored = new Vault({ dir: into, signingKey: key, seedRules: false });
+    const blob = JSON.stringify(restored.facts.all()) + JSON.stringify(restored.archive.col.all());
+    restored.close();
+
+    assert.equal(blob.includes('A4CANARY'), false,
+      'the receipt claimed the backup ciphertext was unrecoverable and the record came back verbatim');
+  });
+
+  test('a method is only listed when it was actually carried out', () => {
+    // Every line used to be pushed unconditionally, so a receipt for a subject
+    // with no conversations still claimed the archive had been tombstoned.
+    const dir = tmp('a4-empty-');
+    const v = new Vault({ dir, signingKey: Ledger.newSigningKey(), administrators: ['ciso', 'cto'], seedRules: false });
+    const out = v.legal.erase({ subject: 'Nobody At All', actor: 'dpo', reason: 'GDPR Art 17', confirm: true });
+    const methods = out.receipt.body?.methods ?? out.receipt.methods ?? [];
+    v.close();
+    rmSync(dir, { recursive: true, force: true });
+
+    assert.equal(out.deleted.facts, 0);
+    assert.equal(methods.some((m) => /fact store/.test(m.location)), false,
+      'the receipt claims a hard delete for a subject with nothing to delete');
+    assert.equal(methods.some((m) => /archive \(WORM\)/.test(m.location)), false,
+      'the receipt claims the archive was tombstoned when there was no conversation');
+  });
+
+  test('the receipt says plainly what it did NOT reach, rather than overstating', () => {
+    const { v, methods } = erased();
+    const unreached = methods.filter((m) => m.reached === false);
+    for (const m of unreached) {
+      assert.match(m.method, /NOT crypto-shredded/, 'an unreached location must say so in words, not only in a flag');
+      assert.ok(m.scope, 'name the scope, so a reader can check the claim');
+    }
+    // And nothing may claim a cache layer that does not exist.
+    assert.equal(methods.some((m) => /caches/.test(m.location)), false,
+      'the receipt claimed cache invalidation, and there is no cache to invalidate');
+    v.close();
+  });
+
+  test('the read-log line describes what happens, not a rewrite that never runs', () => {
+    const { v, methods } = erased();
+    const line = methods.find((m) => /read logs/.test(m.location));
+    assert.ok(line);
+    // The old wording implied the entries were rewritten during erasure. They
+    // are not — the chain is append-only — so the receipt must not say they were.
+    assert.match(line.method, /pseudonymised at write time/);
+    assert.match(line.method, /append-only/);
+    v.close();
+  });
+
+  test('the hard-delete claim is true against the bytes, across a restart', () => {
+    const { v, dir, key } = erased();
+    v.close();
+    const again = new Vault({ dir, signingKey: key, seedRules: false });
+    const blob = JSON.stringify(again.facts.all()) + JSON.stringify(again.archive.col.all());
+    again.close();
+    assert.equal(blob.includes('A4CANARY'), false, 'the erased record came back after a restart');
+    const onDisk = everyFile(dir).map(([, b]) => b).join('');
+    assert.equal(onDisk.includes('A4CANARY'), false, 'the erased content is still greppable in the data directory');
+  });
+
+  test('MUTATION — shred the scope the old code guessed, and the backup test fails again', () => {
+    // Reproduces the original defect exactly: destroy `subject:<name>` without
+    // consulting what actually sealed the record.
+    const dir = tmp('a4-mut-');
+    const key = Ledger.newSigningKey();
+    const v = new Vault({ dir, signingKey: key, administrators: ['ciso', 'cto'], seedRules: false });
+    v.registerAgent({ id: 'a-1', name: 'S', purpose: 'p', businessOwner: 'd', technicalOwner: 's', department: 'sales', mode: 'inline', folders: ['sales/'] });
+    const cred = v.issueCredential('a-1', {}).credential;
+    v.ingest({
+      agentId: 'a-1', channel: 'system_of_record', participants: [{ name: SUBJECT, kind: 'customer' }],
+      turns: [{ speaker: SUBJECT, text: `MUTCANARY ${SUBJECT} pays 340000` }]
+    }, { credential: cred, folderHint: 'sales/accounts/', sampleRoll: 0 });
+
+    const fact = v.facts.all()[0];
+    const realScope = v.db.collection('facts').keyScope(v.db.collection('facts').raw(fact.id));
+    // The guess the old code made, spelled differently from the real one.
+    const guessed = `subject:${SUBJECT}`;
+    v.kms.cryptoShred(guessed, { actor: 'dpo', reason: 'the guess' });
+
+    assert.notEqual(guessed, realScope,
+      'if the guess and the real scope were identical the original bug could not have existed');
+    assert.equal(v.kms.isShredded(realScope), false,
+      'shredding the guessed scope must leave the real key alive — that is what made the receipt false');
+    v.close();
+    rmSync(dir, { recursive: true, force: true });
+  });
+});
