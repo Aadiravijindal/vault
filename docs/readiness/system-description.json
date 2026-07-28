@@ -1,0 +1,914 @@
+{
+  "generatedAt": "2026-07-28T19:48:42.765Z",
+  "organisation": "Vault",
+  "typesOfServices": "Vault provides a governed shared memory layer for AI agents. Interactions are captured verbatim into a sealed, hash-chained archive; candidate facts are extracted with a pointer back to their source bytes; every candidate passes a ten-check gate before it can become durable memory; and every event is recorded in an append-only, externally-anchored ledger that a customer can verify independently of Vault.",
+  "principalServiceCommitments": [
+    "Every write to the fact store passes the gate. There is no configuration, credential or module state in which the gate does not run, and no \"pass unchecked\" code path exists.",
+    "The audit ledger is append-only and hash-chained. There is no edit path in the code, and a customer can verify the chain with a standalone open-source verifier, holding their own signing key, without any Vault software.",
+    "Customer content is encrypted at rest by default. Encryption is opt-out with a justified allowlist, not opt-in.",
+    "A right-to-erasure request is executed and receipted, and the receipt states per record which stores were reached — including where a record sealed under a shared key could NOT be crypto-shredded in backups.",
+    "Deprovisioning through SCIM revokes access on the next request, not at the next token refresh.",
+    "Customer data is never used for training, by Vault or by any upstream model provider."
+  ],
+  "systemRequirements": [
+    "Availability: 99.9% standard, 99.95% enterprise, 99.99% multi-region.",
+    "Recovery: RPO 5 minutes, RTO 1 hour.",
+    "Erasure: 24 hours for hot and warm tiers, 7 days including backups and archive.",
+    "Full-tenant export: under 24 hours at any size, free and unthrottled."
+  ],
+  "componentsOfTheSystem": {
+    "infrastructure": "Node.js ≥22 with zero runtime dependencies, deployable to Vault Cloud (multi- or single-tenant), the customer's VPC, on-premise, or fully air-gapped.",
+    "software": "Twelve layers: connection, raw archive, extraction, the gate, fact store, hygiene, read path, ledger, observability, governance, storage, control surface.",
+    "people": "Named administrators for the kill switch; two named approvers for break-glass; folder owners for review routing.",
+    "procedures": "Documented in docs/OPERATIONS.md, docs/INCIDENT-RESPONSE.md and docs/SECURITY.md.",
+    "data": "Customer conversations, extracted facts, governance metadata and the audit ledger. Sensitivity labelled in four tiers with folder inheritance."
+  },
+  "boundariesAndSubservice": {
+    "inScope": "The Vault application and its data stores.",
+    "subserviceOrganisations": "For Vault Cloud, the IaaS provider (physical security, environmental controls, hardware). Model providers where a connected module invokes one.",
+    "method": "DECISION REQUIRED: carve-out or inclusive. Carve-out is the usual choice and requires the sub-service organisation's own SOC 2 report; this is a commercial and audit-strategy decision, not an engineering one."
+  },
+  "complementaryUserEntityControls": [
+    "The customer configures folder walls, retention schedules and residency pinning to match their own obligations. Vault enforces what is configured; it cannot know the customer's legal position.",
+    "The customer names the kill-switch administrators and the two break-glass approvers.",
+    "The customer manages their own IdP, and the accuracy of SCIM deprovisioning depends on the customer deprovisioning in that IdP.",
+    "Where the customer holds their own signing key or KMS key, key custody is the customer's responsibility, and loss of that key is unrecoverable by design."
+  ],
+  "measuredPerformance": {
+    "note": "Measured in this environment, on the date above. Reproduce with `npm test` and bin/vault-scale.js.",
+    "startedAt": "2026-07-28T19:48:42.688Z",
+    "uptimeMs": 77,
+    "facts": {
+      "total": 4,
+      "golden": 0,
+      "byStatus": {
+        "live": 0,
+        "held": 3,
+        "rejected": 0,
+        "superseded": 0,
+        "expired": 0,
+        "frozen": 1,
+        "quarantined": 0,
+        "erased": 0
+      },
+      "withFullProvenance": 4,
+      "folders": 1,
+      "reads": 0
+    },
+    "archive": {
+      "conversations": 3,
+      "turns": 3,
+      "bytes": 137,
+      "storedBytes": 45,
+      "worm": 0,
+      "privileged": 0,
+      "onHold": 0,
+      "supervisionOpen": 0,
+      "productions": 0,
+      "gapReports": 0
+    },
+    "ledger": {
+      "entries": 51,
+      "head": "56981d3ad7f788465f43a362d1e7511bf711742b299b0163f393148148a0302e",
+      "anchors": 1
+    },
+    "agents": {
+      "total": 1,
+      "active": 1,
+      "shadow": 0
+    },
+    "review": {
+      "open": 2,
+      "byPriority": {
+        "high": 0,
+        "medium": 1,
+        "low": 1
+      },
+      "oldest": "0s",
+      "breaching": 0,
+      "closedLast7Days": 0,
+      "medianDecisionSeconds": null,
+      "slaCompliance": 100,
+      "awaitingSecondApprover": 1
+    },
+    "alerts": {
+      "total": 2,
+      "open": 2,
+      "bySeverity": {
+        "info": 0,
+        "low": 0,
+        "medium": 1,
+        "high": 1,
+        "critical": 0
+      },
+      "cases": 0,
+      "openCases": 0,
+      "deliveries": 5
+    },
+    "gate": {
+      "samples": 4,
+      "p50": 4.16,
+      "p95": 17.96,
+      "p99": 17.96,
+      "budget": {
+        "p50": 80,
+        "p95": 250,
+        "p99": 600
+      },
+      "withinBudget": true,
+      "failSafe": "queue",
+      "note": "fail-safe postures are queue-and-drain (default) or reject. \"Pass unchecked\" does not exist — there is no code path."
+    },
+    "killswitch": {
+      "level": 0,
+      "scope": null,
+      "engagedAt": null,
+      "engagedBy": null,
+      "reason": null,
+      "expiresAt": null,
+      "active": false,
+      "expiresIn": null,
+      "engagedFor": null,
+      "administrators": [
+        "ciso",
+        "cto"
+      ],
+      "queued": 0
+    },
+    "privacy": {
+      "enabled": false,
+      "jurisdiction": null,
+      "jurisdictionName": "OFF — full visibility (US at-will default)",
+      "settings": {
+        "noIndividualDashboards": false,
+        "aggregateOnly": false,
+        "kAnonymityFloor": null,
+        "pseudonymiseByDefault": false,
+        "purposeLock": false,
+        "affectAnalysis": "never — not a setting",
+        "productivityScoring": false,
+        "excludedContexts": [],
+        "sampleDontStream": false,
+        "workingHoursOnly": false,
+        "covertMonitoring": "does not exist",
+        "employeeRetention": null,
+        "transparencyPortal": true,
+        "objectionChannel": true,
+        "worksCouncilRole": false,
+        "changeNotification": false
+      },
+      "kAnonymityFloor": null,
+      "worksCouncilMembers": 0,
+      "openObjections": 0,
+      "reidentifications": 0,
+      "available": [
+        "off",
+        "uk",
+        "de",
+        "at",
+        "nl",
+        "se",
+        "fr",
+        "eu",
+        "in",
+        "us_strict",
+        "ca",
+        "global_strictest"
+      ],
+      "guarantees": [
+        "no individual dashboards — architecturally absent, not permission-gated",
+        "no affect analysis, ever — the code does not exist",
+        "no productivity scoring",
+        "no covert monitoring — covert mode does not exist",
+        "purpose lock enforced in the query layer and warranted in the MSA"
+      ]
+    },
+    "modules": [
+      {
+        "key": "archive",
+        "module": "Archive",
+        "rawState": "builtin",
+        "state": "🟢 Built-in",
+        "using": "Vault WORM Archive",
+        "action": "Connect mine",
+        "nextState": "connected",
+        "vendorOptions": [
+          "Smarsh",
+          "Global Relay",
+          "Theta Lake",
+          "Proofpoint Archive",
+          "Microsoft Purview",
+          "Veritas Enterprise Vault",
+          "Jatheon",
+          "Mimecast",
+          "Shield",
+          "Generic SFTP/S3/webhook"
+        ],
+        "missingOps": [],
+        "coveredByBuiltIn": null,
+        "noAlternative": false,
+        "healthy": true,
+        "keepOwnCopy": true
+      },
+      {
+        "key": "search",
+        "module": "Search",
+        "rawState": "builtin",
+        "state": "🟢 Built-in",
+        "using": "Vault Search",
+        "action": "Connect mine",
+        "nextState": "connected",
+        "vendorOptions": [
+          "Glean",
+          "GoSearch",
+          "Guru",
+          "Microsoft Search/Copilot",
+          "Elastic",
+          "Coveo",
+          "Algolia",
+          "Dust",
+          "Onyx",
+          "Sinequa",
+          "Lucidworks"
+        ],
+        "missingOps": [],
+        "coveredByBuiltIn": null,
+        "noAlternative": false,
+        "healthy": true,
+        "keepOwnCopy": true
+      },
+      {
+        "key": "tracing",
+        "module": "Tracing / Evals",
+        "rawState": "builtin",
+        "state": "🟢 Built-in",
+        "using": "Vault Trace",
+        "action": "Connect mine",
+        "nextState": "connected",
+        "vendorOptions": [
+          "Langfuse",
+          "Braintrust",
+          "Arize AX/Phoenix",
+          "LangSmith",
+          "Datadog LLM Observability",
+          "Honeycomb",
+          "W&B Weave",
+          "Opik/Comet",
+          "Helicone",
+          "Galileo",
+          "Fiddler",
+          "AgentOps",
+          "Laminar",
+          "Latitude",
+          "Confident AI",
+          "Traceloop/OpenLLMetry",
+          "New Relic",
+          "Dynatrace",
+          "Grafana"
+        ],
+        "missingOps": [],
+        "coveredByBuiltIn": null,
+        "noAlternative": false,
+        "healthy": true,
+        "keepOwnCopy": true
+      },
+      {
+        "key": "compliance",
+        "module": "Compliance / GRC",
+        "rawState": "builtin",
+        "state": "🟢 Built-in",
+        "using": "Vault Comply",
+        "action": "Connect mine",
+        "nextState": "connected",
+        "vendorOptions": [
+          "IBM watsonx.governance",
+          "Credo AI",
+          "OneTrust",
+          "ServiceNow AI Control Tower",
+          "Holistic AI",
+          "Monitaur",
+          "ModelOp",
+          "Trustible",
+          "Saidot",
+          "Airia",
+          "Cranium",
+          "Relyance",
+          "Truyo",
+          "AuditBoard",
+          "Archer",
+          "MetricStream",
+          "LogicGate",
+          "Vanta",
+          "Drata",
+          "Scrut",
+          "Sprinto"
+        ],
+        "missingOps": [],
+        "coveredByBuiltIn": null,
+        "noAlternative": false,
+        "healthy": true,
+        "keepOwnCopy": true
+      },
+      {
+        "key": "registry",
+        "module": "Agent Registry",
+        "rawState": "builtin",
+        "state": "🟢 Built-in",
+        "using": "Vault Registry",
+        "action": "Connect mine",
+        "nextState": "connected",
+        "vendorOptions": [
+          "Microsoft Agent 365 / Entra Agent ID",
+          "ServiceNow AI Control Tower",
+          "Okta",
+          "Ping",
+          "CyberArk",
+          "Palo Alto",
+          "Astrix",
+          "Cisco",
+          "Oasis",
+          "Entro",
+          "Linx",
+          "JumpCloud",
+          "Keycloak"
+        ],
+        "missingOps": [],
+        "coveredByBuiltIn": null,
+        "noAlternative": false,
+        "healthy": true,
+        "keepOwnCopy": true
+      },
+      {
+        "key": "identity",
+        "module": "Identity / SSO",
+        "rawState": "builtin",
+        "state": "🟢 Built-in",
+        "using": "Vault Identity",
+        "action": "Connect mine",
+        "nextState": "connected",
+        "vendorOptions": [
+          "Okta",
+          "Entra ID",
+          "Ping",
+          "JumpCloud",
+          "Keycloak",
+          "Google Workspace",
+          "OneLogin"
+        ],
+        "missingOps": [],
+        "coveredByBuiltIn": null,
+        "noAlternative": false,
+        "healthy": true,
+        "keepOwnCopy": true
+      },
+      {
+        "key": "siem",
+        "module": "SIEM",
+        "rawState": "builtin",
+        "state": "🟢 Built-in",
+        "using": "Vault Event Stream",
+        "action": "Connect mine",
+        "nextState": "connected",
+        "vendorOptions": [
+          "Splunk",
+          "Microsoft Sentinel",
+          "Elastic Security",
+          "Chronicle",
+          "QRadar",
+          "Sumo Logic",
+          "Datadog",
+          "Panther"
+        ],
+        "missingOps": [],
+        "coveredByBuiltIn": null,
+        "noAlternative": false,
+        "healthy": true,
+        "keepOwnCopy": true
+      },
+      {
+        "key": "kms",
+        "module": "Key Management",
+        "rawState": "builtin",
+        "state": "🟢 Built-in",
+        "using": "Vault KMS",
+        "action": "Connect mine",
+        "nextState": "connected",
+        "vendorOptions": [
+          "AWS KMS",
+          "Azure Key Vault",
+          "GCP KMS",
+          "HashiCorp Vault",
+          "Thales",
+          "Entrust",
+          "CloudHSM"
+        ],
+        "missingOps": [],
+        "coveredByBuiltIn": null,
+        "noAlternative": false,
+        "healthy": true,
+        "keepOwnCopy": true
+      },
+      {
+        "key": "storage",
+        "module": "Storage",
+        "rawState": "builtin",
+        "state": "🟢 Built-in",
+        "using": "Vault Storage",
+        "action": "Connect mine",
+        "nextState": "connected",
+        "vendorOptions": [
+          "AWS S3",
+          "Azure Blob",
+          "Google Cloud Storage",
+          "Cloudflare R2",
+          "Backblaze B2",
+          "Wasabi",
+          "MinIO",
+          "Ceph/Swift",
+          "NetApp",
+          "Dell EMC",
+          "Pure",
+          "IBM COS",
+          "OCI",
+          "Any S3-compatible"
+        ],
+        "missingOps": [],
+        "coveredByBuiltIn": null,
+        "noAlternative": false,
+        "healthy": true,
+        "keepOwnCopy": true
+      },
+      {
+        "key": "dlp",
+        "module": "DLP",
+        "rawState": "builtin",
+        "state": "🟢 Built-in",
+        "using": "Vault PII Scanner",
+        "action": "Connect mine",
+        "nextState": "connected",
+        "vendorOptions": [
+          "Microsoft Purview DLP",
+          "Symantec/Broadcom DLP",
+          "Forcepoint",
+          "Netskope",
+          "Nightfall",
+          "BigID",
+          "Varonis"
+        ],
+        "missingOps": [],
+        "coveredByBuiltIn": null,
+        "noAlternative": false,
+        "healthy": true,
+        "keepOwnCopy": true
+      },
+      {
+        "key": "memory",
+        "module": "Memory backing store",
+        "rawState": "builtin",
+        "state": "🟢 Built-in",
+        "using": "Vault Fact Store",
+        "action": "Connect mine",
+        "nextState": "connected",
+        "vendorOptions": [
+          "Mem0",
+          "Zep/Graphiti",
+          "Letta",
+          "Cognee",
+          "Supermemory",
+          "LangMem",
+          "Pinecone",
+          "Weaviate",
+          "Qdrant",
+          "Chroma"
+        ],
+        "missingOps": [],
+        "coveredByBuiltIn": null,
+        "noAlternative": false,
+        "healthy": true,
+        "keepOwnCopy": true
+      },
+      {
+        "key": "insurance",
+        "module": "Insurance Pack",
+        "rawState": "builtin",
+        "state": "🟢 Built-in",
+        "using": "Vault Insure",
+        "action": "—",
+        "nextState": null,
+        "vendorOptions": [],
+        "missingOps": [],
+        "coveredByBuiltIn": null,
+        "noAlternative": true,
+        "healthy": true,
+        "keepOwnCopy": true
+      }
+    ],
+    "storage": {
+      "ledger": {
+        "records": 51,
+        "ops": 51,
+        "bytes": 36220,
+        "worm": true,
+        "encrypted": false
+      },
+      "modules": {
+        "records": 0,
+        "ops": 0,
+        "bytes": 0,
+        "worm": false,
+        "encrypted": true
+      },
+      "alerts": {
+        "records": 2,
+        "ops": 2,
+        "bytes": 2002,
+        "worm": false,
+        "encrypted": true
+      },
+      "cases": {
+        "records": 0,
+        "ops": 0,
+        "bytes": 0,
+        "worm": false,
+        "encrypted": true
+      },
+      "killswitch": {
+        "records": 1,
+        "ops": 4,
+        "bytes": 4772,
+        "worm": false,
+        "encrypted": true
+      },
+      "conversations": {
+        "records": 3,
+        "ops": 3,
+        "bytes": 5714,
+        "worm": true,
+        "encrypted": true
+      },
+      "supervision_reviews": {
+        "records": 0,
+        "ops": 0,
+        "bytes": 0,
+        "worm": false,
+        "encrypted": true
+      },
+      "archive_state": {
+        "records": 0,
+        "ops": 0,
+        "bytes": 0,
+        "worm": false,
+        "encrypted": true
+      },
+      "folders": {
+        "records": 21,
+        "ops": 22,
+        "bytes": 23011,
+        "worm": false,
+        "encrypted": true
+      },
+      "entities": {
+        "records": 0,
+        "ops": 0,
+        "bytes": 0,
+        "worm": false,
+        "encrypted": true
+      },
+      "facts": {
+        "records": 4,
+        "ops": 12,
+        "bytes": 56428,
+        "worm": false,
+        "encrypted": true
+      },
+      "golden_facts": {
+        "records": 0,
+        "ops": 0,
+        "bytes": 0,
+        "worm": false,
+        "encrypted": true
+      },
+      "fact_versions": {
+        "records": 4,
+        "ops": 4,
+        "bytes": 19900,
+        "worm": false,
+        "encrypted": true
+      },
+      "agents": {
+        "records": 1,
+        "ops": 8,
+        "bytes": 11916,
+        "worm": false,
+        "encrypted": true
+      },
+      "agent_baselines": {
+        "records": 1,
+        "ops": 4,
+        "bytes": 3388,
+        "worm": false,
+        "encrypted": true
+      },
+      "agent_discovery": {
+        "records": 0,
+        "ops": 0,
+        "bytes": 0,
+        "worm": false,
+        "encrypted": true
+      },
+      "consent": {
+        "records": 1,
+        "ops": 1,
+        "bytes": 1144,
+        "worm": false,
+        "encrypted": true
+      },
+      "legal_holds": {
+        "records": 1,
+        "ops": 1,
+        "bytes": 1055,
+        "worm": false,
+        "encrypted": true
+      },
+      "legal_receipts": {
+        "records": 2,
+        "ops": 2,
+        "bytes": 5766,
+        "worm": false,
+        "encrypted": true
+      },
+      "legal_dsars": {
+        "records": 0,
+        "ops": 0,
+        "bytes": 0,
+        "worm": false,
+        "encrypted": true
+      },
+      "legal_privilege": {
+        "records": 0,
+        "ops": 0,
+        "bytes": 0,
+        "worm": false,
+        "encrypted": true
+      },
+      "privacy": {
+        "records": 1,
+        "ops": 1,
+        "bytes": 742,
+        "worm": false,
+        "encrypted": true
+      },
+      "notifications": {
+        "records": 1,
+        "ops": 2,
+        "bytes": 2104,
+        "worm": false,
+        "encrypted": true
+      },
+      "rules": {
+        "records": 17,
+        "ops": 17,
+        "bytes": 27915,
+        "worm": false,
+        "encrypted": true
+      },
+      "search_state": {
+        "records": 0,
+        "ops": 0,
+        "bytes": 0,
+        "worm": false,
+        "encrypted": true
+      },
+      "reviews": {
+        "records": 3,
+        "ops": 4,
+        "bytes": 26112,
+        "worm": false,
+        "encrypted": true
+      },
+      "spans": {
+        "records": 0,
+        "ops": 0,
+        "bytes": 0,
+        "worm": false,
+        "encrypted": true
+      },
+      "eval_runs": {
+        "records": 0,
+        "ops": 0,
+        "bytes": 0,
+        "worm": false,
+        "encrypted": true
+      },
+      "observability_state": {
+        "records": 0,
+        "ops": 0,
+        "bytes": 0,
+        "worm": false,
+        "encrypted": true
+      },
+      "ai_register": {
+        "records": 0,
+        "ops": 0,
+        "bytes": 0,
+        "worm": false,
+        "encrypted": true
+      },
+      "policies": {
+        "records": 0,
+        "ops": 0,
+        "bytes": 0,
+        "worm": false,
+        "encrypted": true
+      },
+      "incident_register": {
+        "records": 0,
+        "ops": 0,
+        "bytes": 0,
+        "worm": false,
+        "encrypted": true
+      },
+      "ai_vendors": {
+        "records": 1,
+        "ops": 1,
+        "bytes": 724,
+        "worm": false,
+        "encrypted": true
+      },
+      "attestations": {
+        "records": 0,
+        "ops": 0,
+        "bytes": 0,
+        "worm": false,
+        "encrypted": true
+      },
+      "comply_state": {
+        "records": 0,
+        "ops": 0,
+        "bytes": 0,
+        "worm": false,
+        "encrypted": true
+      },
+      "insure_state": {
+        "records": 0,
+        "ops": 0,
+        "bytes": 0,
+        "worm": false,
+        "encrypted": true
+      },
+      "connectors": {
+        "records": 0,
+        "ops": 0,
+        "bytes": 0,
+        "worm": false,
+        "encrypted": true
+      },
+      "billing": {
+        "records": 0,
+        "ops": 0,
+        "bytes": 0,
+        "worm": false,
+        "encrypted": true
+      },
+      "import_jobs": {
+        "records": 0,
+        "ops": 0,
+        "bytes": 0,
+        "worm": false,
+        "encrypted": true
+      },
+      "offboarding": {
+        "records": 0,
+        "ops": 0,
+        "bytes": 0,
+        "worm": false,
+        "encrypted": true
+      },
+      "api_keys": {
+        "records": 0,
+        "ops": 0,
+        "bytes": 0,
+        "worm": false,
+        "encrypted": true
+      },
+      "sessions": {
+        "records": 0,
+        "ops": 0,
+        "bytes": 0,
+        "worm": false,
+        "encrypted": true
+      },
+      "mfa_factors": {
+        "records": 0,
+        "ops": 0,
+        "bytes": 0,
+        "worm": false,
+        "encrypted": true
+      },
+      "known_devices": {
+        "records": 0,
+        "ops": 0,
+        "bytes": 0,
+        "worm": false,
+        "encrypted": true
+      },
+      "scim_groups": {
+        "records": 0,
+        "ops": 0,
+        "bytes": 0,
+        "worm": false,
+        "encrypted": true
+      },
+      "scim_users": {
+        "records": 0,
+        "ops": 0,
+        "bytes": 0,
+        "worm": false,
+        "encrypted": true
+      },
+      "breakglass": {
+        "records": 0,
+        "ops": 0,
+        "bytes": 0,
+        "worm": false,
+        "encrypted": true
+      },
+      "restore_drills": {
+        "records": 0,
+        "ops": 0,
+        "bytes": 0,
+        "worm": false,
+        "encrypted": true
+      },
+      "cost": {
+        "byTier": {
+          "hot": {
+            "records": 4,
+            "bytes": 57,
+            "monthlyCost": 0
+          }
+        },
+        "monthlyTotal": 0,
+        "currency": "USD",
+        "at": "2026-07-28T19:48:42.767Z"
+      }
+    },
+    "search": {
+      "indexedFacts": 1,
+      "externalDocs": 0,
+      "terms": 5,
+      "savedSearches": 0,
+      "queries": 0
+    },
+    "trace": {
+      "traces": 0,
+      "spans": 0,
+      "openSpans": 0,
+      "totalCostUsd": 0,
+      "memoryEvents": 0,
+      "goldenSets": 0,
+      "evalRuns": 0,
+      "issues": 0
+    },
+    "health": {
+      "grade": "F",
+      "score": 0,
+      "department": "all",
+      "facts": 0,
+      "metrics": {
+        "duplicateRate": 0,
+        "staleRate": 0,
+        "unresolvedContradictions": 0,
+        "provenanceCompleteness": 0,
+        "orphanRate": 0,
+        "reviewQueueAgeHours": 0,
+        "unownedFolders": 21,
+        "unlabelledRate": 0,
+        "goldenCoverage": 0,
+        "singleSourceRisk": 0,
+        "connectorGaps": 0
+      },
+      "fixes": [
+        {
+          "fix": "move Watch-mode agents to Inline so writes carry full provenance",
+          "impact": 120,
+          "effort": "medium",
+          "detail": "1 facts lack complete provenance"
+        },
+        {
+          "fix": "assign owners to unowned folders",
+          "impact": 10,
+          "effort": "low",
+          "detail": "21 unowned folders"
+        },
+        {
+          "fix": "define golden facts for your policies, ceilings and legal names",
+          "impact": 8,
+          "effort": "low",
+          "detail": "golden facts are the strongest single control and you have almost none"
+        }
+      ]
+    },
+    "connectors": 0
+  }
+}

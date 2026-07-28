@@ -1,0 +1,2995 @@
+{
+  "framework": "ISO 27001",
+  "standard": "ISO/IEC 27001:2022 Annex A",
+  "generatedAt": "2026-07-28T19:48:42.761Z",
+  "organisation": {
+    "name": "Vault (the service organisation)",
+    "service": "Vault — governed shared AI memory",
+    "scope": "The Vault platform: ingestion, the gate, the fact store, the sealed archive, the ledger, and the control surface."
+  },
+  "summary": {
+    "totalControls": 93,
+    "satisfied": 47,
+    "noEvidence": 4,
+    "organisational": 40,
+    "excluded": 2,
+    "withKnownGaps": 31,
+    "technicalCoverage": "47/93 (51%) evidenced from the ledger",
+    "ledgerEntriesCited": 113
+  },
+  "observationWindow": {
+    "required": false,
+    "controlsRequiringAPeriod": 0,
+    "minimumPeriod": "not applicable — ISO certification audits a management system, not a period of operating effectiveness",
+    "statement": "ISO 27001 and 42001 certification assess whether the management system is designed and operating, in a Stage 1 (documentation) and Stage 2 (implementation) audit. No fixed observation window applies, but Stage 2 expects records showing the system has been operating, typically for at least three months."
+  },
+  "controls": [
+    {
+      "id": "A.5.1",
+      "name": "Policies for information security",
+      "category": "A.5 Organizational",
+      "applicability": "included",
+      "justification": "Applicable to the service and its information assets.",
+      "window": "point-in-time",
+      "vaultControls": [],
+      "how": "Policy authoring, versioning, approval and publish workflow with acknowledgement tracking.",
+      "status": "organisational",
+      "ledgerEntries": 0,
+      "evidence": [],
+      "gap": null
+    },
+    {
+      "id": "A.5.2",
+      "name": "Information security roles and responsibilities",
+      "category": "A.5 Organizational",
+      "applicability": "included",
+      "justification": "Applicable to the service and its information assets.",
+      "window": "point-in-time",
+      "vaultControls": [
+        "VLT-5"
+      ],
+      "how": "Named business and technical owner on every agent, folder and namespace.",
+      "status": "satisfied",
+      "ledgerEntries": 2,
+      "evidence": [
+        {
+          "vaultControl": "VLT-5",
+          "what": "The AI system inventory, as a stream of registration events with named owners.",
+          "eventTypes": [
+            "agent.registered",
+            "agent.scope_changed",
+            "agent.retired",
+            "agent.suspended"
+          ],
+          "count": 2,
+          "samples": [
+            {
+              "seq": 19,
+              "type": "agent.registered",
+              "at": "2026-07-28T19:48:42.688Z",
+              "actor": "system",
+              "hash": "ab8c046ef20a4b8eec71cd1373fe6237a4aeb295384d56b9c932f0fb9356dc7c",
+              "verify": "bin/vault-verify.js <export> --entry 19"
+            },
+            {
+              "seq": 51,
+              "type": "agent.suspended",
+              "at": "2026-07-28T19:48:42.757Z",
+              "actor": "ciso",
+              "hash": "56981d3ad7f788465f43a362d1e7511bf711742b299b0163f393148148a0302e",
+              "verify": "bin/vault-verify.js <export> --entry 51"
+            }
+          ]
+        }
+      ],
+      "gap": null
+    },
+    {
+      "id": "A.5.3",
+      "name": "Segregation of duties",
+      "category": "A.5 Organizational",
+      "applicability": "included",
+      "justification": "Applicable to the service and its information assets.",
+      "window": "point-in-time",
+      "vaultControls": [
+        "VLT-7"
+      ],
+      "how": "Break-glass requires two named approvers; the backup write credential cannot delete.",
+      "status": "satisfied",
+      "ledgerEntries": 1,
+      "evidence": [
+        {
+          "vaultControl": "VLT-7",
+          "what": "Wall configuration changes and every privileged access grant.",
+          "eventTypes": [
+            "folder.wall_changed",
+            "admin.breakglass"
+          ],
+          "count": 1,
+          "samples": [
+            {
+              "seq": 35,
+              "type": "folder.wall_changed",
+              "at": "2026-07-28T19:48:42.743Z",
+              "actor": "ciso",
+              "hash": "b20f31eacf1a2ada57acbd654dba04c9fec01921f170e845736850b545d0131a",
+              "verify": "bin/vault-verify.js <export> --entry 35"
+            }
+          ]
+        }
+      ],
+      "gap": null
+    },
+    {
+      "id": "A.5.4",
+      "name": "Management responsibilities",
+      "category": "A.5 Organizational",
+      "applicability": "included",
+      "justification": "Applicable to the service and its information assets.",
+      "window": "point-in-time",
+      "vaultControls": [],
+      "how": "Board reporting pack; attestation tracking.",
+      "status": "organisational",
+      "ledgerEntries": 0,
+      "evidence": [],
+      "gap": null
+    },
+    {
+      "id": "A.5.5",
+      "name": "Contact with authorities",
+      "category": "A.5 Organizational",
+      "applicability": "included",
+      "justification": "Applicable to the service and its information assets.",
+      "window": "point-in-time",
+      "vaultControls": [],
+      "how": "Regulatory reporting formats for ICO, EU AI Office, India DPB, state AGs, NAIC, FINRA.",
+      "status": "organisational",
+      "ledgerEntries": 0,
+      "evidence": [],
+      "gap": null
+    },
+    {
+      "id": "A.5.6",
+      "name": "Contact with special interest groups",
+      "category": "A.5 Organizational",
+      "applicability": "included",
+      "justification": "Applicable to the service and its information assets.",
+      "window": "point-in-time",
+      "vaultControls": [],
+      "how": "Threat-feed integration; published bug bounty and VDP.",
+      "status": "organisational",
+      "ledgerEntries": 0,
+      "evidence": [],
+      "gap": null
+    },
+    {
+      "id": "A.5.7",
+      "name": "Threat intelligence",
+      "category": "A.5 Organizational",
+      "applicability": "included",
+      "justification": "Applicable to the service and its information assets.",
+      "window": "point-in-time",
+      "vaultControls": [
+        "VLT-2"
+      ],
+      "how": "Threat-feed integration, known-bad-source blocklist, domain age and lookalike detection.",
+      "status": "satisfied",
+      "ledgerEntries": 4,
+      "evidence": [
+        {
+          "vaultControl": "VLT-2",
+          "what": "Writes refused or held on channel-trust grounds.",
+          "eventTypes": [
+            "fact.held",
+            "fact.blocked",
+            "security.detection"
+          ],
+          "count": 4,
+          "samples": [
+            {
+              "seq": 30,
+              "type": "fact.held",
+              "at": "2026-07-28T19:48:42.734Z",
+              "actor": "a-1",
+              "hash": "3f70f3ced3c5bd5b5c469c7da5cf54df7ffcd0d3b6b7d03599484c2d96c999e1",
+              "verify": "bin/vault-verify.js <export> --entry 30"
+            },
+            {
+              "seq": 33,
+              "type": "fact.held",
+              "at": "2026-07-28T19:48:42.738Z",
+              "actor": "a-1",
+              "hash": "dbb1643700ad3ce89e20a0284a4f7f2beff4b148902c97509f6611f60528e163",
+              "verify": "bin/vault-verify.js <export> --entry 33"
+            },
+            {
+              "seq": 45,
+              "type": "security.detection",
+              "at": "2026-07-28T19:48:42.753Z",
+              "actor": "ciso",
+              "hash": "b019ffcacafc7a36f40c2d02acffbb0703489d255e974351b8e2a86d2ed8f990",
+              "verify": "bin/vault-verify.js <export> --entry 45"
+            }
+          ]
+        }
+      ],
+      "gap": null
+    },
+    {
+      "id": "A.5.8",
+      "name": "Information security in project management",
+      "category": "A.5 Organizational",
+      "applicability": "included",
+      "justification": "Applicable to the service and its information assets.",
+      "window": "point-in-time",
+      "vaultControls": [],
+      "how": "Rule lifecycle and change management.",
+      "status": "organisational",
+      "ledgerEntries": 0,
+      "evidence": [],
+      "gap": null
+    },
+    {
+      "id": "A.5.9",
+      "name": "Inventory of information and other associated assets",
+      "category": "A.5 Organizational",
+      "applicability": "included",
+      "justification": "Applicable to the service and its information assets.",
+      "window": "point-in-time",
+      "vaultControls": [
+        "VLT-5"
+      ],
+      "how": "AI system register; agent inventory; folder and namespace tree.",
+      "status": "satisfied",
+      "ledgerEntries": 2,
+      "evidence": [
+        {
+          "vaultControl": "VLT-5",
+          "what": "The AI system inventory, as a stream of registration events with named owners.",
+          "eventTypes": [
+            "agent.registered",
+            "agent.scope_changed",
+            "agent.retired",
+            "agent.suspended"
+          ],
+          "count": 2,
+          "samples": [
+            {
+              "seq": 19,
+              "type": "agent.registered",
+              "at": "2026-07-28T19:48:42.688Z",
+              "actor": "system",
+              "hash": "ab8c046ef20a4b8eec71cd1373fe6237a4aeb295384d56b9c932f0fb9356dc7c",
+              "verify": "bin/vault-verify.js <export> --entry 19"
+            },
+            {
+              "seq": 51,
+              "type": "agent.suspended",
+              "at": "2026-07-28T19:48:42.757Z",
+              "actor": "ciso",
+              "hash": "56981d3ad7f788465f43a362d1e7511bf711742b299b0163f393148148a0302e",
+              "verify": "bin/vault-verify.js <export> --entry 51"
+            }
+          ]
+        }
+      ],
+      "gap": null
+    },
+    {
+      "id": "A.5.10",
+      "name": "Acceptable use of information and other associated assets",
+      "category": "A.5 Organizational",
+      "applicability": "included",
+      "justification": "Applicable to the service and its information assets.",
+      "window": "point-in-time",
+      "vaultControls": [
+        "VLT-14"
+      ],
+      "how": "Purpose lock enforced at the query layer and warranted contractually.",
+      "status": "no-evidence",
+      "ledgerEntries": 0,
+      "evidence": [],
+      "gap": "Mapped to a Vault control, but no ledger entry has been produced yet. Exercise the control, or confirm it is not reachable in this deployment."
+    },
+    {
+      "id": "A.5.11",
+      "name": "Return of assets",
+      "category": "A.5 Organizational",
+      "applicability": "included",
+      "justification": "Applicable to the service and its information assets.",
+      "window": "point-in-time",
+      "vaultControls": [
+        "VLT-8"
+      ],
+      "how": "Offboarding workflow with a signed receipt; credential revocation on agent retirement.",
+      "status": "satisfied",
+      "ledgerEntries": 2,
+      "evidence": [
+        {
+          "vaultControl": "VLT-8",
+          "what": "Erasure executions with their receipts and the keys destroyed.",
+          "eventTypes": [
+            "privacy.erasure",
+            "fact.erased",
+            "key.destroyed"
+          ],
+          "count": 2,
+          "samples": [
+            {
+              "seq": 42,
+              "type": "key.destroyed",
+              "at": "2026-07-28T19:48:42.750Z",
+              "actor": "dpo",
+              "hash": "61f0753098bf7d2d90cd22c4e0c5844279e52525e3ae72475496f61b6ef4464b",
+              "verify": "bin/vault-verify.js <export> --entry 42"
+            },
+            {
+              "seq": 43,
+              "type": "privacy.erasure",
+              "at": "2026-07-28T19:48:42.752Z",
+              "actor": "dpo",
+              "hash": "a031ef893dfa8373c7e961d04cb2f3f6d9cbedfb07abb22fb95cf46127fa0e4a",
+              "verify": "bin/vault-verify.js <export> --entry 43"
+            }
+          ]
+        }
+      ],
+      "gap": null
+    },
+    {
+      "id": "A.5.12",
+      "name": "Classification of information",
+      "category": "A.5 Organizational",
+      "applicability": "included",
+      "justification": "Applicable to the service and its information assets.",
+      "window": "point-in-time",
+      "vaultControls": [
+        "VLT-6"
+      ],
+      "how": "Four-tier sensitivity labelling with folder inheritance.",
+      "status": "no-evidence",
+      "ledgerEntries": 0,
+      "evidence": [],
+      "gap": "Mapped to a Vault control, but no ledger entry has been produced yet. Exercise the control, or confirm it is not reachable in this deployment."
+    },
+    {
+      "id": "A.5.13",
+      "name": "Labelling of information",
+      "category": "A.5 Organizational",
+      "applicability": "included",
+      "justification": "Applicable to the service and its information assets.",
+      "window": "point-in-time",
+      "vaultControls": [
+        "VLT-6"
+      ],
+      "how": "Every returned fact is labelled with provenance and sensitivity.",
+      "status": "no-evidence",
+      "ledgerEntries": 0,
+      "evidence": [],
+      "gap": "Mapped to a Vault control, but no ledger entry has been produced yet. Exercise the control, or confirm it is not reachable in this deployment."
+    },
+    {
+      "id": "A.5.14",
+      "name": "Information transfer",
+      "category": "A.5 Organizational",
+      "applicability": "included",
+      "justification": "Applicable to the service and its information assets.",
+      "window": "point-in-time",
+      "vaultControls": [
+        "VLT-7"
+      ],
+      "how": "Residency pinning, cross-border read blocking, transfer-mechanism documentation per flow.",
+      "status": "satisfied",
+      "ledgerEntries": 1,
+      "evidence": [
+        {
+          "vaultControl": "VLT-7",
+          "what": "Wall configuration changes and every privileged access grant.",
+          "eventTypes": [
+            "folder.wall_changed",
+            "admin.breakglass"
+          ],
+          "count": 1,
+          "samples": [
+            {
+              "seq": 35,
+              "type": "folder.wall_changed",
+              "at": "2026-07-28T19:48:42.743Z",
+              "actor": "ciso",
+              "hash": "b20f31eacf1a2ada57acbd654dba04c9fec01921f170e845736850b545d0131a",
+              "verify": "bin/vault-verify.js <export> --entry 35"
+            }
+          ]
+        }
+      ],
+      "gap": null
+    },
+    {
+      "id": "A.5.15",
+      "name": "Access control",
+      "category": "A.5 Organizational",
+      "applicability": "included",
+      "justification": "Applicable to the service and its information assets.",
+      "window": "point-in-time",
+      "vaultControls": [
+        "VLT-7"
+      ],
+      "how": "RBAC and ABAC; folder walls enforced on read, write, search, entity views, exports.",
+      "status": "satisfied",
+      "ledgerEntries": 1,
+      "evidence": [
+        {
+          "vaultControl": "VLT-7",
+          "what": "Wall configuration changes and every privileged access grant.",
+          "eventTypes": [
+            "folder.wall_changed",
+            "admin.breakglass"
+          ],
+          "count": 1,
+          "samples": [
+            {
+              "seq": 35,
+              "type": "folder.wall_changed",
+              "at": "2026-07-28T19:48:42.743Z",
+              "actor": "ciso",
+              "hash": "b20f31eacf1a2ada57acbd654dba04c9fec01921f170e845736850b545d0131a",
+              "verify": "bin/vault-verify.js <export> --entry 35"
+            }
+          ]
+        }
+      ],
+      "gap": null
+    },
+    {
+      "id": "A.5.16",
+      "name": "Identity management",
+      "category": "A.5 Organizational",
+      "applicability": "included",
+      "justification": "Applicable to the service and its information assets.",
+      "window": "point-in-time",
+      "vaultControls": [
+        "VLT-5"
+      ],
+      "how": "SCIM provisioning; Vault-issued short-lived scoped origin-bound agent credentials.",
+      "status": "satisfied",
+      "ledgerEntries": 2,
+      "evidence": [
+        {
+          "vaultControl": "VLT-5",
+          "what": "The AI system inventory, as a stream of registration events with named owners.",
+          "eventTypes": [
+            "agent.registered",
+            "agent.scope_changed",
+            "agent.retired",
+            "agent.suspended"
+          ],
+          "count": 2,
+          "samples": [
+            {
+              "seq": 19,
+              "type": "agent.registered",
+              "at": "2026-07-28T19:48:42.688Z",
+              "actor": "system",
+              "hash": "ab8c046ef20a4b8eec71cd1373fe6237a4aeb295384d56b9c932f0fb9356dc7c",
+              "verify": "bin/vault-verify.js <export> --entry 19"
+            },
+            {
+              "seq": 51,
+              "type": "agent.suspended",
+              "at": "2026-07-28T19:48:42.757Z",
+              "actor": "ciso",
+              "hash": "56981d3ad7f788465f43a362d1e7511bf711742b299b0163f393148148a0302e",
+              "verify": "bin/vault-verify.js <export> --entry 51"
+            }
+          ]
+        }
+      ],
+      "gap": null
+    },
+    {
+      "id": "A.5.17",
+      "name": "Authentication information",
+      "category": "A.5 Organizational",
+      "applicability": "included",
+      "justification": "Applicable to the service and its information assets.",
+      "window": "point-in-time",
+      "vaultControls": [
+        "VLT-1"
+      ],
+      "how": "MFA with phishing-resistant factors for privileged roles; TOTP seeds sealed at rest.",
+      "status": "satisfied",
+      "ledgerEntries": 4,
+      "evidence": [
+        {
+          "vaultControl": "VLT-1",
+          "what": "Gate verdicts. Every write carries the outcome of all ten checks.",
+          "eventTypes": [
+            "fact.written",
+            "fact.held",
+            "fact.blocked",
+            "fact.masked",
+            "fact.quarantined"
+          ],
+          "count": 4,
+          "samples": [
+            {
+              "seq": 27,
+              "type": "fact.held",
+              "at": "2026-07-28T19:48:42.729Z",
+              "actor": "a-1",
+              "hash": "60caaa97bc85fd630d2767f22688c35b86f28846669ab4eb612215486494d51c",
+              "verify": "bin/vault-verify.js <export> --entry 27"
+            },
+            {
+              "seq": 30,
+              "type": "fact.held",
+              "at": "2026-07-28T19:48:42.734Z",
+              "actor": "a-1",
+              "hash": "3f70f3ced3c5bd5b5c469c7da5cf54df7ffcd0d3b6b7d03599484c2d96c999e1",
+              "verify": "bin/vault-verify.js <export> --entry 30"
+            },
+            {
+              "seq": 33,
+              "type": "fact.held",
+              "at": "2026-07-28T19:48:42.738Z",
+              "actor": "a-1",
+              "hash": "dbb1643700ad3ce89e20a0284a4f7f2beff4b148902c97509f6611f60528e163",
+              "verify": "bin/vault-verify.js <export> --entry 33"
+            }
+          ]
+        }
+      ],
+      "gap": null
+    },
+    {
+      "id": "A.5.18",
+      "name": "Access rights",
+      "category": "A.5 Organizational",
+      "applicability": "included",
+      "justification": "Applicable to the service and its information assets.",
+      "window": "point-in-time",
+      "vaultControls": [
+        "VLT-7"
+      ],
+      "how": "Full audit of every permission change; deprovisioning effective on the next request.",
+      "status": "satisfied",
+      "ledgerEntries": 1,
+      "evidence": [
+        {
+          "vaultControl": "VLT-7",
+          "what": "Wall configuration changes and every privileged access grant.",
+          "eventTypes": [
+            "folder.wall_changed",
+            "admin.breakglass"
+          ],
+          "count": 1,
+          "samples": [
+            {
+              "seq": 35,
+              "type": "folder.wall_changed",
+              "at": "2026-07-28T19:48:42.743Z",
+              "actor": "ciso",
+              "hash": "b20f31eacf1a2ada57acbd654dba04c9fec01921f170e845736850b545d0131a",
+              "verify": "bin/vault-verify.js <export> --entry 35"
+            }
+          ]
+        }
+      ],
+      "gap": null
+    },
+    {
+      "id": "A.5.19",
+      "name": "Information security in supplier relationships",
+      "category": "A.5 Organizational",
+      "applicability": "included",
+      "justification": "Applicable to the service and its information assets.",
+      "window": "point-in-time",
+      "vaultControls": [
+        "VLT-13"
+      ],
+      "how": "Vendor register with attestation and renewal tracking.",
+      "status": "satisfied",
+      "ledgerEntries": 2,
+      "evidence": [
+        {
+          "vaultControl": "VLT-13",
+          "what": "Vendor register entries and attestation tracking.",
+          "eventTypes": [
+            "admin.action"
+          ],
+          "count": 2,
+          "samples": [
+            {
+              "seq": 41,
+              "type": "admin.action",
+              "at": "2026-07-28T19:48:42.761Z",
+              "actor": "ciso",
+              "hash": "92fcfd05ae6d2e2ab25547ec4452e7c939045c47f3b02a9b7b793088e152911a",
+              "verify": "bin/vault-verify.js <export> --entry 41"
+            },
+            {
+              "seq": 44,
+              "type": "admin.action",
+              "at": "2026-07-28T19:48:42.752Z",
+              "actor": "ciso",
+              "hash": "07ae90725533f243fb3b1a390ac0388f1c77776c68b8eaa93c9867a482f5c516",
+              "verify": "bin/vault-verify.js <export> --entry 44"
+            }
+          ]
+        }
+      ],
+      "gap": null
+    },
+    {
+      "id": "A.5.20",
+      "name": "Addressing information security within supplier agreements",
+      "category": "A.5 Organizational",
+      "applicability": "included",
+      "justification": "Applicable to the service and its information assets.",
+      "window": "point-in-time",
+      "vaultControls": [
+        "VLT-13"
+      ],
+      "how": "DPA terms with sub-processor flow-down.",
+      "status": "satisfied",
+      "ledgerEntries": 2,
+      "evidence": [
+        {
+          "vaultControl": "VLT-13",
+          "what": "Vendor register entries and attestation tracking.",
+          "eventTypes": [
+            "admin.action"
+          ],
+          "count": 2,
+          "samples": [
+            {
+              "seq": 41,
+              "type": "admin.action",
+              "at": "2026-07-28T19:48:42.761Z",
+              "actor": "ciso",
+              "hash": "92fcfd05ae6d2e2ab25547ec4452e7c939045c47f3b02a9b7b793088e152911a",
+              "verify": "bin/vault-verify.js <export> --entry 41"
+            },
+            {
+              "seq": 44,
+              "type": "admin.action",
+              "at": "2026-07-28T19:48:42.752Z",
+              "actor": "ciso",
+              "hash": "07ae90725533f243fb3b1a390ac0388f1c77776c68b8eaa93c9867a482f5c516",
+              "verify": "bin/vault-verify.js <export> --entry 44"
+            }
+          ]
+        }
+      ],
+      "gap": null
+    },
+    {
+      "id": "A.5.21",
+      "name": "Managing information security in the ICT supply chain",
+      "category": "A.5 Organizational",
+      "applicability": "included",
+      "justification": "Applicable to the service and its information assets.",
+      "window": "point-in-time",
+      "vaultControls": [
+        "VLT-16"
+      ],
+      "how": "Zero runtime dependencies; tool and MCP allowlisting with provenance.",
+      "status": "satisfied",
+      "ledgerEntries": 2,
+      "evidence": [
+        {
+          "vaultControl": "VLT-16",
+          "what": "Tool and MCP allowlisting decisions.",
+          "eventTypes": [
+            "admin.action",
+            "connector.connected"
+          ],
+          "count": 2,
+          "samples": [
+            {
+              "seq": 41,
+              "type": "admin.action",
+              "at": "2026-07-28T19:48:42.761Z",
+              "actor": "ciso",
+              "hash": "92fcfd05ae6d2e2ab25547ec4452e7c939045c47f3b02a9b7b793088e152911a",
+              "verify": "bin/vault-verify.js <export> --entry 41"
+            },
+            {
+              "seq": 44,
+              "type": "admin.action",
+              "at": "2026-07-28T19:48:42.752Z",
+              "actor": "ciso",
+              "hash": "07ae90725533f243fb3b1a390ac0388f1c77776c68b8eaa93c9867a482f5c516",
+              "verify": "bin/vault-verify.js <export> --entry 44"
+            }
+          ]
+        }
+      ],
+      "gap": null
+    },
+    {
+      "id": "A.5.22",
+      "name": "Monitoring, review and change management of supplier services",
+      "category": "A.5 Organizational",
+      "applicability": "included",
+      "justification": "Applicable to the service and its information assets.",
+      "window": "point-in-time",
+      "vaultControls": [
+        "VLT-13"
+      ],
+      "how": "Vendor attestation and renewal-date tracking; connector version pinning and schema drift detection.",
+      "status": "satisfied",
+      "ledgerEntries": 2,
+      "evidence": [
+        {
+          "vaultControl": "VLT-13",
+          "what": "Vendor register entries and attestation tracking.",
+          "eventTypes": [
+            "admin.action"
+          ],
+          "count": 2,
+          "samples": [
+            {
+              "seq": 41,
+              "type": "admin.action",
+              "at": "2026-07-28T19:48:42.761Z",
+              "actor": "ciso",
+              "hash": "92fcfd05ae6d2e2ab25547ec4452e7c939045c47f3b02a9b7b793088e152911a",
+              "verify": "bin/vault-verify.js <export> --entry 41"
+            },
+            {
+              "seq": 44,
+              "type": "admin.action",
+              "at": "2026-07-28T19:48:42.752Z",
+              "actor": "ciso",
+              "hash": "07ae90725533f243fb3b1a390ac0388f1c77776c68b8eaa93c9867a482f5c516",
+              "verify": "bin/vault-verify.js <export> --entry 44"
+            }
+          ]
+        }
+      ],
+      "gap": null
+    },
+    {
+      "id": "A.5.23",
+      "name": "Information security for use of cloud services",
+      "category": "A.5 Organizational",
+      "applicability": "included",
+      "justification": "Applicable to the service and its information assets.",
+      "window": "point-in-time",
+      "vaultControls": [],
+      "how": "BYO bucket with health check, permission validation and region-matches-residency verification.",
+      "status": "organisational",
+      "ledgerEntries": 0,
+      "evidence": [],
+      "gap": null
+    },
+    {
+      "id": "A.5.24",
+      "name": "Information security incident management planning and preparation",
+      "category": "A.5 Organizational",
+      "applicability": "included",
+      "justification": "Applicable to the service and its information assets.",
+      "window": "point-in-time",
+      "vaultControls": [
+        "VLT-10"
+      ],
+      "how": "Documented incident response plan; incident register.",
+      "status": "satisfied",
+      "ledgerEntries": 2,
+      "evidence": [
+        {
+          "vaultControl": "VLT-10",
+          "what": "Kill switch activations, including scheduled tests.",
+          "eventTypes": [
+            "killswitch.engaged",
+            "killswitch.released"
+          ],
+          "count": 2,
+          "samples": [
+            {
+              "seq": 39,
+              "type": "killswitch.engaged",
+              "at": "2026-07-28T19:48:42.746Z",
+              "actor": "ciso",
+              "hash": "1fbd97e5e8708a959ef5dc1749509d348a97c7096f4a73a792407559a928af13",
+              "verify": "bin/vault-verify.js <export> --entry 39"
+            },
+            {
+              "seq": 40,
+              "type": "killswitch.released",
+              "at": "2026-07-28T19:48:42.747Z",
+              "actor": "ciso",
+              "hash": "f0d7f3314236f4307233670b1cfc7f809e97cd64c334bbef298c8bf1a8b2958e",
+              "verify": "bin/vault-verify.js <export> --entry 40"
+            }
+          ]
+        }
+      ],
+      "gap": null
+    },
+    {
+      "id": "A.5.25",
+      "name": "Assessment and decision on information security events",
+      "category": "A.5 Organizational",
+      "applicability": "included",
+      "justification": "Applicable to the service and its information assets.",
+      "window": "point-in-time",
+      "vaultControls": [
+        "VLT-12"
+      ],
+      "how": "Alert severity tiering; incident classification.",
+      "status": "satisfied",
+      "ledgerEntries": 5,
+      "evidence": [
+        {
+          "vaultControl": "VLT-12",
+          "what": "Adversarial findings and detector firings.",
+          "eventTypes": [
+            "security.alert",
+            "security.detection"
+          ],
+          "count": 5,
+          "samples": [
+            {
+              "seq": 45,
+              "type": "security.detection",
+              "at": "2026-07-28T19:48:42.753Z",
+              "actor": "ciso",
+              "hash": "b019ffcacafc7a36f40c2d02acffbb0703489d255e974351b8e2a86d2ed8f990",
+              "verify": "bin/vault-verify.js <export> --entry 45"
+            },
+            {
+              "seq": 46,
+              "type": "security.alert",
+              "at": "2026-07-28T19:48:42.753Z",
+              "actor": null,
+              "hash": "7897bef4d7d7429d46567493ae5fed9117bdf56d45a923c1d0b9720473906245",
+              "verify": "bin/vault-verify.js <export> --entry 46"
+            },
+            {
+              "seq": 47,
+              "type": "security.alert",
+              "at": "2026-07-28T19:48:42.754Z",
+              "actor": null,
+              "hash": "cab6486f8c899f655efbe0ad523945c52e8f84972d4955aa5ae9ace2ab0f7fec",
+              "verify": "bin/vault-verify.js <export> --entry 47"
+            }
+          ]
+        }
+      ],
+      "gap": null
+    },
+    {
+      "id": "A.5.26",
+      "name": "Response to information security incidents",
+      "category": "A.5 Organizational",
+      "applicability": "included",
+      "justification": "Applicable to the service and its information assets.",
+      "window": "point-in-time",
+      "vaultControls": [
+        "VLT-10"
+      ],
+      "how": "Kill switch levels 1–6; contagion trace and rollback.",
+      "status": "satisfied",
+      "ledgerEntries": 2,
+      "evidence": [
+        {
+          "vaultControl": "VLT-10",
+          "what": "Kill switch activations, including scheduled tests.",
+          "eventTypes": [
+            "killswitch.engaged",
+            "killswitch.released"
+          ],
+          "count": 2,
+          "samples": [
+            {
+              "seq": 39,
+              "type": "killswitch.engaged",
+              "at": "2026-07-28T19:48:42.746Z",
+              "actor": "ciso",
+              "hash": "1fbd97e5e8708a959ef5dc1749509d348a97c7096f4a73a792407559a928af13",
+              "verify": "bin/vault-verify.js <export> --entry 39"
+            },
+            {
+              "seq": 40,
+              "type": "killswitch.released",
+              "at": "2026-07-28T19:48:42.747Z",
+              "actor": "ciso",
+              "hash": "f0d7f3314236f4307233670b1cfc7f809e97cd64c334bbef298c8bf1a8b2958e",
+              "verify": "bin/vault-verify.js <export> --entry 40"
+            }
+          ]
+        }
+      ],
+      "gap": null
+    },
+    {
+      "id": "A.5.27",
+      "name": "Learning from information security incidents",
+      "category": "A.5 Organizational",
+      "applicability": "included",
+      "justification": "Applicable to the service and its information assets.",
+      "window": "point-in-time",
+      "vaultControls": [
+        "VLT-12"
+      ],
+      "how": "Root cause and remediation tracking; reject reasons feed detector tuning.",
+      "status": "satisfied",
+      "ledgerEntries": 5,
+      "evidence": [
+        {
+          "vaultControl": "VLT-12",
+          "what": "Adversarial findings and detector firings.",
+          "eventTypes": [
+            "security.alert",
+            "security.detection"
+          ],
+          "count": 5,
+          "samples": [
+            {
+              "seq": 45,
+              "type": "security.detection",
+              "at": "2026-07-28T19:48:42.753Z",
+              "actor": "ciso",
+              "hash": "b019ffcacafc7a36f40c2d02acffbb0703489d255e974351b8e2a86d2ed8f990",
+              "verify": "bin/vault-verify.js <export> --entry 45"
+            },
+            {
+              "seq": 46,
+              "type": "security.alert",
+              "at": "2026-07-28T19:48:42.753Z",
+              "actor": null,
+              "hash": "7897bef4d7d7429d46567493ae5fed9117bdf56d45a923c1d0b9720473906245",
+              "verify": "bin/vault-verify.js <export> --entry 46"
+            },
+            {
+              "seq": 47,
+              "type": "security.alert",
+              "at": "2026-07-28T19:48:42.754Z",
+              "actor": null,
+              "hash": "cab6486f8c899f655efbe0ad523945c52e8f84972d4955aa5ae9ace2ab0f7fec",
+              "verify": "bin/vault-verify.js <export> --entry 47"
+            }
+          ]
+        }
+      ],
+      "gap": null
+    },
+    {
+      "id": "A.5.28",
+      "name": "Collection of evidence",
+      "category": "A.5 Organizational",
+      "applicability": "included",
+      "justification": "Applicable to the service and its information assets.",
+      "window": "point-in-time",
+      "vaultControls": [
+        "VLT-4"
+      ],
+      "how": "Hash-chained ledger with a standalone verifier; incident bundle export with optional signing.",
+      "status": "satisfied",
+      "ledgerEntries": 1,
+      "evidence": [
+        {
+          "vaultControl": "VLT-4",
+          "what": "Chain anchoring and export events; the chain itself is the evidence.",
+          "eventTypes": [
+            "anchor.published",
+            "export.created"
+          ],
+          "count": 1,
+          "samples": [
+            {
+              "seq": 49,
+              "type": "anchor.published",
+              "at": "2026-07-28T19:48:42.756Z",
+              "actor": "system",
+              "hash": "97354cb33261d5ee87a6d4961c0d95e45f2e5c158fd8d42c0a12bc94c366faad",
+              "verify": "bin/vault-verify.js <export> --entry 49"
+            }
+          ]
+        }
+      ],
+      "gap": null
+    },
+    {
+      "id": "A.5.29",
+      "name": "Information security during disruption",
+      "category": "A.5 Organizational",
+      "applicability": "included",
+      "justification": "Applicable to the service and its information assets.",
+      "window": "point-in-time",
+      "vaultControls": [
+        "VLT-10"
+      ],
+      "how": "Queue-and-drain fail-safe; graceful degradation with auto-resume and backfill.",
+      "status": "satisfied",
+      "ledgerEntries": 2,
+      "evidence": [
+        {
+          "vaultControl": "VLT-10",
+          "what": "Kill switch activations, including scheduled tests.",
+          "eventTypes": [
+            "killswitch.engaged",
+            "killswitch.released"
+          ],
+          "count": 2,
+          "samples": [
+            {
+              "seq": 39,
+              "type": "killswitch.engaged",
+              "at": "2026-07-28T19:48:42.746Z",
+              "actor": "ciso",
+              "hash": "1fbd97e5e8708a959ef5dc1749509d348a97c7096f4a73a792407559a928af13",
+              "verify": "bin/vault-verify.js <export> --entry 39"
+            },
+            {
+              "seq": 40,
+              "type": "killswitch.released",
+              "at": "2026-07-28T19:48:42.747Z",
+              "actor": "ciso",
+              "hash": "f0d7f3314236f4307233670b1cfc7f809e97cd64c334bbef298c8bf1a8b2958e",
+              "verify": "bin/vault-verify.js <export> --entry 40"
+            }
+          ]
+        }
+      ],
+      "gap": null
+    },
+    {
+      "id": "A.5.30",
+      "name": "ICT readiness for business continuity",
+      "category": "A.5 Organizational",
+      "applicability": "included",
+      "justification": "Applicable to the service and its information assets.",
+      "window": "point-in-time",
+      "vaultControls": [
+        "VLT-10"
+      ],
+      "how": "Measured RPO/RTO; quarterly restore testing.",
+      "status": "satisfied",
+      "ledgerEntries": 2,
+      "evidence": [
+        {
+          "vaultControl": "VLT-10",
+          "what": "Kill switch activations, including scheduled tests.",
+          "eventTypes": [
+            "killswitch.engaged",
+            "killswitch.released"
+          ],
+          "count": 2,
+          "samples": [
+            {
+              "seq": 39,
+              "type": "killswitch.engaged",
+              "at": "2026-07-28T19:48:42.746Z",
+              "actor": "ciso",
+              "hash": "1fbd97e5e8708a959ef5dc1749509d348a97c7096f4a73a792407559a928af13",
+              "verify": "bin/vault-verify.js <export> --entry 39"
+            },
+            {
+              "seq": 40,
+              "type": "killswitch.released",
+              "at": "2026-07-28T19:48:42.747Z",
+              "actor": "ciso",
+              "hash": "f0d7f3314236f4307233670b1cfc7f809e97cd64c334bbef298c8bf1a8b2958e",
+              "verify": "bin/vault-verify.js <export> --entry 40"
+            }
+          ]
+        }
+      ],
+      "gap": null
+    },
+    {
+      "id": "A.5.31",
+      "name": "Legal, statutory, regulatory and contractual requirements",
+      "category": "A.5 Organizational",
+      "applicability": "included",
+      "justification": "Applicable to the service and its information assets.",
+      "window": "point-in-time",
+      "vaultControls": [
+        "VLT-15"
+      ],
+      "how": "Jurisdiction packs; recordkeeping framework mapping; conflicting-obligation surfacing.",
+      "status": "satisfied",
+      "ledgerEntries": 1,
+      "evidence": [
+        {
+          "vaultControl": "VLT-15",
+          "what": "Retention executions and legal holds.",
+          "eventTypes": [
+            "fact.expired",
+            "storage.lifecycle",
+            "legal.hold_placed"
+          ],
+          "count": 1,
+          "samples": [
+            {
+              "seq": 48,
+              "type": "legal.hold_placed",
+              "at": "2026-07-28T19:48:42.756Z",
+              "actor": "legal",
+              "hash": "d976bbc8378a6bb6d6aefa1babdbd74ebc679e552cd6248e59b384dc3cba35c9",
+              "verify": "bin/vault-verify.js <export> --entry 48"
+            }
+          ]
+        }
+      ],
+      "gap": null
+    },
+    {
+      "id": "A.5.32",
+      "name": "Intellectual property rights",
+      "category": "A.5 Organizational",
+      "applicability": "included",
+      "justification": "Applicable to the service and its information assets.",
+      "window": "point-in-time",
+      "vaultControls": [],
+      "how": "Licence decision recorded; SBOM.",
+      "status": "organisational",
+      "ledgerEntries": 0,
+      "evidence": [],
+      "gap": null
+    },
+    {
+      "id": "A.5.33",
+      "name": "Protection of records",
+      "category": "A.5 Organizational",
+      "applicability": "included",
+      "justification": "Applicable to the service and its information assets.",
+      "window": "point-in-time",
+      "vaultControls": [
+        "VLT-15"
+      ],
+      "how": "WORM archive in compliance mode; legal hold independent of retention.",
+      "status": "satisfied",
+      "ledgerEntries": 1,
+      "evidence": [
+        {
+          "vaultControl": "VLT-15",
+          "what": "Retention executions and legal holds.",
+          "eventTypes": [
+            "fact.expired",
+            "storage.lifecycle",
+            "legal.hold_placed"
+          ],
+          "count": 1,
+          "samples": [
+            {
+              "seq": 48,
+              "type": "legal.hold_placed",
+              "at": "2026-07-28T19:48:42.756Z",
+              "actor": "legal",
+              "hash": "d976bbc8378a6bb6d6aefa1babdbd74ebc679e552cd6248e59b384dc3cba35c9",
+              "verify": "bin/vault-verify.js <export> --entry 48"
+            }
+          ]
+        }
+      ],
+      "gap": null
+    },
+    {
+      "id": "A.5.34",
+      "name": "Privacy and protection of PII",
+      "category": "A.5 Organizational",
+      "applicability": "included",
+      "justification": "Applicable to the service and its information assets.",
+      "window": "point-in-time",
+      "vaultControls": [
+        "VLT-6",
+        "VLT-9"
+      ],
+      "how": "PII scanning at ingestion; lawful basis per fact; Employee Privacy Mode.",
+      "status": "satisfied",
+      "ledgerEntries": 1,
+      "evidence": [
+        {
+          "vaultControl": "VLT-9",
+          "what": "Lawful basis records and withdrawals.",
+          "eventTypes": [
+            "privacy.consent_recorded",
+            "privacy.consent_withdrawn"
+          ],
+          "count": 1,
+          "samples": [
+            {
+              "seq": 38,
+              "type": "privacy.consent_recorded",
+              "at": "2026-07-28T19:48:42.745Z",
+              "actor": "dpo",
+              "hash": "97caf37580e95ec57262bf364155eec4210c7c0fc805aa8ce06109fa6b9cd93b",
+              "verify": "bin/vault-verify.js <export> --entry 38"
+            }
+          ]
+        }
+      ],
+      "gap": null
+    },
+    {
+      "id": "A.5.35",
+      "name": "Independent review of information security",
+      "category": "A.5 Organizational",
+      "applicability": "included",
+      "justification": "Applicable. An independent review is required by the standard and cannot be satisfied by internal testing.",
+      "window": "point-in-time",
+      "vaultControls": [],
+      "how": "Third-party penetration test and external audit.",
+      "status": "organisational",
+      "ledgerEntries": 0,
+      "evidence": [],
+      "gap": "NOT SATISFIED. No independent review has been performed. The engagement package exists; the engagement does not."
+    },
+    {
+      "id": "A.5.36",
+      "name": "Compliance with policies, rules and standards",
+      "category": "A.5 Organizational",
+      "applicability": "included",
+      "justification": "Applicable to the service and its information assets.",
+      "window": "point-in-time",
+      "vaultControls": [],
+      "how": "Continuous control monitoring with real-time alerting on failure.",
+      "status": "organisational",
+      "ledgerEntries": 0,
+      "evidence": [],
+      "gap": null
+    },
+    {
+      "id": "A.5.37",
+      "name": "Documented operating procedures",
+      "category": "A.5 Organizational",
+      "applicability": "included",
+      "justification": "Applicable to the service and its information assets.",
+      "window": "point-in-time",
+      "vaultControls": [],
+      "how": "docs/OPERATIONS.md, docs/INCIDENT-RESPONSE.md, docs/SECURITY.md.",
+      "status": "organisational",
+      "ledgerEntries": 0,
+      "evidence": [],
+      "gap": null
+    },
+    {
+      "id": "A.6.1",
+      "name": "Screening",
+      "category": "A.6 People",
+      "applicability": "included",
+      "justification": "Applicable to personnel with access to customer data.",
+      "window": "point-in-time",
+      "vaultControls": [],
+      "how": "HR process. Background checks before access to production.",
+      "status": "organisational",
+      "ledgerEntries": 0,
+      "evidence": [],
+      "gap": "Organisational. Requires HR evidence over the observation window."
+    },
+    {
+      "id": "A.6.2",
+      "name": "Terms and conditions of employment",
+      "category": "A.6 People",
+      "applicability": "included",
+      "justification": "Applicable. Personnel with access to customer data must be bound by enforceable confidentiality terms.",
+      "window": "point-in-time",
+      "vaultControls": [],
+      "how": "Employment contracts including confidentiality obligations.",
+      "status": "organisational",
+      "ledgerEntries": 0,
+      "evidence": [],
+      "gap": "Organisational."
+    },
+    {
+      "id": "A.6.3",
+      "name": "Information security awareness, education and training",
+      "category": "A.6 People",
+      "applicability": "included",
+      "justification": "Applicable. Awareness training is the control that makes every other people control effective.",
+      "window": "point-in-time",
+      "vaultControls": [],
+      "how": "Annual training with acknowledgement tracking.",
+      "status": "organisational",
+      "ledgerEntries": 0,
+      "evidence": [],
+      "gap": "Organisational. Requires training records."
+    },
+    {
+      "id": "A.6.4",
+      "name": "Disciplinary process",
+      "category": "A.6 People",
+      "applicability": "included",
+      "justification": "Applicable. A disciplinary process is what gives the acceptable-use and confidentiality terms consequence.",
+      "window": "point-in-time",
+      "vaultControls": [],
+      "how": "Documented in the employee handbook.",
+      "status": "organisational",
+      "ledgerEntries": 0,
+      "evidence": [],
+      "gap": "Organisational."
+    },
+    {
+      "id": "A.6.5",
+      "name": "Responsibilities after termination or change of employment",
+      "category": "A.6 People",
+      "applicability": "included",
+      "justification": "Applicable to the service and its information assets.",
+      "window": "point-in-time",
+      "vaultControls": [
+        "VLT-8"
+      ],
+      "how": "Offboarding workflow; SCIM deprovisioning revokes sessions on the next request.",
+      "status": "satisfied",
+      "ledgerEntries": 2,
+      "evidence": [
+        {
+          "vaultControl": "VLT-8",
+          "what": "Erasure executions with their receipts and the keys destroyed.",
+          "eventTypes": [
+            "privacy.erasure",
+            "fact.erased",
+            "key.destroyed"
+          ],
+          "count": 2,
+          "samples": [
+            {
+              "seq": 42,
+              "type": "key.destroyed",
+              "at": "2026-07-28T19:48:42.750Z",
+              "actor": "dpo",
+              "hash": "61f0753098bf7d2d90cd22c4e0c5844279e52525e3ae72475496f61b6ef4464b",
+              "verify": "bin/vault-verify.js <export> --entry 42"
+            },
+            {
+              "seq": 43,
+              "type": "privacy.erasure",
+              "at": "2026-07-28T19:48:42.752Z",
+              "actor": "dpo",
+              "hash": "a031ef893dfa8373c7e961d04cb2f3f6d9cbedfb07abb22fb95cf46127fa0e4a",
+              "verify": "bin/vault-verify.js <export> --entry 43"
+            }
+          ]
+        }
+      ],
+      "gap": null
+    },
+    {
+      "id": "A.6.6",
+      "name": "Confidentiality or non-disclosure agreements",
+      "category": "A.6 People",
+      "applicability": "included",
+      "justification": "Applicable. Confidentiality agreements bind staff and sub-processors handling customer data.",
+      "window": "point-in-time",
+      "vaultControls": [],
+      "how": "NDAs with staff and sub-processors.",
+      "status": "organisational",
+      "ledgerEntries": 0,
+      "evidence": [],
+      "gap": "Organisational."
+    },
+    {
+      "id": "A.6.7",
+      "name": "Remote working",
+      "category": "A.6 People",
+      "applicability": "included",
+      "justification": "Applicable to the service and its information assets.",
+      "window": "point-in-time",
+      "vaultControls": [
+        "VLT-1"
+      ],
+      "how": "Device binding, IP allowlisting, geo-fencing, session timeout and concurrency controls.",
+      "status": "satisfied",
+      "ledgerEntries": 4,
+      "evidence": [
+        {
+          "vaultControl": "VLT-1",
+          "what": "Gate verdicts. Every write carries the outcome of all ten checks.",
+          "eventTypes": [
+            "fact.written",
+            "fact.held",
+            "fact.blocked",
+            "fact.masked",
+            "fact.quarantined"
+          ],
+          "count": 4,
+          "samples": [
+            {
+              "seq": 27,
+              "type": "fact.held",
+              "at": "2026-07-28T19:48:42.729Z",
+              "actor": "a-1",
+              "hash": "60caaa97bc85fd630d2767f22688c35b86f28846669ab4eb612215486494d51c",
+              "verify": "bin/vault-verify.js <export> --entry 27"
+            },
+            {
+              "seq": 30,
+              "type": "fact.held",
+              "at": "2026-07-28T19:48:42.734Z",
+              "actor": "a-1",
+              "hash": "3f70f3ced3c5bd5b5c469c7da5cf54df7ffcd0d3b6b7d03599484c2d96c999e1",
+              "verify": "bin/vault-verify.js <export> --entry 30"
+            },
+            {
+              "seq": 33,
+              "type": "fact.held",
+              "at": "2026-07-28T19:48:42.738Z",
+              "actor": "a-1",
+              "hash": "dbb1643700ad3ce89e20a0284a4f7f2beff4b148902c97509f6611f60528e163",
+              "verify": "bin/vault-verify.js <export> --entry 33"
+            }
+          ]
+        }
+      ],
+      "gap": null
+    },
+    {
+      "id": "A.6.8",
+      "name": "Information security event reporting",
+      "category": "A.6 People",
+      "applicability": "included",
+      "justification": "Applicable to the service and its information assets.",
+      "window": "point-in-time",
+      "vaultControls": [
+        "VLT-12"
+      ],
+      "how": "Alerting infrastructure; published VDP with a 2-business-day acknowledgement commitment.",
+      "status": "satisfied",
+      "ledgerEntries": 5,
+      "evidence": [
+        {
+          "vaultControl": "VLT-12",
+          "what": "Adversarial findings and detector firings.",
+          "eventTypes": [
+            "security.alert",
+            "security.detection"
+          ],
+          "count": 5,
+          "samples": [
+            {
+              "seq": 45,
+              "type": "security.detection",
+              "at": "2026-07-28T19:48:42.753Z",
+              "actor": "ciso",
+              "hash": "b019ffcacafc7a36f40c2d02acffbb0703489d255e974351b8e2a86d2ed8f990",
+              "verify": "bin/vault-verify.js <export> --entry 45"
+            },
+            {
+              "seq": 46,
+              "type": "security.alert",
+              "at": "2026-07-28T19:48:42.753Z",
+              "actor": null,
+              "hash": "7897bef4d7d7429d46567493ae5fed9117bdf56d45a923c1d0b9720473906245",
+              "verify": "bin/vault-verify.js <export> --entry 46"
+            },
+            {
+              "seq": 47,
+              "type": "security.alert",
+              "at": "2026-07-28T19:48:42.754Z",
+              "actor": null,
+              "hash": "cab6486f8c899f655efbe0ad523945c52e8f84972d4955aa5ae9ace2ab0f7fec",
+              "verify": "bin/vault-verify.js <export> --entry 47"
+            }
+          ]
+        }
+      ],
+      "gap": null
+    },
+    {
+      "id": "A.7.1",
+      "name": "Physical security perimeters",
+      "category": "A.7 Physical",
+      "applicability": "included",
+      "justification": "Applicable, but satisfied by a sub-service organisation rather than by Vault.",
+      "window": "point-in-time",
+      "vaultControls": [],
+      "how": "Inherited from the IaaS provider for Vault Cloud; the customer's own facility for on-premise and air-gapped deployments.",
+      "status": "organisational",
+      "ledgerEntries": 0,
+      "evidence": [],
+      "gap": "Requires the IaaS provider's ISO 27001 certificate and a carve-out decision. Not satisfied by any Vault control."
+    },
+    {
+      "id": "A.7.2",
+      "name": "Physical entry",
+      "category": "A.7 Physical",
+      "applicability": "included",
+      "justification": "Applicable, but satisfied by a sub-service organisation rather than by Vault.",
+      "window": "point-in-time",
+      "vaultControls": [],
+      "how": "Inherited from the IaaS provider for Vault Cloud; the customer's own facility for on-premise and air-gapped deployments.",
+      "status": "organisational",
+      "ledgerEntries": 0,
+      "evidence": [],
+      "gap": "Requires the IaaS provider's ISO 27001 certificate and a carve-out decision. Not satisfied by any Vault control."
+    },
+    {
+      "id": "A.7.3",
+      "name": "Securing offices, rooms and facilities",
+      "category": "A.7 Physical",
+      "applicability": "included",
+      "justification": "Applicable, but satisfied by a sub-service organisation rather than by Vault.",
+      "window": "point-in-time",
+      "vaultControls": [],
+      "how": "Inherited from the IaaS provider for Vault Cloud; the customer's own facility for on-premise and air-gapped deployments.",
+      "status": "organisational",
+      "ledgerEntries": 0,
+      "evidence": [],
+      "gap": "Requires the IaaS provider's ISO 27001 certificate and a carve-out decision. Not satisfied by any Vault control."
+    },
+    {
+      "id": "A.7.4",
+      "name": "Physical security monitoring",
+      "category": "A.7 Physical",
+      "applicability": "included",
+      "justification": "Applicable, but satisfied by a sub-service organisation rather than by Vault.",
+      "window": "point-in-time",
+      "vaultControls": [],
+      "how": "Inherited from the IaaS provider for Vault Cloud; the customer's own facility for on-premise and air-gapped deployments.",
+      "status": "organisational",
+      "ledgerEntries": 0,
+      "evidence": [],
+      "gap": "Requires the IaaS provider's ISO 27001 certificate and a carve-out decision. Not satisfied by any Vault control."
+    },
+    {
+      "id": "A.7.5",
+      "name": "Protecting against physical and environmental threats",
+      "category": "A.7 Physical",
+      "applicability": "included",
+      "justification": "Applicable, but satisfied by a sub-service organisation rather than by Vault.",
+      "window": "point-in-time",
+      "vaultControls": [],
+      "how": "Inherited from the IaaS provider for Vault Cloud; the customer's own facility for on-premise and air-gapped deployments.",
+      "status": "organisational",
+      "ledgerEntries": 0,
+      "evidence": [],
+      "gap": "Requires the IaaS provider's ISO 27001 certificate and a carve-out decision. Not satisfied by any Vault control."
+    },
+    {
+      "id": "A.7.6",
+      "name": "Working in secure areas",
+      "category": "A.7 Physical",
+      "applicability": "included",
+      "justification": "Applicable, but satisfied by a sub-service organisation rather than by Vault.",
+      "window": "point-in-time",
+      "vaultControls": [],
+      "how": "Inherited from the IaaS provider for Vault Cloud; the customer's own facility for on-premise and air-gapped deployments.",
+      "status": "organisational",
+      "ledgerEntries": 0,
+      "evidence": [],
+      "gap": "Requires the IaaS provider's ISO 27001 certificate and a carve-out decision. Not satisfied by any Vault control."
+    },
+    {
+      "id": "A.7.7",
+      "name": "Clear desk and clear screen",
+      "category": "A.7 Physical",
+      "applicability": "included",
+      "justification": "Applicable, but satisfied by a sub-service organisation rather than by Vault.",
+      "window": "point-in-time",
+      "vaultControls": [],
+      "how": "Inherited from the IaaS provider for Vault Cloud; the customer's own facility for on-premise and air-gapped deployments.",
+      "status": "organisational",
+      "ledgerEntries": 0,
+      "evidence": [],
+      "gap": "Requires the IaaS provider's ISO 27001 certificate and a carve-out decision. Not satisfied by any Vault control."
+    },
+    {
+      "id": "A.7.8",
+      "name": "Equipment siting and protection",
+      "category": "A.7 Physical",
+      "applicability": "included",
+      "justification": "Applicable, but satisfied by a sub-service organisation rather than by Vault.",
+      "window": "point-in-time",
+      "vaultControls": [],
+      "how": "Inherited from the IaaS provider for Vault Cloud; the customer's own facility for on-premise and air-gapped deployments.",
+      "status": "organisational",
+      "ledgerEntries": 0,
+      "evidence": [],
+      "gap": "Requires the IaaS provider's ISO 27001 certificate and a carve-out decision. Not satisfied by any Vault control."
+    },
+    {
+      "id": "A.7.9",
+      "name": "Security of assets off-premises",
+      "category": "A.7 Physical",
+      "applicability": "included",
+      "justification": "Applicable, but satisfied by a sub-service organisation rather than by Vault.",
+      "window": "point-in-time",
+      "vaultControls": [],
+      "how": "Inherited from the IaaS provider for Vault Cloud; the customer's own facility for on-premise and air-gapped deployments.",
+      "status": "organisational",
+      "ledgerEntries": 0,
+      "evidence": [],
+      "gap": "Requires the IaaS provider's ISO 27001 certificate and a carve-out decision. Not satisfied by any Vault control."
+    },
+    {
+      "id": "A.7.10",
+      "name": "Storage media",
+      "category": "A.7 Physical",
+      "applicability": "included",
+      "justification": "Applicable, but satisfied by a sub-service organisation rather than by Vault.",
+      "window": "point-in-time",
+      "vaultControls": [],
+      "how": "Inherited from the IaaS provider for Vault Cloud; the customer's own facility for on-premise and air-gapped deployments.",
+      "status": "organisational",
+      "ledgerEntries": 0,
+      "evidence": [],
+      "gap": "Requires the IaaS provider's ISO 27001 certificate and a carve-out decision. Not satisfied by any Vault control."
+    },
+    {
+      "id": "A.7.11",
+      "name": "Supporting utilities",
+      "category": "A.7 Physical",
+      "applicability": "included",
+      "justification": "Applicable, but satisfied by a sub-service organisation rather than by Vault.",
+      "window": "point-in-time",
+      "vaultControls": [],
+      "how": "Inherited from the IaaS provider for Vault Cloud; the customer's own facility for on-premise and air-gapped deployments.",
+      "status": "organisational",
+      "ledgerEntries": 0,
+      "evidence": [],
+      "gap": "Requires the IaaS provider's ISO 27001 certificate and a carve-out decision. Not satisfied by any Vault control."
+    },
+    {
+      "id": "A.7.12",
+      "name": "Cabling security",
+      "category": "A.7 Physical",
+      "applicability": "included",
+      "justification": "Applicable, but satisfied by a sub-service organisation rather than by Vault.",
+      "window": "point-in-time",
+      "vaultControls": [],
+      "how": "Inherited from the IaaS provider for Vault Cloud; the customer's own facility for on-premise and air-gapped deployments.",
+      "status": "organisational",
+      "ledgerEntries": 0,
+      "evidence": [],
+      "gap": "Requires the IaaS provider's ISO 27001 certificate and a carve-out decision. Not satisfied by any Vault control."
+    },
+    {
+      "id": "A.7.13",
+      "name": "Equipment maintenance",
+      "category": "A.7 Physical",
+      "applicability": "included",
+      "justification": "Applicable, but satisfied by a sub-service organisation rather than by Vault.",
+      "window": "point-in-time",
+      "vaultControls": [],
+      "how": "Inherited from the IaaS provider for Vault Cloud; the customer's own facility for on-premise and air-gapped deployments.",
+      "status": "organisational",
+      "ledgerEntries": 0,
+      "evidence": [],
+      "gap": "Requires the IaaS provider's ISO 27001 certificate and a carve-out decision. Not satisfied by any Vault control."
+    },
+    {
+      "id": "A.7.14",
+      "name": "Secure disposal or re-use of equipment",
+      "category": "A.7 Physical",
+      "applicability": "included",
+      "justification": "Applicable, but satisfied by a sub-service organisation rather than by Vault.",
+      "window": "point-in-time",
+      "vaultControls": [],
+      "how": "Inherited from the IaaS provider for Vault Cloud; the customer's own facility for on-premise and air-gapped deployments.",
+      "status": "organisational",
+      "ledgerEntries": 0,
+      "evidence": [],
+      "gap": "Requires the IaaS provider's ISO 27001 certificate and a carve-out decision. Not satisfied by any Vault control."
+    },
+    {
+      "id": "A.8.1",
+      "name": "User end point devices",
+      "category": "A.8 Technological",
+      "applicability": "included",
+      "justification": "Applicable to the service and its information assets.",
+      "window": "point-in-time",
+      "vaultControls": [
+        "VLT-1"
+      ],
+      "how": "Device binding; excluded contexts include personal devices under Employee Privacy Mode.",
+      "status": "satisfied",
+      "ledgerEntries": 4,
+      "evidence": [
+        {
+          "vaultControl": "VLT-1",
+          "what": "Gate verdicts. Every write carries the outcome of all ten checks.",
+          "eventTypes": [
+            "fact.written",
+            "fact.held",
+            "fact.blocked",
+            "fact.masked",
+            "fact.quarantined"
+          ],
+          "count": 4,
+          "samples": [
+            {
+              "seq": 27,
+              "type": "fact.held",
+              "at": "2026-07-28T19:48:42.729Z",
+              "actor": "a-1",
+              "hash": "60caaa97bc85fd630d2767f22688c35b86f28846669ab4eb612215486494d51c",
+              "verify": "bin/vault-verify.js <export> --entry 27"
+            },
+            {
+              "seq": 30,
+              "type": "fact.held",
+              "at": "2026-07-28T19:48:42.734Z",
+              "actor": "a-1",
+              "hash": "3f70f3ced3c5bd5b5c469c7da5cf54df7ffcd0d3b6b7d03599484c2d96c999e1",
+              "verify": "bin/vault-verify.js <export> --entry 30"
+            },
+            {
+              "seq": 33,
+              "type": "fact.held",
+              "at": "2026-07-28T19:48:42.738Z",
+              "actor": "a-1",
+              "hash": "dbb1643700ad3ce89e20a0284a4f7f2beff4b148902c97509f6611f60528e163",
+              "verify": "bin/vault-verify.js <export> --entry 33"
+            }
+          ]
+        }
+      ],
+      "gap": null
+    },
+    {
+      "id": "A.8.2",
+      "name": "Privileged access rights",
+      "category": "A.8 Technological",
+      "applicability": "included",
+      "justification": "Applicable to the service and its information assets.",
+      "window": "point-in-time",
+      "vaultControls": [
+        "VLT-7"
+      ],
+      "how": "Break-glass with two named approvers, time box, session content recording and customer notification.",
+      "status": "satisfied",
+      "ledgerEntries": 1,
+      "evidence": [
+        {
+          "vaultControl": "VLT-7",
+          "what": "Wall configuration changes and every privileged access grant.",
+          "eventTypes": [
+            "folder.wall_changed",
+            "admin.breakglass"
+          ],
+          "count": 1,
+          "samples": [
+            {
+              "seq": 35,
+              "type": "folder.wall_changed",
+              "at": "2026-07-28T19:48:42.743Z",
+              "actor": "ciso",
+              "hash": "b20f31eacf1a2ada57acbd654dba04c9fec01921f170e845736850b545d0131a",
+              "verify": "bin/vault-verify.js <export> --entry 35"
+            }
+          ]
+        }
+      ],
+      "gap": null
+    },
+    {
+      "id": "A.8.3",
+      "name": "Information access restriction",
+      "category": "A.8 Technological",
+      "applicability": "included",
+      "justification": "Applicable to the service and its information assets.",
+      "window": "point-in-time",
+      "vaultControls": [
+        "VLT-7"
+      ],
+      "how": "Walls on read, write, search, entity views, knowledge maps and exports; clearance-level field redaction within an allowed fact.",
+      "status": "satisfied",
+      "ledgerEntries": 1,
+      "evidence": [
+        {
+          "vaultControl": "VLT-7",
+          "what": "Wall configuration changes and every privileged access grant.",
+          "eventTypes": [
+            "folder.wall_changed",
+            "admin.breakglass"
+          ],
+          "count": 1,
+          "samples": [
+            {
+              "seq": 35,
+              "type": "folder.wall_changed",
+              "at": "2026-07-28T19:48:42.743Z",
+              "actor": "ciso",
+              "hash": "b20f31eacf1a2ada57acbd654dba04c9fec01921f170e845736850b545d0131a",
+              "verify": "bin/vault-verify.js <export> --entry 35"
+            }
+          ]
+        }
+      ],
+      "gap": null
+    },
+    {
+      "id": "A.8.4",
+      "name": "Access to source code",
+      "category": "A.8 Technological",
+      "applicability": "included",
+      "justification": "Applicable. Source code access must be restricted and reviewed because it is the route to every other control.",
+      "window": "point-in-time",
+      "vaultControls": [],
+      "how": "Repository access control and mandatory review.",
+      "status": "organisational",
+      "ledgerEntries": 0,
+      "evidence": [],
+      "gap": "Requires repository access evidence over the observation window."
+    },
+    {
+      "id": "A.8.5",
+      "name": "Secure authentication",
+      "category": "A.8 Technological",
+      "applicability": "included",
+      "justification": "Applicable to the service and its information assets.",
+      "window": "point-in-time",
+      "vaultControls": [
+        "VLT-1"
+      ],
+      "how": "SAML 2.0 with signature-wrapping and algorithm-confusion defences; OIDC; server-side sessions.",
+      "status": "satisfied",
+      "ledgerEntries": 4,
+      "evidence": [
+        {
+          "vaultControl": "VLT-1",
+          "what": "Gate verdicts. Every write carries the outcome of all ten checks.",
+          "eventTypes": [
+            "fact.written",
+            "fact.held",
+            "fact.blocked",
+            "fact.masked",
+            "fact.quarantined"
+          ],
+          "count": 4,
+          "samples": [
+            {
+              "seq": 27,
+              "type": "fact.held",
+              "at": "2026-07-28T19:48:42.729Z",
+              "actor": "a-1",
+              "hash": "60caaa97bc85fd630d2767f22688c35b86f28846669ab4eb612215486494d51c",
+              "verify": "bin/vault-verify.js <export> --entry 27"
+            },
+            {
+              "seq": 30,
+              "type": "fact.held",
+              "at": "2026-07-28T19:48:42.734Z",
+              "actor": "a-1",
+              "hash": "3f70f3ced3c5bd5b5c469c7da5cf54df7ffcd0d3b6b7d03599484c2d96c999e1",
+              "verify": "bin/vault-verify.js <export> --entry 30"
+            },
+            {
+              "seq": 33,
+              "type": "fact.held",
+              "at": "2026-07-28T19:48:42.738Z",
+              "actor": "a-1",
+              "hash": "dbb1643700ad3ce89e20a0284a4f7f2beff4b148902c97509f6611f60528e163",
+              "verify": "bin/vault-verify.js <export> --entry 33"
+            }
+          ]
+        }
+      ],
+      "gap": null
+    },
+    {
+      "id": "A.8.6",
+      "name": "Capacity management",
+      "category": "A.8 Technological",
+      "applicability": "included",
+      "justification": "Applicable to the service and its information assets.",
+      "window": "point-in-time",
+      "vaultControls": [],
+      "how": "Cost forecast by growth rate; hard caps with pre-breach alerts; measured throughput and scale ceiling.",
+      "status": "organisational",
+      "ledgerEntries": 0,
+      "evidence": [],
+      "gap": null
+    },
+    {
+      "id": "A.8.7",
+      "name": "Protection against malware",
+      "category": "A.8 Technological",
+      "applicability": "included",
+      "justification": "Applicable to the service and its information assets.",
+      "window": "point-in-time",
+      "vaultControls": [
+        "VLT-2"
+      ],
+      "how": "Instruction-injection detection across six layers; attachment analysis with OCR and audio scanning.",
+      "status": "satisfied",
+      "ledgerEntries": 4,
+      "evidence": [
+        {
+          "vaultControl": "VLT-2",
+          "what": "Writes refused or held on channel-trust grounds.",
+          "eventTypes": [
+            "fact.held",
+            "fact.blocked",
+            "security.detection"
+          ],
+          "count": 4,
+          "samples": [
+            {
+              "seq": 30,
+              "type": "fact.held",
+              "at": "2026-07-28T19:48:42.734Z",
+              "actor": "a-1",
+              "hash": "3f70f3ced3c5bd5b5c469c7da5cf54df7ffcd0d3b6b7d03599484c2d96c999e1",
+              "verify": "bin/vault-verify.js <export> --entry 30"
+            },
+            {
+              "seq": 33,
+              "type": "fact.held",
+              "at": "2026-07-28T19:48:42.738Z",
+              "actor": "a-1",
+              "hash": "dbb1643700ad3ce89e20a0284a4f7f2beff4b148902c97509f6611f60528e163",
+              "verify": "bin/vault-verify.js <export> --entry 33"
+            },
+            {
+              "seq": 45,
+              "type": "security.detection",
+              "at": "2026-07-28T19:48:42.753Z",
+              "actor": "ciso",
+              "hash": "b019ffcacafc7a36f40c2d02acffbb0703489d255e974351b8e2a86d2ed8f990",
+              "verify": "bin/vault-verify.js <export> --entry 45"
+            }
+          ]
+        }
+      ],
+      "gap": null
+    },
+    {
+      "id": "A.8.8",
+      "name": "Management of technical vulnerabilities",
+      "category": "A.8 Technological",
+      "applicability": "included",
+      "justification": "Applicable. Technical vulnerabilities in the service are a direct risk to customer data.",
+      "window": "point-in-time",
+      "vaultControls": [],
+      "how": "Dependency scanning, daily vulnerability scanning, published VDP and bug bounty.",
+      "status": "organisational",
+      "ledgerEntries": 0,
+      "evidence": [],
+      "gap": "PARTIAL. Policies published; no scanning tooling is configured in the repository."
+    },
+    {
+      "id": "A.8.9",
+      "name": "Configuration management",
+      "category": "A.8 Technological",
+      "applicability": "included",
+      "justification": "Applicable to the service and its information assets.",
+      "window": "point-in-time",
+      "vaultControls": [
+        "VLT-11"
+      ],
+      "how": "Configuration as code with plan/apply/drift; every config change is a ledger event.",
+      "status": "satisfied",
+      "ledgerEntries": 1,
+      "evidence": [
+        {
+          "vaultControl": "VLT-11",
+          "what": "Model pins recorded at registration and every change to them.",
+          "eventTypes": [
+            "agent.registered",
+            "agent.scope_changed"
+          ],
+          "count": 1,
+          "samples": [
+            {
+              "seq": 19,
+              "type": "agent.registered",
+              "at": "2026-07-28T19:48:42.688Z",
+              "actor": "system",
+              "hash": "ab8c046ef20a4b8eec71cd1373fe6237a4aeb295384d56b9c932f0fb9356dc7c",
+              "verify": "bin/vault-verify.js <export> --entry 19"
+            }
+          ]
+        }
+      ],
+      "gap": null
+    },
+    {
+      "id": "A.8.10",
+      "name": "Information deletion",
+      "category": "A.8 Technological",
+      "applicability": "included",
+      "justification": "Applicable to the service and its information assets.",
+      "window": "point-in-time",
+      "vaultControls": [
+        "VLT-8"
+      ],
+      "how": "Receipted erasure with hard delete and segment rewrite; crypto-shredding reaching backups.",
+      "status": "satisfied",
+      "ledgerEntries": 2,
+      "evidence": [
+        {
+          "vaultControl": "VLT-8",
+          "what": "Erasure executions with their receipts and the keys destroyed.",
+          "eventTypes": [
+            "privacy.erasure",
+            "fact.erased",
+            "key.destroyed"
+          ],
+          "count": 2,
+          "samples": [
+            {
+              "seq": 42,
+              "type": "key.destroyed",
+              "at": "2026-07-28T19:48:42.750Z",
+              "actor": "dpo",
+              "hash": "61f0753098bf7d2d90cd22c4e0c5844279e52525e3ae72475496f61b6ef4464b",
+              "verify": "bin/vault-verify.js <export> --entry 42"
+            },
+            {
+              "seq": 43,
+              "type": "privacy.erasure",
+              "at": "2026-07-28T19:48:42.752Z",
+              "actor": "dpo",
+              "hash": "a031ef893dfa8373c7e961d04cb2f3f6d9cbedfb07abb22fb95cf46127fa0e4a",
+              "verify": "bin/vault-verify.js <export> --entry 43"
+            }
+          ]
+        }
+      ],
+      "gap": null
+    },
+    {
+      "id": "A.8.11",
+      "name": "Data masking",
+      "category": "A.8 Technological",
+      "applicability": "included",
+      "justification": "Applicable to the service and its information assets.",
+      "window": "point-in-time",
+      "vaultControls": [
+        "VLT-6"
+      ],
+      "how": "Mask, tokenise (reversible under break-glass), redact and quarantine actions per detector.",
+      "status": "no-evidence",
+      "ledgerEntries": 0,
+      "evidence": [],
+      "gap": "Mapped to a Vault control, but no ledger entry has been produced yet. Exercise the control, or confirm it is not reachable in this deployment."
+    },
+    {
+      "id": "A.8.12",
+      "name": "Data leakage prevention",
+      "category": "A.8 Technological",
+      "applicability": "included",
+      "justification": "Applicable to the service and its information assets.",
+      "window": "point-in-time",
+      "vaultControls": [
+        "VLT-6",
+        "VLT-7"
+      ],
+      "how": "PII scanner with 25 detector classes; DLP vendor adapters; wall enforcement on exports; credential special-case block.",
+      "status": "satisfied",
+      "ledgerEntries": 1,
+      "evidence": [
+        {
+          "vaultControl": "VLT-7",
+          "what": "Wall configuration changes and every privileged access grant.",
+          "eventTypes": [
+            "folder.wall_changed",
+            "admin.breakglass"
+          ],
+          "count": 1,
+          "samples": [
+            {
+              "seq": 35,
+              "type": "folder.wall_changed",
+              "at": "2026-07-28T19:48:42.743Z",
+              "actor": "ciso",
+              "hash": "b20f31eacf1a2ada57acbd654dba04c9fec01921f170e845736850b545d0131a",
+              "verify": "bin/vault-verify.js <export> --entry 35"
+            }
+          ]
+        }
+      ],
+      "gap": null
+    },
+    {
+      "id": "A.8.13",
+      "name": "Information backup",
+      "category": "A.8 Technological",
+      "applicability": "included",
+      "justification": "Applicable to the service and its information assets.",
+      "window": "point-in-time",
+      "vaultControls": [
+        "VLT-10"
+      ],
+      "how": "Continuous incremental plus daily full; immutable backups with separate delete credentials; manifest and suppression list stored with the data.",
+      "status": "satisfied",
+      "ledgerEntries": 2,
+      "evidence": [
+        {
+          "vaultControl": "VLT-10",
+          "what": "Kill switch activations, including scheduled tests.",
+          "eventTypes": [
+            "killswitch.engaged",
+            "killswitch.released"
+          ],
+          "count": 2,
+          "samples": [
+            {
+              "seq": 39,
+              "type": "killswitch.engaged",
+              "at": "2026-07-28T19:48:42.746Z",
+              "actor": "ciso",
+              "hash": "1fbd97e5e8708a959ef5dc1749509d348a97c7096f4a73a792407559a928af13",
+              "verify": "bin/vault-verify.js <export> --entry 39"
+            },
+            {
+              "seq": 40,
+              "type": "killswitch.released",
+              "at": "2026-07-28T19:48:42.747Z",
+              "actor": "ciso",
+              "hash": "f0d7f3314236f4307233670b1cfc7f809e97cd64c334bbef298c8bf1a8b2958e",
+              "verify": "bin/vault-verify.js <export> --entry 40"
+            }
+          ]
+        }
+      ],
+      "gap": null
+    },
+    {
+      "id": "A.8.14",
+      "name": "Redundancy of information processing facilities",
+      "category": "A.8 Technological",
+      "applicability": "included",
+      "justification": "Applicable to Vault Cloud.",
+      "window": "point-in-time",
+      "vaultControls": [],
+      "how": "Multi-AZ and cross-region replication.",
+      "status": "organisational",
+      "ledgerEntries": 0,
+      "evidence": [],
+      "gap": "Infrastructure-layer; not evidenced in the application repository."
+    },
+    {
+      "id": "A.8.15",
+      "name": "Logging",
+      "category": "A.8 Technological",
+      "applicability": "included",
+      "justification": "Applicable to the service and its information assets.",
+      "window": "point-in-time",
+      "vaultControls": [
+        "VLT-4"
+      ],
+      "how": "Append-only hash-chained ledger; read logging tiered by sensitivity; no edit code path exists.",
+      "status": "satisfied",
+      "ledgerEntries": 1,
+      "evidence": [
+        {
+          "vaultControl": "VLT-4",
+          "what": "Chain anchoring and export events; the chain itself is the evidence.",
+          "eventTypes": [
+            "anchor.published",
+            "export.created"
+          ],
+          "count": 1,
+          "samples": [
+            {
+              "seq": 49,
+              "type": "anchor.published",
+              "at": "2026-07-28T19:48:42.756Z",
+              "actor": "system",
+              "hash": "97354cb33261d5ee87a6d4961c0d95e45f2e5c158fd8d42c0a12bc94c366faad",
+              "verify": "bin/vault-verify.js <export> --entry 49"
+            }
+          ]
+        }
+      ],
+      "gap": null
+    },
+    {
+      "id": "A.8.16",
+      "name": "Monitoring activities",
+      "category": "A.8 Technological",
+      "applicability": "included",
+      "justification": "Applicable to the service and its information assets.",
+      "window": "point-in-time",
+      "vaultControls": [
+        "VLT-12"
+      ],
+      "how": "Fourteen poisoning detectors; behavioural baselines; SIEM and OTel export.",
+      "status": "satisfied",
+      "ledgerEntries": 5,
+      "evidence": [
+        {
+          "vaultControl": "VLT-12",
+          "what": "Adversarial findings and detector firings.",
+          "eventTypes": [
+            "security.alert",
+            "security.detection"
+          ],
+          "count": 5,
+          "samples": [
+            {
+              "seq": 45,
+              "type": "security.detection",
+              "at": "2026-07-28T19:48:42.753Z",
+              "actor": "ciso",
+              "hash": "b019ffcacafc7a36f40c2d02acffbb0703489d255e974351b8e2a86d2ed8f990",
+              "verify": "bin/vault-verify.js <export> --entry 45"
+            },
+            {
+              "seq": 46,
+              "type": "security.alert",
+              "at": "2026-07-28T19:48:42.753Z",
+              "actor": null,
+              "hash": "7897bef4d7d7429d46567493ae5fed9117bdf56d45a923c1d0b9720473906245",
+              "verify": "bin/vault-verify.js <export> --entry 46"
+            },
+            {
+              "seq": 47,
+              "type": "security.alert",
+              "at": "2026-07-28T19:48:42.754Z",
+              "actor": null,
+              "hash": "cab6486f8c899f655efbe0ad523945c52e8f84972d4955aa5ae9ace2ab0f7fec",
+              "verify": "bin/vault-verify.js <export> --entry 47"
+            }
+          ]
+        }
+      ],
+      "gap": null
+    },
+    {
+      "id": "A.8.17",
+      "name": "Clock synchronisation",
+      "category": "A.8 Technological",
+      "applicability": "included",
+      "justification": "Applicable. Ledger timestamps and retention calculations depend on synchronised clocks.",
+      "window": "point-in-time",
+      "vaultControls": [],
+      "how": "NTP on all hosts; ledger entries carry millisecond timestamps with timezone.",
+      "status": "organisational",
+      "ledgerEntries": 0,
+      "evidence": [],
+      "gap": "Infrastructure-layer."
+    },
+    {
+      "id": "A.8.18",
+      "name": "Use of privileged utility programs",
+      "category": "A.8 Technological",
+      "applicability": "included",
+      "justification": "Applicable to the service and its information assets.",
+      "window": "point-in-time",
+      "vaultControls": [
+        "VLT-7"
+      ],
+      "how": "No admin bypass of walls by default; privileged actions monitored.",
+      "status": "satisfied",
+      "ledgerEntries": 1,
+      "evidence": [
+        {
+          "vaultControl": "VLT-7",
+          "what": "Wall configuration changes and every privileged access grant.",
+          "eventTypes": [
+            "folder.wall_changed",
+            "admin.breakglass"
+          ],
+          "count": 1,
+          "samples": [
+            {
+              "seq": 35,
+              "type": "folder.wall_changed",
+              "at": "2026-07-28T19:48:42.743Z",
+              "actor": "ciso",
+              "hash": "b20f31eacf1a2ada57acbd654dba04c9fec01921f170e845736850b545d0131a",
+              "verify": "bin/vault-verify.js <export> --entry 35"
+            }
+          ]
+        }
+      ],
+      "gap": null
+    },
+    {
+      "id": "A.8.19",
+      "name": "Installation of software on operational systems",
+      "category": "A.8 Technological",
+      "applicability": "included",
+      "justification": "Applicable to the service and its information assets.",
+      "window": "point-in-time",
+      "vaultControls": [
+        "VLT-16"
+      ],
+      "how": "Zero runtime dependencies; approved-model allowlist; MCP server allowlisting.",
+      "status": "satisfied",
+      "ledgerEntries": 2,
+      "evidence": [
+        {
+          "vaultControl": "VLT-16",
+          "what": "Tool and MCP allowlisting decisions.",
+          "eventTypes": [
+            "admin.action",
+            "connector.connected"
+          ],
+          "count": 2,
+          "samples": [
+            {
+              "seq": 41,
+              "type": "admin.action",
+              "at": "2026-07-28T19:48:42.761Z",
+              "actor": "ciso",
+              "hash": "92fcfd05ae6d2e2ab25547ec4452e7c939045c47f3b02a9b7b793088e152911a",
+              "verify": "bin/vault-verify.js <export> --entry 41"
+            },
+            {
+              "seq": 44,
+              "type": "admin.action",
+              "at": "2026-07-28T19:48:42.752Z",
+              "actor": "ciso",
+              "hash": "07ae90725533f243fb3b1a390ac0388f1c77776c68b8eaa93c9867a482f5c516",
+              "verify": "bin/vault-verify.js <export> --entry 44"
+            }
+          ]
+        }
+      ],
+      "gap": null
+    },
+    {
+      "id": "A.8.20",
+      "name": "Networks security",
+      "category": "A.8 Technological",
+      "applicability": "included",
+      "justification": "Applicable to the service and its information assets.",
+      "window": "point-in-time",
+      "vaultControls": [
+        "VLT-1"
+      ],
+      "how": "TLS 1.3, mTLS for agent connections, certificate pinning option.",
+      "status": "satisfied",
+      "ledgerEntries": 4,
+      "evidence": [
+        {
+          "vaultControl": "VLT-1",
+          "what": "Gate verdicts. Every write carries the outcome of all ten checks.",
+          "eventTypes": [
+            "fact.written",
+            "fact.held",
+            "fact.blocked",
+            "fact.masked",
+            "fact.quarantined"
+          ],
+          "count": 4,
+          "samples": [
+            {
+              "seq": 27,
+              "type": "fact.held",
+              "at": "2026-07-28T19:48:42.729Z",
+              "actor": "a-1",
+              "hash": "60caaa97bc85fd630d2767f22688c35b86f28846669ab4eb612215486494d51c",
+              "verify": "bin/vault-verify.js <export> --entry 27"
+            },
+            {
+              "seq": 30,
+              "type": "fact.held",
+              "at": "2026-07-28T19:48:42.734Z",
+              "actor": "a-1",
+              "hash": "3f70f3ced3c5bd5b5c469c7da5cf54df7ffcd0d3b6b7d03599484c2d96c999e1",
+              "verify": "bin/vault-verify.js <export> --entry 30"
+            },
+            {
+              "seq": 33,
+              "type": "fact.held",
+              "at": "2026-07-28T19:48:42.738Z",
+              "actor": "a-1",
+              "hash": "dbb1643700ad3ce89e20a0284a4f7f2beff4b148902c97509f6611f60528e163",
+              "verify": "bin/vault-verify.js <export> --entry 33"
+            }
+          ]
+        }
+      ],
+      "gap": null
+    },
+    {
+      "id": "A.8.21",
+      "name": "Security of network services",
+      "category": "A.8 Technological",
+      "applicability": "included",
+      "justification": "Applicable to the service and its information assets.",
+      "window": "point-in-time",
+      "vaultControls": [
+        "VLT-1"
+      ],
+      "how": "API rate limiting; WAF and DDoS protection at the edge.",
+      "status": "satisfied",
+      "ledgerEntries": 4,
+      "evidence": [
+        {
+          "vaultControl": "VLT-1",
+          "what": "Gate verdicts. Every write carries the outcome of all ten checks.",
+          "eventTypes": [
+            "fact.written",
+            "fact.held",
+            "fact.blocked",
+            "fact.masked",
+            "fact.quarantined"
+          ],
+          "count": 4,
+          "samples": [
+            {
+              "seq": 27,
+              "type": "fact.held",
+              "at": "2026-07-28T19:48:42.729Z",
+              "actor": "a-1",
+              "hash": "60caaa97bc85fd630d2767f22688c35b86f28846669ab4eb612215486494d51c",
+              "verify": "bin/vault-verify.js <export> --entry 27"
+            },
+            {
+              "seq": 30,
+              "type": "fact.held",
+              "at": "2026-07-28T19:48:42.734Z",
+              "actor": "a-1",
+              "hash": "3f70f3ced3c5bd5b5c469c7da5cf54df7ffcd0d3b6b7d03599484c2d96c999e1",
+              "verify": "bin/vault-verify.js <export> --entry 30"
+            },
+            {
+              "seq": 33,
+              "type": "fact.held",
+              "at": "2026-07-28T19:48:42.738Z",
+              "actor": "a-1",
+              "hash": "dbb1643700ad3ce89e20a0284a4f7f2beff4b148902c97509f6611f60528e163",
+              "verify": "bin/vault-verify.js <export> --entry 33"
+            }
+          ]
+        }
+      ],
+      "gap": null
+    },
+    {
+      "id": "A.8.22",
+      "name": "Segregation of networks",
+      "category": "A.8 Technological",
+      "applicability": "included",
+      "justification": "Applicable. Network segregation limits blast radius between tenants and environments.",
+      "window": "point-in-time",
+      "vaultControls": [],
+      "how": "VPC isolation; single-tenant and customer-VPC deployment models.",
+      "status": "organisational",
+      "ledgerEntries": 0,
+      "evidence": [],
+      "gap": "Infrastructure-layer."
+    },
+    {
+      "id": "A.8.23",
+      "name": "Web filtering",
+      "category": "A.8 Technological",
+      "applicability": "excluded",
+      "justification": "EXCLUDED. Vault makes outbound calls only to customer-configured connector endpoints, which are allowlisted per connector by the customer. General-purpose web browsing is not a function of the service, so a web filtering control has nothing to act on.",
+      "window": "point-in-time",
+      "vaultControls": [],
+      "how": "Egress policy on outbound connections.",
+      "status": "excluded",
+      "ledgerEntries": 0,
+      "evidence": [],
+      "gap": null
+    },
+    {
+      "id": "A.8.24",
+      "name": "Use of cryptography",
+      "category": "A.8 Technological",
+      "applicability": "included",
+      "justification": "Applicable to the service and its information assets.",
+      "window": "point-in-time",
+      "vaultControls": [
+        "VLT-4"
+      ],
+      "how": "AES-256-GCM at rest by default with a justified allowlist; envelope encryption; per-namespace and per-subject keys; BYOK/CMK/HYOK/HSM.",
+      "status": "satisfied",
+      "ledgerEntries": 1,
+      "evidence": [
+        {
+          "vaultControl": "VLT-4",
+          "what": "Chain anchoring and export events; the chain itself is the evidence.",
+          "eventTypes": [
+            "anchor.published",
+            "export.created"
+          ],
+          "count": 1,
+          "samples": [
+            {
+              "seq": 49,
+              "type": "anchor.published",
+              "at": "2026-07-28T19:48:42.756Z",
+              "actor": "system",
+              "hash": "97354cb33261d5ee87a6d4961c0d95e45f2e5c158fd8d42c0a12bc94c366faad",
+              "verify": "bin/vault-verify.js <export> --entry 49"
+            }
+          ]
+        }
+      ],
+      "gap": null
+    },
+    {
+      "id": "A.8.25",
+      "name": "Secure development life cycle",
+      "category": "A.8 Technological",
+      "applicability": "included",
+      "justification": "Applicable to the service and its information assets.",
+      "window": "point-in-time",
+      "vaultControls": [],
+      "how": "Test-first for security mechanisms; mutation testing of every security control.",
+      "status": "organisational",
+      "ledgerEntries": 0,
+      "evidence": [],
+      "gap": null
+    },
+    {
+      "id": "A.8.26",
+      "name": "Application security requirements",
+      "category": "A.8 Technological",
+      "applicability": "included",
+      "justification": "Applicable to the service and its information assets.",
+      "window": "point-in-time",
+      "vaultControls": [
+        "VLT-1"
+      ],
+      "how": "The ten-check gate is the application security requirement, and it cannot be disabled.",
+      "status": "satisfied",
+      "ledgerEntries": 4,
+      "evidence": [
+        {
+          "vaultControl": "VLT-1",
+          "what": "Gate verdicts. Every write carries the outcome of all ten checks.",
+          "eventTypes": [
+            "fact.written",
+            "fact.held",
+            "fact.blocked",
+            "fact.masked",
+            "fact.quarantined"
+          ],
+          "count": 4,
+          "samples": [
+            {
+              "seq": 27,
+              "type": "fact.held",
+              "at": "2026-07-28T19:48:42.729Z",
+              "actor": "a-1",
+              "hash": "60caaa97bc85fd630d2767f22688c35b86f28846669ab4eb612215486494d51c",
+              "verify": "bin/vault-verify.js <export> --entry 27"
+            },
+            {
+              "seq": 30,
+              "type": "fact.held",
+              "at": "2026-07-28T19:48:42.734Z",
+              "actor": "a-1",
+              "hash": "3f70f3ced3c5bd5b5c469c7da5cf54df7ffcd0d3b6b7d03599484c2d96c999e1",
+              "verify": "bin/vault-verify.js <export> --entry 30"
+            },
+            {
+              "seq": 33,
+              "type": "fact.held",
+              "at": "2026-07-28T19:48:42.738Z",
+              "actor": "a-1",
+              "hash": "dbb1643700ad3ce89e20a0284a4f7f2beff4b148902c97509f6611f60528e163",
+              "verify": "bin/vault-verify.js <export> --entry 33"
+            }
+          ]
+        }
+      ],
+      "gap": null
+    },
+    {
+      "id": "A.8.27",
+      "name": "Secure system architecture and engineering principles",
+      "category": "A.8 Technological",
+      "applicability": "included",
+      "justification": "Applicable to the service and its information assets.",
+      "window": "point-in-time",
+      "vaultControls": [
+        "VLT-1"
+      ],
+      "how": "Fail-safe by construction: no pass-unchecked code path; encryption opt-out rather than opt-in.",
+      "status": "satisfied",
+      "ledgerEntries": 4,
+      "evidence": [
+        {
+          "vaultControl": "VLT-1",
+          "what": "Gate verdicts. Every write carries the outcome of all ten checks.",
+          "eventTypes": [
+            "fact.written",
+            "fact.held",
+            "fact.blocked",
+            "fact.masked",
+            "fact.quarantined"
+          ],
+          "count": 4,
+          "samples": [
+            {
+              "seq": 27,
+              "type": "fact.held",
+              "at": "2026-07-28T19:48:42.729Z",
+              "actor": "a-1",
+              "hash": "60caaa97bc85fd630d2767f22688c35b86f28846669ab4eb612215486494d51c",
+              "verify": "bin/vault-verify.js <export> --entry 27"
+            },
+            {
+              "seq": 30,
+              "type": "fact.held",
+              "at": "2026-07-28T19:48:42.734Z",
+              "actor": "a-1",
+              "hash": "3f70f3ced3c5bd5b5c469c7da5cf54df7ffcd0d3b6b7d03599484c2d96c999e1",
+              "verify": "bin/vault-verify.js <export> --entry 30"
+            },
+            {
+              "seq": 33,
+              "type": "fact.held",
+              "at": "2026-07-28T19:48:42.738Z",
+              "actor": "a-1",
+              "hash": "dbb1643700ad3ce89e20a0284a4f7f2beff4b148902c97509f6611f60528e163",
+              "verify": "bin/vault-verify.js <export> --entry 33"
+            }
+          ]
+        }
+      ],
+      "gap": null
+    },
+    {
+      "id": "A.8.28",
+      "name": "Secure coding",
+      "category": "A.8 Technological",
+      "applicability": "included",
+      "justification": "Applicable. Secure coding is the control behind every application-layer assurance in this package.",
+      "window": "point-in-time",
+      "vaultControls": [],
+      "how": "Mandatory review; no runtime dependencies to inherit vulnerabilities from.",
+      "status": "organisational",
+      "ledgerEntries": 0,
+      "evidence": [],
+      "gap": "PARTIAL. No SAST tooling configured in the repository."
+    },
+    {
+      "id": "A.8.29",
+      "name": "Security testing in development and acceptance",
+      "category": "A.8 Technological",
+      "applicability": "included",
+      "justification": "Applicable to the service and its information assets.",
+      "window": "point-in-time",
+      "vaultControls": [
+        "VLT-12"
+      ],
+      "how": "778 automated tests including adversarial attack sweeps and mutation testing of every security mechanism.",
+      "status": "satisfied",
+      "ledgerEntries": 5,
+      "evidence": [
+        {
+          "vaultControl": "VLT-12",
+          "what": "Adversarial findings and detector firings.",
+          "eventTypes": [
+            "security.alert",
+            "security.detection"
+          ],
+          "count": 5,
+          "samples": [
+            {
+              "seq": 45,
+              "type": "security.detection",
+              "at": "2026-07-28T19:48:42.753Z",
+              "actor": "ciso",
+              "hash": "b019ffcacafc7a36f40c2d02acffbb0703489d255e974351b8e2a86d2ed8f990",
+              "verify": "bin/vault-verify.js <export> --entry 45"
+            },
+            {
+              "seq": 46,
+              "type": "security.alert",
+              "at": "2026-07-28T19:48:42.753Z",
+              "actor": null,
+              "hash": "7897bef4d7d7429d46567493ae5fed9117bdf56d45a923c1d0b9720473906245",
+              "verify": "bin/vault-verify.js <export> --entry 46"
+            },
+            {
+              "seq": 47,
+              "type": "security.alert",
+              "at": "2026-07-28T19:48:42.754Z",
+              "actor": null,
+              "hash": "cab6486f8c899f655efbe0ad523945c52e8f84972d4955aa5ae9ace2ab0f7fec",
+              "verify": "bin/vault-verify.js <export> --entry 47"
+            }
+          ]
+        }
+      ],
+      "gap": null
+    },
+    {
+      "id": "A.8.30",
+      "name": "Outsourced development",
+      "category": "A.8 Technological",
+      "applicability": "excluded",
+      "justification": "EXCLUDED. All development is performed in-house. No development is outsourced to a third party, so there is no outsourced-development relationship to govern.",
+      "window": "point-in-time",
+      "vaultControls": [],
+      "how": "Not applicable.",
+      "status": "excluded",
+      "ledgerEntries": 0,
+      "evidence": [],
+      "gap": null
+    },
+    {
+      "id": "A.8.31",
+      "name": "Separation of development, test and production environments",
+      "category": "A.8 Technological",
+      "applicability": "included",
+      "justification": "Applicable. Separating environments is what stops test activity reaching production data.",
+      "window": "point-in-time",
+      "vaultControls": [],
+      "how": "Separate environments with no production data in test.",
+      "status": "organisational",
+      "ledgerEntries": 0,
+      "evidence": [],
+      "gap": "Infrastructure-layer; requires environment evidence."
+    },
+    {
+      "id": "A.8.32",
+      "name": "Change management",
+      "category": "A.8 Technological",
+      "applicability": "included",
+      "justification": "Applicable to the service and its information assets.",
+      "window": "point-in-time",
+      "vaultControls": [
+        "VLT-11"
+      ],
+      "how": "Rule lifecycle with backtest and warn-only stages; every change versioned with who, when, why and a diff.",
+      "status": "satisfied",
+      "ledgerEntries": 1,
+      "evidence": [
+        {
+          "vaultControl": "VLT-11",
+          "what": "Model pins recorded at registration and every change to them.",
+          "eventTypes": [
+            "agent.registered",
+            "agent.scope_changed"
+          ],
+          "count": 1,
+          "samples": [
+            {
+              "seq": 19,
+              "type": "agent.registered",
+              "at": "2026-07-28T19:48:42.688Z",
+              "actor": "system",
+              "hash": "ab8c046ef20a4b8eec71cd1373fe6237a4aeb295384d56b9c932f0fb9356dc7c",
+              "verify": "bin/vault-verify.js <export> --entry 19"
+            }
+          ]
+        }
+      ],
+      "gap": null
+    },
+    {
+      "id": "A.8.33",
+      "name": "Test information",
+      "category": "A.8 Technological",
+      "applicability": "included",
+      "justification": "Applicable to the service and its information assets.",
+      "window": "point-in-time",
+      "vaultControls": [],
+      "how": "Synthetic data only in test environments; the demo tenant refuses to seed over real data.",
+      "status": "organisational",
+      "ledgerEntries": 0,
+      "evidence": [],
+      "gap": null
+    },
+    {
+      "id": "A.8.34",
+      "name": "Protection of information systems during audit testing",
+      "category": "A.8 Technological",
+      "applicability": "included",
+      "justification": "Applicable to the service and its information assets.",
+      "window": "point-in-time",
+      "vaultControls": [],
+      "how": "Time-boxed scoped auditor workspace with its own access log.",
+      "status": "organisational",
+      "ledgerEntries": 0,
+      "evidence": [],
+      "gap": null
+    }
+  ],
+  "gaps": [
+    {
+      "id": "A.5.10",
+      "name": "Acceptable use of information and other associated assets",
+      "status": "no-evidence",
+      "gap": "Mapped to a Vault control, but no ledger entry has been produced yet. Exercise the control, or confirm it is not reachable in this deployment.",
+      "closes": "Exercise the control once in this tenant so the ledger carries an entry, or record why it is unreachable here."
+    },
+    {
+      "id": "A.5.12",
+      "name": "Classification of information",
+      "status": "no-evidence",
+      "gap": "Mapped to a Vault control, but no ledger entry has been produced yet. Exercise the control, or confirm it is not reachable in this deployment.",
+      "closes": "Exercise the control once in this tenant so the ledger carries an entry, or record why it is unreachable here."
+    },
+    {
+      "id": "A.5.13",
+      "name": "Labelling of information",
+      "status": "no-evidence",
+      "gap": "Mapped to a Vault control, but no ledger entry has been produced yet. Exercise the control, or confirm it is not reachable in this deployment.",
+      "closes": "Exercise the control once in this tenant so the ledger carries an entry, or record why it is unreachable here."
+    },
+    {
+      "id": "A.5.35",
+      "name": "Independent review of information security",
+      "status": "organisational",
+      "gap": "NOT SATISFIED. No independent review has been performed. The engagement package exists; the engagement does not.",
+      "closes": "A human process and its records. No code change closes this."
+    },
+    {
+      "id": "A.6.1",
+      "name": "Screening",
+      "status": "organisational",
+      "gap": "Organisational. Requires HR evidence over the observation window.",
+      "closes": "A human process and its records. No code change closes this."
+    },
+    {
+      "id": "A.6.2",
+      "name": "Terms and conditions of employment",
+      "status": "organisational",
+      "gap": "Organisational.",
+      "closes": "A human process and its records. No code change closes this."
+    },
+    {
+      "id": "A.6.3",
+      "name": "Information security awareness, education and training",
+      "status": "organisational",
+      "gap": "Organisational. Requires training records.",
+      "closes": "A human process and its records. No code change closes this."
+    },
+    {
+      "id": "A.6.4",
+      "name": "Disciplinary process",
+      "status": "organisational",
+      "gap": "Organisational.",
+      "closes": "A human process and its records. No code change closes this."
+    },
+    {
+      "id": "A.6.6",
+      "name": "Confidentiality or non-disclosure agreements",
+      "status": "organisational",
+      "gap": "Organisational.",
+      "closes": "A human process and its records. No code change closes this."
+    },
+    {
+      "id": "A.7.1",
+      "name": "Physical security perimeters",
+      "status": "organisational",
+      "gap": "Requires the IaaS provider's ISO 27001 certificate and a carve-out decision. Not satisfied by any Vault control.",
+      "closes": "A human process and its records. No code change closes this."
+    },
+    {
+      "id": "A.7.2",
+      "name": "Physical entry",
+      "status": "organisational",
+      "gap": "Requires the IaaS provider's ISO 27001 certificate and a carve-out decision. Not satisfied by any Vault control.",
+      "closes": "A human process and its records. No code change closes this."
+    },
+    {
+      "id": "A.7.3",
+      "name": "Securing offices, rooms and facilities",
+      "status": "organisational",
+      "gap": "Requires the IaaS provider's ISO 27001 certificate and a carve-out decision. Not satisfied by any Vault control.",
+      "closes": "A human process and its records. No code change closes this."
+    },
+    {
+      "id": "A.7.4",
+      "name": "Physical security monitoring",
+      "status": "organisational",
+      "gap": "Requires the IaaS provider's ISO 27001 certificate and a carve-out decision. Not satisfied by any Vault control.",
+      "closes": "A human process and its records. No code change closes this."
+    },
+    {
+      "id": "A.7.5",
+      "name": "Protecting against physical and environmental threats",
+      "status": "organisational",
+      "gap": "Requires the IaaS provider's ISO 27001 certificate and a carve-out decision. Not satisfied by any Vault control.",
+      "closes": "A human process and its records. No code change closes this."
+    },
+    {
+      "id": "A.7.6",
+      "name": "Working in secure areas",
+      "status": "organisational",
+      "gap": "Requires the IaaS provider's ISO 27001 certificate and a carve-out decision. Not satisfied by any Vault control.",
+      "closes": "A human process and its records. No code change closes this."
+    },
+    {
+      "id": "A.7.7",
+      "name": "Clear desk and clear screen",
+      "status": "organisational",
+      "gap": "Requires the IaaS provider's ISO 27001 certificate and a carve-out decision. Not satisfied by any Vault control.",
+      "closes": "A human process and its records. No code change closes this."
+    },
+    {
+      "id": "A.7.8",
+      "name": "Equipment siting and protection",
+      "status": "organisational",
+      "gap": "Requires the IaaS provider's ISO 27001 certificate and a carve-out decision. Not satisfied by any Vault control.",
+      "closes": "A human process and its records. No code change closes this."
+    },
+    {
+      "id": "A.7.9",
+      "name": "Security of assets off-premises",
+      "status": "organisational",
+      "gap": "Requires the IaaS provider's ISO 27001 certificate and a carve-out decision. Not satisfied by any Vault control.",
+      "closes": "A human process and its records. No code change closes this."
+    },
+    {
+      "id": "A.7.10",
+      "name": "Storage media",
+      "status": "organisational",
+      "gap": "Requires the IaaS provider's ISO 27001 certificate and a carve-out decision. Not satisfied by any Vault control.",
+      "closes": "A human process and its records. No code change closes this."
+    },
+    {
+      "id": "A.7.11",
+      "name": "Supporting utilities",
+      "status": "organisational",
+      "gap": "Requires the IaaS provider's ISO 27001 certificate and a carve-out decision. Not satisfied by any Vault control.",
+      "closes": "A human process and its records. No code change closes this."
+    },
+    {
+      "id": "A.7.12",
+      "name": "Cabling security",
+      "status": "organisational",
+      "gap": "Requires the IaaS provider's ISO 27001 certificate and a carve-out decision. Not satisfied by any Vault control.",
+      "closes": "A human process and its records. No code change closes this."
+    },
+    {
+      "id": "A.7.13",
+      "name": "Equipment maintenance",
+      "status": "organisational",
+      "gap": "Requires the IaaS provider's ISO 27001 certificate and a carve-out decision. Not satisfied by any Vault control.",
+      "closes": "A human process and its records. No code change closes this."
+    },
+    {
+      "id": "A.7.14",
+      "name": "Secure disposal or re-use of equipment",
+      "status": "organisational",
+      "gap": "Requires the IaaS provider's ISO 27001 certificate and a carve-out decision. Not satisfied by any Vault control.",
+      "closes": "A human process and its records. No code change closes this."
+    },
+    {
+      "id": "A.8.4",
+      "name": "Access to source code",
+      "status": "organisational",
+      "gap": "Requires repository access evidence over the observation window.",
+      "closes": "A human process and its records. No code change closes this."
+    },
+    {
+      "id": "A.8.8",
+      "name": "Management of technical vulnerabilities",
+      "status": "organisational",
+      "gap": "PARTIAL. Policies published; no scanning tooling is configured in the repository.",
+      "closes": "A human process and its records. No code change closes this."
+    },
+    {
+      "id": "A.8.11",
+      "name": "Data masking",
+      "status": "no-evidence",
+      "gap": "Mapped to a Vault control, but no ledger entry has been produced yet. Exercise the control, or confirm it is not reachable in this deployment.",
+      "closes": "Exercise the control once in this tenant so the ledger carries an entry, or record why it is unreachable here."
+    },
+    {
+      "id": "A.8.14",
+      "name": "Redundancy of information processing facilities",
+      "status": "organisational",
+      "gap": "Infrastructure-layer; not evidenced in the application repository.",
+      "closes": "A human process and its records. No code change closes this."
+    },
+    {
+      "id": "A.8.17",
+      "name": "Clock synchronisation",
+      "status": "organisational",
+      "gap": "Infrastructure-layer.",
+      "closes": "A human process and its records. No code change closes this."
+    },
+    {
+      "id": "A.8.22",
+      "name": "Segregation of networks",
+      "status": "organisational",
+      "gap": "Infrastructure-layer.",
+      "closes": "A human process and its records. No code change closes this."
+    },
+    {
+      "id": "A.8.28",
+      "name": "Secure coding",
+      "status": "organisational",
+      "gap": "PARTIAL. No SAST tooling configured in the repository.",
+      "closes": "A human process and its records. No code change closes this."
+    },
+    {
+      "id": "A.8.31",
+      "name": "Separation of development, test and production environments",
+      "status": "organisational",
+      "gap": "Infrastructure-layer; requires environment evidence.",
+      "closes": "A human process and its records. No code change closes this."
+    }
+  ]
+}

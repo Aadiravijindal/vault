@@ -1,0 +1,1158 @@
+{
+  "framework": "ISO 42001",
+  "standard": "ISO/IEC 42001:2023 Annex A",
+  "generatedAt": "2026-07-28T19:48:42.763Z",
+  "organisation": {
+    "name": "Vault (the service organisation)",
+    "service": "Vault — governed shared AI memory",
+    "scope": "The Vault platform: ingestion, the gate, the fact store, the sealed archive, the ledger, and the control surface."
+  },
+  "summary": {
+    "totalControls": 38,
+    "satisfied": 17,
+    "noEvidence": 4,
+    "organisational": 17,
+    "excluded": 0,
+    "withKnownGaps": 4,
+    "technicalCoverage": "17/38 (45%) evidenced from the ledger",
+    "ledgerEntriesCited": 45
+  },
+  "observationWindow": {
+    "required": false,
+    "controlsRequiringAPeriod": 0,
+    "minimumPeriod": "not applicable — ISO certification audits a management system, not a period of operating effectiveness",
+    "statement": "ISO 27001 and 42001 certification assess whether the management system is designed and operating, in a Stage 1 (documentation) and Stage 2 (implementation) audit. No fixed observation window applies, but Stage 2 expects records showing the system has been operating, typically for at least three months."
+  },
+  "controls": [
+    {
+      "id": "A.2.2",
+      "name": "AI policy",
+      "category": "A.2 AI policy",
+      "applicability": "included",
+      "justification": "Required of every AIMS.",
+      "window": "point-in-time",
+      "vaultControls": [],
+      "how": "The AI policy document generated with this package.",
+      "status": "organisational",
+      "ledgerEntries": 0,
+      "evidence": [],
+      "gap": null
+    },
+    {
+      "id": "A.2.3",
+      "name": "Alignment with other organisational policies",
+      "category": "A.2 AI policy",
+      "applicability": "included",
+      "justification": "Required. ISO 42001 mandates this control for any organisation operating an AI management system.",
+      "window": "point-in-time",
+      "vaultControls": [],
+      "how": "The AI policy cross-references the information security and privacy policies.",
+      "status": "organisational",
+      "ledgerEntries": 0,
+      "evidence": [],
+      "gap": null
+    },
+    {
+      "id": "A.2.4",
+      "name": "Review of the AI policy",
+      "category": "A.2 AI policy",
+      "applicability": "included",
+      "justification": "Required. ISO 42001 mandates this control for any organisation operating an AI management system.",
+      "window": "point-in-time",
+      "vaultControls": [],
+      "how": "Annual review with versioning and approval workflow.",
+      "status": "organisational",
+      "ledgerEntries": 0,
+      "evidence": [],
+      "gap": null
+    },
+    {
+      "id": "A.3.2",
+      "name": "AI roles and responsibilities",
+      "category": "A.3 Internal organization",
+      "applicability": "included",
+      "justification": "Required. ISO 42001 mandates this control for any organisation operating an AI management system.",
+      "window": "point-in-time",
+      "vaultControls": [
+        "VLT-5"
+      ],
+      "how": "Named business and technical owner on every agent and folder, enforced at registration.",
+      "status": "satisfied",
+      "ledgerEntries": 2,
+      "evidence": [
+        {
+          "vaultControl": "VLT-5",
+          "what": "The AI system inventory, as a stream of registration events with named owners.",
+          "eventTypes": [
+            "agent.registered",
+            "agent.scope_changed",
+            "agent.retired",
+            "agent.suspended"
+          ],
+          "count": 2,
+          "samples": [
+            {
+              "seq": 19,
+              "type": "agent.registered",
+              "at": "2026-07-28T19:48:42.688Z",
+              "actor": "system",
+              "hash": "ab8c046ef20a4b8eec71cd1373fe6237a4aeb295384d56b9c932f0fb9356dc7c",
+              "verify": "bin/vault-verify.js <export> --entry 19"
+            },
+            {
+              "seq": 51,
+              "type": "agent.suspended",
+              "at": "2026-07-28T19:48:42.757Z",
+              "actor": "ciso",
+              "hash": "56981d3ad7f788465f43a362d1e7511bf711742b299b0163f393148148a0302e",
+              "verify": "bin/vault-verify.js <export> --entry 51"
+            }
+          ]
+        }
+      ],
+      "gap": null
+    },
+    {
+      "id": "A.3.3",
+      "name": "Reporting of concerns",
+      "category": "A.3 Internal organization",
+      "applicability": "included",
+      "justification": "Required. ISO 42001 mandates this control for any organisation operating an AI management system.",
+      "window": "point-in-time",
+      "vaultControls": [],
+      "how": "Employee objection channel with tracked response; published VDP.",
+      "status": "organisational",
+      "ledgerEntries": 0,
+      "evidence": [],
+      "gap": null
+    },
+    {
+      "id": "A.4.2",
+      "name": "Resource documentation",
+      "category": "A.4 Resources for AI systems",
+      "applicability": "included",
+      "justification": "Required. ISO 42001 mandates this control for any organisation operating an AI management system.",
+      "window": "point-in-time",
+      "vaultControls": [
+        "VLT-5"
+      ],
+      "how": "AI system register covering agents, models, prompts, datasets and memory stores with owners.",
+      "status": "satisfied",
+      "ledgerEntries": 2,
+      "evidence": [
+        {
+          "vaultControl": "VLT-5",
+          "what": "The AI system inventory, as a stream of registration events with named owners.",
+          "eventTypes": [
+            "agent.registered",
+            "agent.scope_changed",
+            "agent.retired",
+            "agent.suspended"
+          ],
+          "count": 2,
+          "samples": [
+            {
+              "seq": 19,
+              "type": "agent.registered",
+              "at": "2026-07-28T19:48:42.688Z",
+              "actor": "system",
+              "hash": "ab8c046ef20a4b8eec71cd1373fe6237a4aeb295384d56b9c932f0fb9356dc7c",
+              "verify": "bin/vault-verify.js <export> --entry 19"
+            },
+            {
+              "seq": 51,
+              "type": "agent.suspended",
+              "at": "2026-07-28T19:48:42.757Z",
+              "actor": "ciso",
+              "hash": "56981d3ad7f788465f43a362d1e7511bf711742b299b0163f393148148a0302e",
+              "verify": "bin/vault-verify.js <export> --entry 51"
+            }
+          ]
+        }
+      ],
+      "gap": null
+    },
+    {
+      "id": "A.4.3",
+      "name": "Data resources",
+      "category": "A.4 Resources for AI systems",
+      "applicability": "included",
+      "justification": "Required. ISO 42001 mandates this control for any organisation operating an AI management system.",
+      "window": "point-in-time",
+      "vaultControls": [
+        "VLT-6"
+      ],
+      "how": "Provenance on every fact: source span, channel, trust classification, extraction confidence.",
+      "status": "no-evidence",
+      "ledgerEntries": 0,
+      "evidence": [],
+      "gap": "Mapped to a Vault control, but no ledger entry has been produced yet. Exercise the control, or confirm it is not reachable in this deployment."
+    },
+    {
+      "id": "A.4.4",
+      "name": "Tooling resources",
+      "category": "A.4 Resources for AI systems",
+      "applicability": "included",
+      "justification": "Required. ISO 42001 mandates this control for any organisation operating an AI management system.",
+      "window": "point-in-time",
+      "vaultControls": [
+        "VLT-16"
+      ],
+      "how": "Tool and MCP server allowlisting with provenance.",
+      "status": "satisfied",
+      "ledgerEntries": 2,
+      "evidence": [
+        {
+          "vaultControl": "VLT-16",
+          "what": "Tool and MCP allowlisting decisions.",
+          "eventTypes": [
+            "admin.action",
+            "connector.connected"
+          ],
+          "count": 2,
+          "samples": [
+            {
+              "seq": 41,
+              "type": "admin.action",
+              "at": "2026-07-28T19:48:42.764Z",
+              "actor": "ciso",
+              "hash": "92fcfd05ae6d2e2ab25547ec4452e7c939045c47f3b02a9b7b793088e152911a",
+              "verify": "bin/vault-verify.js <export> --entry 41"
+            },
+            {
+              "seq": 44,
+              "type": "admin.action",
+              "at": "2026-07-28T19:48:42.752Z",
+              "actor": "ciso",
+              "hash": "07ae90725533f243fb3b1a390ac0388f1c77776c68b8eaa93c9867a482f5c516",
+              "verify": "bin/vault-verify.js <export> --entry 44"
+            }
+          ]
+        }
+      ],
+      "gap": null
+    },
+    {
+      "id": "A.4.5",
+      "name": "System and computing resources",
+      "category": "A.4 Resources for AI systems",
+      "applicability": "included",
+      "justification": "Required. ISO 42001 mandates this control for any organisation operating an AI management system.",
+      "window": "point-in-time",
+      "vaultControls": [],
+      "how": "Measured throughput, scale ceilings and cost per tier, published with method.",
+      "status": "organisational",
+      "ledgerEntries": 0,
+      "evidence": [],
+      "gap": null
+    },
+    {
+      "id": "A.4.6",
+      "name": "Human resources",
+      "category": "A.4 Resources for AI systems",
+      "applicability": "included",
+      "justification": "Required. ISO 42001 mandates this control for any organisation operating an AI management system.",
+      "window": "point-in-time",
+      "vaultControls": [
+        "VLT-3"
+      ],
+      "how": "Reviewer scorecards; reviewer-fatigue detection; four-eyes on high-risk items.",
+      "status": "satisfied",
+      "ledgerEntries": 1,
+      "evidence": [
+        {
+          "vaultControl": "VLT-3",
+          "what": "Human review decisions with actor, timing and reasoning.",
+          "eventTypes": [
+            "review.decision",
+            "review.escalated",
+            "review.sla_breach"
+          ],
+          "count": 1,
+          "samples": [
+            {
+              "seq": 34,
+              "type": "review.decision",
+              "at": "2026-07-28T19:48:42.742Z",
+              "actor": "dana",
+              "hash": "a48bc13d32a5aa67ff9c82bfa944734d0ed72f152fdb7452121999f53eaab0cb",
+              "verify": "bin/vault-verify.js <export> --entry 34"
+            }
+          ]
+        }
+      ],
+      "gap": null
+    },
+    {
+      "id": "A.5.2",
+      "name": "AI system impact assessment process",
+      "category": "A.5 Assessing impacts",
+      "applicability": "included",
+      "justification": "Required. ISO 42001 mandates this control for any organisation operating an AI management system.",
+      "window": "point-in-time",
+      "vaultControls": [],
+      "how": "DPIA, FRIA and LIA generators pre-filled from live configuration.",
+      "status": "organisational",
+      "ledgerEntries": 0,
+      "evidence": [],
+      "gap": null
+    },
+    {
+      "id": "A.5.3",
+      "name": "Documentation of impact assessments",
+      "category": "A.5 Assessing impacts",
+      "applicability": "included",
+      "justification": "Required. ISO 42001 mandates this control for any organisation operating an AI management system.",
+      "window": "point-in-time",
+      "vaultControls": [],
+      "how": "Generated assessments are versioned and retained.",
+      "status": "organisational",
+      "ledgerEntries": 0,
+      "evidence": [],
+      "gap": null
+    },
+    {
+      "id": "A.5.4",
+      "name": "Assessing AI system impact on individuals",
+      "category": "A.5 Assessing impacts",
+      "applicability": "included",
+      "justification": "Required. ISO 42001 mandates this control for any organisation operating an AI management system.",
+      "window": "point-in-time",
+      "vaultControls": [
+        "VLT-14"
+      ],
+      "how": "Employee Privacy Mode with k-anonymity floor; no individual scoring code path exists.",
+      "status": "no-evidence",
+      "ledgerEntries": 0,
+      "evidence": [],
+      "gap": "Mapped to a Vault control, but no ledger entry has been produced yet. Exercise the control, or confirm it is not reachable in this deployment."
+    },
+    {
+      "id": "A.5.5",
+      "name": "Assessing societal impacts",
+      "category": "A.5 Assessing impacts",
+      "applicability": "included",
+      "justification": "Required. ISO 42001 mandates this control for any organisation operating an AI management system.",
+      "window": "point-in-time",
+      "vaultControls": [],
+      "how": "FRIA generator covering fundamental-rights impact.",
+      "status": "organisational",
+      "ledgerEntries": 0,
+      "evidence": [],
+      "gap": null
+    },
+    {
+      "id": "A.6.1.2",
+      "name": "Objectives for responsible development",
+      "category": "A.6 AI system life cycle",
+      "applicability": "included",
+      "justification": "Required. ISO 42001 mandates this control for any organisation operating an AI management system.",
+      "window": "point-in-time",
+      "vaultControls": [],
+      "how": "Stated in the AI policy.",
+      "status": "organisational",
+      "ledgerEntries": 0,
+      "evidence": [],
+      "gap": null
+    },
+    {
+      "id": "A.6.1.3",
+      "name": "Processes for responsible design and development",
+      "category": "A.6 AI system life cycle",
+      "applicability": "included",
+      "justification": "Required. ISO 42001 mandates this control for any organisation operating an AI management system.",
+      "window": "point-in-time",
+      "vaultControls": [
+        "VLT-1"
+      ],
+      "how": "Gate-first architecture: no write path exists that bypasses the checks.",
+      "status": "satisfied",
+      "ledgerEntries": 4,
+      "evidence": [
+        {
+          "vaultControl": "VLT-1",
+          "what": "Gate verdicts. Every write carries the outcome of all ten checks.",
+          "eventTypes": [
+            "fact.written",
+            "fact.held",
+            "fact.blocked",
+            "fact.masked",
+            "fact.quarantined"
+          ],
+          "count": 4,
+          "samples": [
+            {
+              "seq": 27,
+              "type": "fact.held",
+              "at": "2026-07-28T19:48:42.729Z",
+              "actor": "a-1",
+              "hash": "60caaa97bc85fd630d2767f22688c35b86f28846669ab4eb612215486494d51c",
+              "verify": "bin/vault-verify.js <export> --entry 27"
+            },
+            {
+              "seq": 30,
+              "type": "fact.held",
+              "at": "2026-07-28T19:48:42.734Z",
+              "actor": "a-1",
+              "hash": "3f70f3ced3c5bd5b5c469c7da5cf54df7ffcd0d3b6b7d03599484c2d96c999e1",
+              "verify": "bin/vault-verify.js <export> --entry 30"
+            },
+            {
+              "seq": 33,
+              "type": "fact.held",
+              "at": "2026-07-28T19:48:42.738Z",
+              "actor": "a-1",
+              "hash": "dbb1643700ad3ce89e20a0284a4f7f2beff4b148902c97509f6611f60528e163",
+              "verify": "bin/vault-verify.js <export> --entry 33"
+            }
+          ]
+        }
+      ],
+      "gap": null
+    },
+    {
+      "id": "A.6.2.2",
+      "name": "AI system requirements and specification",
+      "category": "A.6 AI system life cycle",
+      "applicability": "included",
+      "justification": "Required. ISO 42001 mandates this control for any organisation operating an AI management system.",
+      "window": "point-in-time",
+      "vaultControls": [],
+      "how": "The master feature checklist with per-item verification status.",
+      "status": "organisational",
+      "ledgerEntries": 0,
+      "evidence": [],
+      "gap": null
+    },
+    {
+      "id": "A.6.2.3",
+      "name": "Documentation of AI system design and development",
+      "category": "A.6 AI system life cycle",
+      "applicability": "included",
+      "justification": "Required. ISO 42001 mandates this control for any organisation operating an AI management system.",
+      "window": "point-in-time",
+      "vaultControls": [],
+      "how": "docs/ARCHITECTURE.md; model and system card generation.",
+      "status": "organisational",
+      "ledgerEntries": 0,
+      "evidence": [],
+      "gap": null
+    },
+    {
+      "id": "A.6.2.4",
+      "name": "AI system verification and validation",
+      "category": "A.6 AI system life cycle",
+      "applicability": "included",
+      "justification": "Required. ISO 42001 mandates this control for any organisation operating an AI management system.",
+      "window": "point-in-time",
+      "vaultControls": [
+        "VLT-1",
+        "VLT-12"
+      ],
+      "how": "778 automated tests; adversarial sweeps; mutation testing of every security mechanism.",
+      "status": "satisfied",
+      "ledgerEntries": 9,
+      "evidence": [
+        {
+          "vaultControl": "VLT-1",
+          "what": "Gate verdicts. Every write carries the outcome of all ten checks.",
+          "eventTypes": [
+            "fact.written",
+            "fact.held",
+            "fact.blocked",
+            "fact.masked",
+            "fact.quarantined"
+          ],
+          "count": 4,
+          "samples": [
+            {
+              "seq": 27,
+              "type": "fact.held",
+              "at": "2026-07-28T19:48:42.729Z",
+              "actor": "a-1",
+              "hash": "60caaa97bc85fd630d2767f22688c35b86f28846669ab4eb612215486494d51c",
+              "verify": "bin/vault-verify.js <export> --entry 27"
+            },
+            {
+              "seq": 30,
+              "type": "fact.held",
+              "at": "2026-07-28T19:48:42.734Z",
+              "actor": "a-1",
+              "hash": "3f70f3ced3c5bd5b5c469c7da5cf54df7ffcd0d3b6b7d03599484c2d96c999e1",
+              "verify": "bin/vault-verify.js <export> --entry 30"
+            },
+            {
+              "seq": 33,
+              "type": "fact.held",
+              "at": "2026-07-28T19:48:42.738Z",
+              "actor": "a-1",
+              "hash": "dbb1643700ad3ce89e20a0284a4f7f2beff4b148902c97509f6611f60528e163",
+              "verify": "bin/vault-verify.js <export> --entry 33"
+            }
+          ]
+        },
+        {
+          "vaultControl": "VLT-12",
+          "what": "Adversarial findings and detector firings.",
+          "eventTypes": [
+            "security.alert",
+            "security.detection"
+          ],
+          "count": 5,
+          "samples": [
+            {
+              "seq": 45,
+              "type": "security.detection",
+              "at": "2026-07-28T19:48:42.753Z",
+              "actor": "ciso",
+              "hash": "b019ffcacafc7a36f40c2d02acffbb0703489d255e974351b8e2a86d2ed8f990",
+              "verify": "bin/vault-verify.js <export> --entry 45"
+            },
+            {
+              "seq": 46,
+              "type": "security.alert",
+              "at": "2026-07-28T19:48:42.753Z",
+              "actor": null,
+              "hash": "7897bef4d7d7429d46567493ae5fed9117bdf56d45a923c1d0b9720473906245",
+              "verify": "bin/vault-verify.js <export> --entry 46"
+            },
+            {
+              "seq": 47,
+              "type": "security.alert",
+              "at": "2026-07-28T19:48:42.754Z",
+              "actor": null,
+              "hash": "cab6486f8c899f655efbe0ad523945c52e8f84972d4955aa5ae9ace2ab0f7fec",
+              "verify": "bin/vault-verify.js <export> --entry 47"
+            }
+          ]
+        }
+      ],
+      "gap": null
+    },
+    {
+      "id": "A.6.2.5",
+      "name": "AI system deployment",
+      "category": "A.6 AI system life cycle",
+      "applicability": "included",
+      "justification": "Required. ISO 42001 mandates this control for any organisation operating an AI management system.",
+      "window": "point-in-time",
+      "vaultControls": [
+        "VLT-11"
+      ],
+      "how": "Model pinning; unapproved-version writes held; silent model swap alerting.",
+      "status": "satisfied",
+      "ledgerEntries": 1,
+      "evidence": [
+        {
+          "vaultControl": "VLT-11",
+          "what": "Model pins recorded at registration and every change to them.",
+          "eventTypes": [
+            "agent.registered",
+            "agent.scope_changed"
+          ],
+          "count": 1,
+          "samples": [
+            {
+              "seq": 19,
+              "type": "agent.registered",
+              "at": "2026-07-28T19:48:42.688Z",
+              "actor": "system",
+              "hash": "ab8c046ef20a4b8eec71cd1373fe6237a4aeb295384d56b9c932f0fb9356dc7c",
+              "verify": "bin/vault-verify.js <export> --entry 19"
+            }
+          ]
+        }
+      ],
+      "gap": null
+    },
+    {
+      "id": "A.6.2.6",
+      "name": "AI system operation and monitoring",
+      "category": "A.6 AI system life cycle",
+      "applicability": "included",
+      "justification": "Required. ISO 42001 mandates this control for any organisation operating an AI management system.",
+      "window": "point-in-time",
+      "vaultControls": [
+        "VLT-12"
+      ],
+      "how": "Behavioural baselines, deviation alerting, drift detection, issue lifecycle tracking.",
+      "status": "satisfied",
+      "ledgerEntries": 5,
+      "evidence": [
+        {
+          "vaultControl": "VLT-12",
+          "what": "Adversarial findings and detector firings.",
+          "eventTypes": [
+            "security.alert",
+            "security.detection"
+          ],
+          "count": 5,
+          "samples": [
+            {
+              "seq": 45,
+              "type": "security.detection",
+              "at": "2026-07-28T19:48:42.753Z",
+              "actor": "ciso",
+              "hash": "b019ffcacafc7a36f40c2d02acffbb0703489d255e974351b8e2a86d2ed8f990",
+              "verify": "bin/vault-verify.js <export> --entry 45"
+            },
+            {
+              "seq": 46,
+              "type": "security.alert",
+              "at": "2026-07-28T19:48:42.753Z",
+              "actor": null,
+              "hash": "7897bef4d7d7429d46567493ae5fed9117bdf56d45a923c1d0b9720473906245",
+              "verify": "bin/vault-verify.js <export> --entry 46"
+            },
+            {
+              "seq": 47,
+              "type": "security.alert",
+              "at": "2026-07-28T19:48:42.754Z",
+              "actor": null,
+              "hash": "cab6486f8c899f655efbe0ad523945c52e8f84972d4955aa5ae9ace2ab0f7fec",
+              "verify": "bin/vault-verify.js <export> --entry 47"
+            }
+          ]
+        }
+      ],
+      "gap": null
+    },
+    {
+      "id": "A.6.2.7",
+      "name": "AI system technical documentation",
+      "category": "A.6 AI system life cycle",
+      "applicability": "included",
+      "justification": "Required. ISO 42001 mandates this control for any organisation operating an AI management system.",
+      "window": "point-in-time",
+      "vaultControls": [],
+      "how": "Model cards, system cards, published formats and API documentation.",
+      "status": "organisational",
+      "ledgerEntries": 0,
+      "evidence": [],
+      "gap": null
+    },
+    {
+      "id": "A.6.2.8",
+      "name": "AI system recording of event logs",
+      "category": "A.6 AI system life cycle",
+      "applicability": "included",
+      "justification": "Required. ISO 42001 mandates this control for any organisation operating an AI management system.",
+      "window": "point-in-time",
+      "vaultControls": [
+        "VLT-4"
+      ],
+      "how": "Hash-chained ledger with a standalone verifier and external anchoring.",
+      "status": "satisfied",
+      "ledgerEntries": 1,
+      "evidence": [
+        {
+          "vaultControl": "VLT-4",
+          "what": "Chain anchoring and export events; the chain itself is the evidence.",
+          "eventTypes": [
+            "anchor.published",
+            "export.created"
+          ],
+          "count": 1,
+          "samples": [
+            {
+              "seq": 49,
+              "type": "anchor.published",
+              "at": "2026-07-28T19:48:42.756Z",
+              "actor": "system",
+              "hash": "97354cb33261d5ee87a6d4961c0d95e45f2e5c158fd8d42c0a12bc94c366faad",
+              "verify": "bin/vault-verify.js <export> --entry 49"
+            }
+          ]
+        }
+      ],
+      "gap": null
+    },
+    {
+      "id": "A.7.2",
+      "name": "Data for development and enhancement",
+      "category": "A.7 Data for AI systems",
+      "applicability": "included",
+      "justification": "Required. ISO 42001 mandates this control for any organisation operating an AI management system.",
+      "window": "point-in-time",
+      "vaultControls": [],
+      "how": "No customer data enters any training set, ours or upstream — there is no training pipeline in the product.",
+      "status": "organisational",
+      "ledgerEntries": 0,
+      "evidence": [],
+      "gap": null
+    },
+    {
+      "id": "A.7.3",
+      "name": "Acquisition of data",
+      "category": "A.7 Data for AI systems",
+      "applicability": "included",
+      "justification": "Required. ISO 42001 mandates this control for any organisation operating an AI management system.",
+      "window": "point-in-time",
+      "vaultControls": [
+        "VLT-2"
+      ],
+      "how": "Channel trust classification; deny-by-source default; source verification.",
+      "status": "satisfied",
+      "ledgerEntries": 4,
+      "evidence": [
+        {
+          "vaultControl": "VLT-2",
+          "what": "Writes refused or held on channel-trust grounds.",
+          "eventTypes": [
+            "fact.held",
+            "fact.blocked",
+            "security.detection"
+          ],
+          "count": 4,
+          "samples": [
+            {
+              "seq": 30,
+              "type": "fact.held",
+              "at": "2026-07-28T19:48:42.734Z",
+              "actor": "a-1",
+              "hash": "3f70f3ced3c5bd5b5c469c7da5cf54df7ffcd0d3b6b7d03599484c2d96c999e1",
+              "verify": "bin/vault-verify.js <export> --entry 30"
+            },
+            {
+              "seq": 33,
+              "type": "fact.held",
+              "at": "2026-07-28T19:48:42.738Z",
+              "actor": "a-1",
+              "hash": "dbb1643700ad3ce89e20a0284a4f7f2beff4b148902c97509f6611f60528e163",
+              "verify": "bin/vault-verify.js <export> --entry 33"
+            },
+            {
+              "seq": 45,
+              "type": "security.detection",
+              "at": "2026-07-28T19:48:42.753Z",
+              "actor": "ciso",
+              "hash": "b019ffcacafc7a36f40c2d02acffbb0703489d255e974351b8e2a86d2ed8f990",
+              "verify": "bin/vault-verify.js <export> --entry 45"
+            }
+          ]
+        }
+      ],
+      "gap": null
+    },
+    {
+      "id": "A.7.4",
+      "name": "Quality of data",
+      "category": "A.7 Data for AI systems",
+      "applicability": "included",
+      "justification": "Required. ISO 42001 mandates this control for any organisation operating an AI management system.",
+      "window": "point-in-time",
+      "vaultControls": [
+        "VLT-1"
+      ],
+      "how": "Reconciliation with authority ordering; contradiction resolution; hygiene engine.",
+      "status": "satisfied",
+      "ledgerEntries": 4,
+      "evidence": [
+        {
+          "vaultControl": "VLT-1",
+          "what": "Gate verdicts. Every write carries the outcome of all ten checks.",
+          "eventTypes": [
+            "fact.written",
+            "fact.held",
+            "fact.blocked",
+            "fact.masked",
+            "fact.quarantined"
+          ],
+          "count": 4,
+          "samples": [
+            {
+              "seq": 27,
+              "type": "fact.held",
+              "at": "2026-07-28T19:48:42.729Z",
+              "actor": "a-1",
+              "hash": "60caaa97bc85fd630d2767f22688c35b86f28846669ab4eb612215486494d51c",
+              "verify": "bin/vault-verify.js <export> --entry 27"
+            },
+            {
+              "seq": 30,
+              "type": "fact.held",
+              "at": "2026-07-28T19:48:42.734Z",
+              "actor": "a-1",
+              "hash": "3f70f3ced3c5bd5b5c469c7da5cf54df7ffcd0d3b6b7d03599484c2d96c999e1",
+              "verify": "bin/vault-verify.js <export> --entry 30"
+            },
+            {
+              "seq": 33,
+              "type": "fact.held",
+              "at": "2026-07-28T19:48:42.738Z",
+              "actor": "a-1",
+              "hash": "dbb1643700ad3ce89e20a0284a4f7f2beff4b148902c97509f6611f60528e163",
+              "verify": "bin/vault-verify.js <export> --entry 33"
+            }
+          ]
+        }
+      ],
+      "gap": null
+    },
+    {
+      "id": "A.7.5",
+      "name": "Data provenance",
+      "category": "A.7 Data for AI systems",
+      "applicability": "included",
+      "justification": "Required. ISO 42001 mandates this control for any organisation operating an AI management system.",
+      "window": "point-in-time",
+      "vaultControls": [
+        "VLT-4"
+      ],
+      "how": "Every fact carries a byte-range pointer into the sealed raw archive.",
+      "status": "satisfied",
+      "ledgerEntries": 1,
+      "evidence": [
+        {
+          "vaultControl": "VLT-4",
+          "what": "Chain anchoring and export events; the chain itself is the evidence.",
+          "eventTypes": [
+            "anchor.published",
+            "export.created"
+          ],
+          "count": 1,
+          "samples": [
+            {
+              "seq": 49,
+              "type": "anchor.published",
+              "at": "2026-07-28T19:48:42.756Z",
+              "actor": "system",
+              "hash": "97354cb33261d5ee87a6d4961c0d95e45f2e5c158fd8d42c0a12bc94c366faad",
+              "verify": "bin/vault-verify.js <export> --entry 49"
+            }
+          ]
+        }
+      ],
+      "gap": null
+    },
+    {
+      "id": "A.7.6",
+      "name": "Data preparation",
+      "category": "A.7 Data for AI systems",
+      "applicability": "included",
+      "justification": "Required. ISO 42001 mandates this control for any organisation operating an AI management system.",
+      "window": "point-in-time",
+      "vaultControls": [],
+      "how": "Conservative extraction; numbers and dates normalised with the original string kept.",
+      "status": "organisational",
+      "ledgerEntries": 0,
+      "evidence": [],
+      "gap": null
+    },
+    {
+      "id": "A.8.2",
+      "name": "System documentation and information for users",
+      "category": "A.8 Information for interested parties",
+      "applicability": "included",
+      "justification": "Required. ISO 42001 mandates this control for any organisation operating an AI management system.",
+      "window": "point-in-time",
+      "vaultControls": [],
+      "how": "Published coverage map with honest \"cannot pull\" labelling per connector.",
+      "status": "organisational",
+      "ledgerEntries": 0,
+      "evidence": [],
+      "gap": null
+    },
+    {
+      "id": "A.8.3",
+      "name": "External reporting",
+      "category": "A.8 Information for interested parties",
+      "applicability": "included",
+      "justification": "Required. ISO 42001 mandates this control for any organisation operating an AI management system.",
+      "window": "point-in-time",
+      "vaultControls": [],
+      "how": "Regulatory reporting formats; published status page and incident history.",
+      "status": "organisational",
+      "ledgerEntries": 0,
+      "evidence": [],
+      "gap": null
+    },
+    {
+      "id": "A.8.4",
+      "name": "Communication of incidents",
+      "category": "A.8 Information for interested parties",
+      "applicability": "included",
+      "justification": "Required. ISO 42001 mandates this control for any organisation operating an AI management system.",
+      "window": "point-in-time",
+      "vaultControls": [
+        "VLT-10"
+      ],
+      "how": "Contractual breach notification within 24 hours of confirmation; published blast radius.",
+      "status": "satisfied",
+      "ledgerEntries": 2,
+      "evidence": [
+        {
+          "vaultControl": "VLT-10",
+          "what": "Kill switch activations, including scheduled tests.",
+          "eventTypes": [
+            "killswitch.engaged",
+            "killswitch.released"
+          ],
+          "count": 2,
+          "samples": [
+            {
+              "seq": 39,
+              "type": "killswitch.engaged",
+              "at": "2026-07-28T19:48:42.746Z",
+              "actor": "ciso",
+              "hash": "1fbd97e5e8708a959ef5dc1749509d348a97c7096f4a73a792407559a928af13",
+              "verify": "bin/vault-verify.js <export> --entry 39"
+            },
+            {
+              "seq": 40,
+              "type": "killswitch.released",
+              "at": "2026-07-28T19:48:42.747Z",
+              "actor": "ciso",
+              "hash": "f0d7f3314236f4307233670b1cfc7f809e97cd64c334bbef298c8bf1a8b2958e",
+              "verify": "bin/vault-verify.js <export> --entry 40"
+            }
+          ]
+        }
+      ],
+      "gap": null
+    },
+    {
+      "id": "A.8.5",
+      "name": "Information for interested parties",
+      "category": "A.8 Information for interested parties",
+      "applicability": "included",
+      "justification": "Required. ISO 42001 mandates this control for any organisation operating an AI management system.",
+      "window": "point-in-time",
+      "vaultControls": [
+        "VLT-14"
+      ],
+      "how": "Works-council role; change notification to representatives; employee transparency portal.",
+      "status": "no-evidence",
+      "ledgerEntries": 0,
+      "evidence": [],
+      "gap": "Mapped to a Vault control, but no ledger entry has been produced yet. Exercise the control, or confirm it is not reachable in this deployment."
+    },
+    {
+      "id": "A.9.2",
+      "name": "Processes for responsible use",
+      "category": "A.9 Use of AI systems",
+      "applicability": "included",
+      "justification": "Required. ISO 42001 mandates this control for any organisation operating an AI management system.",
+      "window": "point-in-time",
+      "vaultControls": [
+        "VLT-14"
+      ],
+      "how": "Purpose lock enforced at the query layer and warranted contractually as a termination-triggering obligation.",
+      "status": "no-evidence",
+      "ledgerEntries": 0,
+      "evidence": [],
+      "gap": "Mapped to a Vault control, but no ledger entry has been produced yet. Exercise the control, or confirm it is not reachable in this deployment."
+    },
+    {
+      "id": "A.9.3",
+      "name": "Objectives for responsible use",
+      "category": "A.9 Use of AI systems",
+      "applicability": "included",
+      "justification": "Required. ISO 42001 mandates this control for any organisation operating an AI management system.",
+      "window": "point-in-time",
+      "vaultControls": [
+        "VLT-3"
+      ],
+      "how": "Human oversight of held and escalated writes with SLA tracking.",
+      "status": "satisfied",
+      "ledgerEntries": 1,
+      "evidence": [
+        {
+          "vaultControl": "VLT-3",
+          "what": "Human review decisions with actor, timing and reasoning.",
+          "eventTypes": [
+            "review.decision",
+            "review.escalated",
+            "review.sla_breach"
+          ],
+          "count": 1,
+          "samples": [
+            {
+              "seq": 34,
+              "type": "review.decision",
+              "at": "2026-07-28T19:48:42.742Z",
+              "actor": "dana",
+              "hash": "a48bc13d32a5aa67ff9c82bfa944734d0ed72f152fdb7452121999f53eaab0cb",
+              "verify": "bin/vault-verify.js <export> --entry 34"
+            }
+          ]
+        }
+      ],
+      "gap": null
+    },
+    {
+      "id": "A.9.4",
+      "name": "Intended use of the AI system",
+      "category": "A.9 Use of AI systems",
+      "applicability": "included",
+      "justification": "Required. ISO 42001 mandates this control for any organisation operating an AI management system.",
+      "window": "point-in-time",
+      "vaultControls": [
+        "VLT-10"
+      ],
+      "how": "Six-level kill switch with a named administrator and measured activation.",
+      "status": "satisfied",
+      "ledgerEntries": 2,
+      "evidence": [
+        {
+          "vaultControl": "VLT-10",
+          "what": "Kill switch activations, including scheduled tests.",
+          "eventTypes": [
+            "killswitch.engaged",
+            "killswitch.released"
+          ],
+          "count": 2,
+          "samples": [
+            {
+              "seq": 39,
+              "type": "killswitch.engaged",
+              "at": "2026-07-28T19:48:42.746Z",
+              "actor": "ciso",
+              "hash": "1fbd97e5e8708a959ef5dc1749509d348a97c7096f4a73a792407559a928af13",
+              "verify": "bin/vault-verify.js <export> --entry 39"
+            },
+            {
+              "seq": 40,
+              "type": "killswitch.released",
+              "at": "2026-07-28T19:48:42.747Z",
+              "actor": "ciso",
+              "hash": "f0d7f3314236f4307233670b1cfc7f809e97cd64c334bbef298c8bf1a8b2958e",
+              "verify": "bin/vault-verify.js <export> --entry 40"
+            }
+          ]
+        }
+      ],
+      "gap": null
+    },
+    {
+      "id": "A.10.2",
+      "name": "Allocating responsibilities",
+      "category": "A.10 Third-party relationships",
+      "applicability": "included",
+      "justification": "Required. ISO 42001 mandates this control for any organisation operating an AI management system.",
+      "window": "point-in-time",
+      "vaultControls": [
+        "VLT-13"
+      ],
+      "how": "Vendor register with attestation tracking; DPA sub-processor flow-down.",
+      "status": "satisfied",
+      "ledgerEntries": 2,
+      "evidence": [
+        {
+          "vaultControl": "VLT-13",
+          "what": "Vendor register entries and attestation tracking.",
+          "eventTypes": [
+            "admin.action"
+          ],
+          "count": 2,
+          "samples": [
+            {
+              "seq": 41,
+              "type": "admin.action",
+              "at": "2026-07-28T19:48:42.764Z",
+              "actor": "ciso",
+              "hash": "92fcfd05ae6d2e2ab25547ec4452e7c939045c47f3b02a9b7b793088e152911a",
+              "verify": "bin/vault-verify.js <export> --entry 41"
+            },
+            {
+              "seq": 44,
+              "type": "admin.action",
+              "at": "2026-07-28T19:48:42.752Z",
+              "actor": "ciso",
+              "hash": "07ae90725533f243fb3b1a390ac0388f1c77776c68b8eaa93c9867a482f5c516",
+              "verify": "bin/vault-verify.js <export> --entry 44"
+            }
+          ]
+        }
+      ],
+      "gap": null
+    },
+    {
+      "id": "A.10.3",
+      "name": "Suppliers",
+      "category": "A.10 Third-party relationships",
+      "applicability": "included",
+      "justification": "Required. ISO 42001 mandates this control for any organisation operating an AI management system.",
+      "window": "point-in-time",
+      "vaultControls": [
+        "VLT-13"
+      ],
+      "how": "Sub-processor disclosure with notice; zero-retention attestations from model providers.",
+      "status": "satisfied",
+      "ledgerEntries": 2,
+      "evidence": [
+        {
+          "vaultControl": "VLT-13",
+          "what": "Vendor register entries and attestation tracking.",
+          "eventTypes": [
+            "admin.action"
+          ],
+          "count": 2,
+          "samples": [
+            {
+              "seq": 41,
+              "type": "admin.action",
+              "at": "2026-07-28T19:48:42.764Z",
+              "actor": "ciso",
+              "hash": "92fcfd05ae6d2e2ab25547ec4452e7c939045c47f3b02a9b7b793088e152911a",
+              "verify": "bin/vault-verify.js <export> --entry 41"
+            },
+            {
+              "seq": 44,
+              "type": "admin.action",
+              "at": "2026-07-28T19:48:42.752Z",
+              "actor": "ciso",
+              "hash": "07ae90725533f243fb3b1a390ac0388f1c77776c68b8eaa93c9867a482f5c516",
+              "verify": "bin/vault-verify.js <export> --entry 44"
+            }
+          ]
+        }
+      ],
+      "gap": null
+    },
+    {
+      "id": "A.10.4",
+      "name": "Customers",
+      "category": "A.10 Third-party relationships",
+      "applicability": "included",
+      "justification": "Required. ISO 42001 mandates this control for any organisation operating an AI management system.",
+      "window": "point-in-time",
+      "vaultControls": [],
+      "how": "MSA and DPA terms; exit and continuity commitments; free unlimited export.",
+      "status": "organisational",
+      "ledgerEntries": 0,
+      "evidence": [],
+      "gap": null
+    }
+  ],
+  "gaps": [
+    {
+      "id": "A.4.3",
+      "name": "Data resources",
+      "status": "no-evidence",
+      "gap": "Mapped to a Vault control, but no ledger entry has been produced yet. Exercise the control, or confirm it is not reachable in this deployment.",
+      "closes": "Exercise the control once in this tenant so the ledger carries an entry, or record why it is unreachable here."
+    },
+    {
+      "id": "A.5.4",
+      "name": "Assessing AI system impact on individuals",
+      "status": "no-evidence",
+      "gap": "Mapped to a Vault control, but no ledger entry has been produced yet. Exercise the control, or confirm it is not reachable in this deployment.",
+      "closes": "Exercise the control once in this tenant so the ledger carries an entry, or record why it is unreachable here."
+    },
+    {
+      "id": "A.8.5",
+      "name": "Information for interested parties",
+      "status": "no-evidence",
+      "gap": "Mapped to a Vault control, but no ledger entry has been produced yet. Exercise the control, or confirm it is not reachable in this deployment.",
+      "closes": "Exercise the control once in this tenant so the ledger carries an entry, or record why it is unreachable here."
+    },
+    {
+      "id": "A.9.2",
+      "name": "Processes for responsible use",
+      "status": "no-evidence",
+      "gap": "Mapped to a Vault control, but no ledger entry has been produced yet. Exercise the control, or confirm it is not reachable in this deployment.",
+      "closes": "Exercise the control once in this tenant so the ledger carries an entry, or record why it is unreachable here."
+    }
+  ]
+}
