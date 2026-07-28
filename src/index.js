@@ -58,6 +58,9 @@ import { StatusPage } from './status/status.js';
 import { RestoreDrill } from './continuity/drill.js';
 import { ConfigEngine } from './iac/iac.js';
 import { SlackApp, TeamsApp } from './integrations/chatops.js';
+import { SamlProvider, OidcProvider, SessionStore, AccessPolicy, MfaRegistry } from './identity/identity.js';
+import { ScimService } from './identity/scim.js';
+import { PrivilegedAccess } from './identity/privileged.js';
 import { RateLimiter, ApiKeyStore } from './api/ratelimit.js';
 import { coverageMap } from './connectors/catalog.js';
 import { now, iso } from './util/time.js';
@@ -438,6 +441,35 @@ export class Vault {
     this.teams = options.teams?.securityToken
       ? new TeamsApp({ vault: this, ledger: this.ledger, ...options.teams })
       : null;
+
+    // ---- identity ---------------------------------------------------------
+    // Sessions are server-side state so that SCIM deprovisioning revokes access
+    // on the NEXT REQUEST, not at the next token refresh. That requirement is
+    // what makes this a session store rather than a JWT issuer.
+    this.sessions = new SessionStore({
+      collection: this.db.collection('sessions'),
+      ledger: this.ledger,
+      ...(options.sessions ?? {})
+    });
+    this.mfa = new MfaRegistry({ ledger: this.ledger });
+    this.accessPolicy = new AccessPolicy({ ledger: this.ledger, ...(options.accessPolicy ?? {}) });
+    this.saml = options.saml ? new SamlProvider({ ...options.saml, ledger: this.ledger }) : null;
+    this.oidc = options.oidc ? new OidcProvider({ ...options.oidc, ledger: this.ledger }) : null;
+    this.scim = new ScimService({
+      sessions: this.sessions, ledger: this.ledger,
+      collection: this.db.collection('scim_users'),
+      ...(options.scim ?? {})
+    });
+    // The half of break-glass that never existed: enforcement lived in
+    // folders.check() but nothing could grant a session, so the emergency path
+    // in practice was "give someone the admin role".
+    this.privileged = new PrivilegedAccess({
+      ledger: this.ledger, sessions: this.sessions,
+      collection: this.db.collection('breakglass'),
+      alerts: this.alerts,
+      notify: (e) => this.notifier?.notify(e),
+      ...(options.privileged ?? {})
+    });
 
     this.drill = new RestoreDrill({
       vault: this, ledger: this.ledger,

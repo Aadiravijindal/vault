@@ -17,8 +17,13 @@ export class VaultError extends Error {
     super(message);
     this.name = 'VaultError';
     this.code = code;
-    this.meta = meta;
-    this.status = STATUS[code] ?? 400;
+    // A caller may pin the HTTP status where the code alone is ambiguous —
+    // SCIM answers an unsupported filter with 501, not the 400 that
+    // "unsupported" maps to. It is lifted out of the meta so it never lands in
+    // the response body twice.
+    const { status, ...rest } = meta;
+    this.meta = rest;
+    this.status = status ?? STATUS[code] ?? 400;
   }
   toJSON() {
     return { error: this.code, message: this.message, ...this.meta };

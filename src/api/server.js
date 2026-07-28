@@ -435,6 +435,8 @@ export class ApiServer {
 
     this.route('GET', '/api/ledger/verify/tail', R('security', 'compliance', 'legal', 'auditor', 'admin', 'platform'), () => v.verifyLedgerTail());
 
+    this._installIdentity(v, R);
+
     // ---- configuration as code -----------------------------------------------
     this.route('POST', '/api/config/plan', R('admin', 'platform'), ({ body }) =>
       ({ ...v.config.plan(body.config ?? body, { prune: body.prune === true }), rendered: renderPlan(v.config.plan(body.config ?? body, { prune: body.prune === true })) }));
@@ -514,14 +516,196 @@ export class ApiServer {
         .map((e) => ({ ...e, vendor: 'vault', product: 'ai-memory-governance', severity: siemSeverity(e.type) })));
   }
 
+  /**
+   * §22 — the identity control surface.
+   *
+   * Three different callers reach this server, and conflating them is how
+   * enterprise SSO becomes an authentication bypass:
+   *
+   *  - a *browser*, at the SAML ACS and the OIDC callback, carrying no
+   *    credential at all. Those routes are PUBLIC and must be, because the IdP
+   *    redirects an unauthenticated user into them. Their entire security is
+   *    the signature check, which is why the assertion verifier is attacked
+   *    directly in the test suite rather than trusted here.
+   *  - the *IdP itself*, at /scim/v2, holding a provisioning secret that is
+   *    deliberately not a Vault API token.
+   *  - a *Vault principal*, at everything else, holding a bearer token.
+   */
+  _installIdentity(v, R) {
+    const PUBLIC = 'public';
+
+    // ---- SAML ---------------------------------------------------------------
+    const saml = () => {
+      if (!v.saml) throw new VaultError('config', 'SAML is not configured on this deployment');
+      return v.saml;
+    };
+
+    this.route('GET', '/api/auth/saml/metadata', PUBLIC, () =>
+      new HttpResponse({ body: saml().metadata(), contentType: 'application/samlmetadata+xml; charset=utf-8' }));
+
+    this.route('GET', '/api/auth/saml/login', PUBLIC, ({ query }) => {
+      const req = saml().authnRequest({ relayState: safeRelayState(query.next) });
+      return HttpResponse.redirect(req.url);
+    });
+
+    this.route('POST', '/api/auth/saml/acs', PUBLIC, ({ body, req }) => {
+      const identity = saml().consume(body.SAMLResponse);
+      const role = v.scim.byUserName(identity.email)?.role ?? roleFromGroups(v.scim, identity.groups);
+      const { token } = v.sessions.create({
+        principal: { name: identity.email, role, department: identity.department ?? undefined },
+        amr: ['mfa'], idp: identity.issuer, ip: clientIp(req), userAgent: req.headers['user-agent'] ?? null
+      });
+      // RelayState is attacker-influenced: the IdP echoes back whatever it was
+      // handed. Following it to another origin would turn the login endpoint
+      // into an open redirect, which is the standard phishing primitive.
+      return HttpResponse.redirect(safeRelayState(body.RelayState) ?? '/', { cookie: sessionCookie(token) });
+    });
+
+    // ---- OIDC ---------------------------------------------------------------
+    const oidc = () => {
+      if (!v.oidc) throw new VaultError('config', 'OIDC is not configured on this deployment');
+      return v.oidc;
+    };
+
+    this.route('GET', '/api/auth/oidc/login', PUBLIC, () => HttpResponse.redirect(oidc().authorizationUrl().url));
+
+    this.route('GET', '/api/auth/oidc/callback', PUBLIC, async ({ query, req }) => {
+      if (query.error) throw new VaultError('forbidden', `the identity provider refused this login: ${String(query.error).slice(0, 64)}`);
+      const { identity } = await oidc().exchangeCode(query.code, { state: query.state });
+      const name = identity.email ?? identity.subject;
+      const role = v.scim.byUserName(name)?.role ?? roleFromGroups(v.scim, identity.groups);
+      const { token } = v.sessions.create({
+        principal: { name, role }, amr: identity.amr?.length ? identity.amr : ['mfa'],
+        idp: oidc().issuer, ip: clientIp(req), userAgent: req.headers['user-agent'] ?? null
+      });
+      return HttpResponse.redirect(safeRelayState(query.next) ?? '/', { cookie: sessionCookie(token) });
+    });
+
+    // ---- SCIM 2.0 -----------------------------------------------------------
+    // Paths are the ones the RFC fixes; an IdP will not be told to use others.
+    const SCIM = 'scim';
+    const scimJson = (payload, status = 200) =>
+      new HttpResponse({ status, json: payload, contentType: 'application/scim+json; charset=utf-8' });
+
+    this.route('GET', '/scim/v2/ServiceProviderConfig', SCIM, () => scimJson(v.scim.serviceProviderConfig()));
+    this.route('GET', '/scim/v2/ResourceTypes', SCIM, () => scimJson(v.scim.resourceTypes()));
+    this.route('GET', '/scim/v2/Schemas', SCIM, () => scimJson(v.scim.resourceTypes()));
+
+    this.route('GET', '/scim/v2/Users', SCIM, ({ query }) => scimJson(v.scim.listUsers({
+      filter: query.filter ?? null,
+      startIndex: Number(query.startIndex) || 1,
+      count: query.count === undefined ? 100 : Number(query.count)
+    })));
+    this.route('POST', '/scim/v2/Users', SCIM, ({ body }) => {
+      const user = v.scim.createUser(body);
+      // 201 with a Location header. Okta treats a 200 here as a protocol error
+      // and stops the sync.
+      return scimJson(user, 201).header('Location', `/scim/v2/Users/${user.id}`);
+    });
+    this.route('GET', '/scim/v2/Users/:id', SCIM, ({ params }) => scimJson(v.scim.getUser(params.id)));
+    this.route('PUT', '/scim/v2/Users/:id', SCIM, ({ params, body }) => scimJson(v.scim.replaceUser(params.id, body)));
+    this.route('PATCH', '/scim/v2/Users/:id', SCIM, ({ params, body }) => scimJson(v.scim.patchUser(params.id, body)));
+    this.route('DELETE', '/scim/v2/Users/:id', SCIM, ({ params }) => {
+      v.scim.deleteUser(params.id);
+      return new HttpResponse({ status: 204, body: '' });
+    });
+
+    this.route('GET', '/scim/v2/Groups', SCIM, ({ query }) => scimJson(v.scim.listGroups({
+      filter: query.filter ?? null, startIndex: Number(query.startIndex) || 1,
+      count: query.count === undefined ? 100 : Number(query.count)
+    })));
+    this.route('POST', '/scim/v2/Groups', SCIM, ({ body }) => {
+      const group = v.scim.createGroup(body);
+      return scimJson(group, 201).header('Location', `/scim/v2/Groups/${group.id}`);
+    });
+    this.route('GET', '/scim/v2/Groups/:id', SCIM, ({ params }) => scimJson(v.scim.getGroup(params.id)));
+    this.route('PATCH', '/scim/v2/Groups/:id', SCIM, ({ params, body }) => scimJson(v.scim.patchGroup(params.id, body)));
+    this.route('DELETE', '/scim/v2/Groups/:id', SCIM, ({ params }) => {
+      v.scim.deleteGroup(params.id);
+      return new HttpResponse({ status: 204, body: '' });
+    });
+
+    // ---- sessions -----------------------------------------------------------
+    this.route('GET', '/api/auth/session', null, ({ principal }) => ({
+      name: principal.name, role: principal.role, session: principal.session ?? null
+    }));
+    this.route('POST', '/api/auth/logout', null, ({ principal }) => {
+      if (!principal.session) return { ok: true, note: 'this credential is an API token, not a session; revoke it under /api/keys' };
+      v.sessions.revoke(principal.session.id, { actor: principal.name, reason: 'logged out' });
+      return new HttpResponse({ json: { ok: true, revoked: 1 }, cookie: 'vault_session=; Path=/; Max-Age=0; HttpOnly; Secure; SameSite=Lax' });
+    });
+    this.route('GET', '/api/auth/sessions', R('admin', 'security', 'platform'), () => ({ sessions: v.sessions.active() }));
+    this.route('DELETE', '/api/auth/sessions/:name', R('admin', 'security'), ({ params, principal, body }) =>
+      v.sessions.revokeAllFor(params.name, { actor: principal.name, reason: body?.reason ?? 'revoked by an administrator' }));
+
+    // ---- MFA ----------------------------------------------------------------
+    this.route('GET', '/api/auth/mfa', null, ({ principal }) => ({
+      factors: v.mfa.factorsFor(principal.name), phishingResistant: v.mfa.hasPhishingResistant(principal.name)
+    }));
+    this.route('POST', '/api/auth/mfa/totp', null, ({ principal }) => {
+      const out = v.mfa.enrolTotp(principal.name, { actor: principal.name });
+      return { secret: out.secret, otpauthUrl: out.uri, warning: out.warning };
+    });
+    this.route('POST', '/api/auth/mfa/totp/verify', null, ({ principal, body }) => {
+      const out = v.mfa.verifyTotp(principal.name, body.code);
+      // A failed factor is a 403, not a 200 with `ok:false`. A caller that
+      // checks only the status code must not read a rejection as a pass.
+      if (!out?.ok) throw new VaultError('forbidden', out?.reason ?? 'that code is not valid');
+      return out;
+    });
+    this.route('POST', '/api/auth/mfa/webauthn', null, ({ principal, body }) =>
+      v.mfa.enrolWebauthn(principal.name, { ...body, actor: principal.name }));
+    this.route('POST', '/api/auth/mfa/webauthn/verify', null, ({ principal, body }) => {
+      const out = v.mfa.verifyWebauthn(principal.name, body);
+      if (!out?.ok) throw new VaultError('forbidden', out?.reason ?? 'that assertion is not valid');
+      return out;
+    });
+
+    this.route('GET', '/api/auth/policy', R('admin', 'security', 'platform'), () => ({
+      requireMfa: v.accessPolicy.requireMfa,
+      phishingResistantRoles: v.accessPolicy.phishingResistantRoles,
+      allowedCidrs: v.accessPolicy.allowedCidrs,
+      allowedCountries: v.accessPolicy.allowedCountries,
+      blockedCountries: v.accessPolicy.blockedCountries
+    }));
+
+    // ---- break-glass (§27) --------------------------------------------------
+    // The grant path for the privilege the folder walls already enforce. Roles
+    // here are the ones that could plausibly need emergency content access;
+    // approval is always someone else.
+    const BG = R('security', 'admin', 'legal', 'compliance', 'platform');
+    this.route('POST', '/api/breakglass', BG, ({ body, principal }) =>
+      v.privileged.request({ ...body, requester: principal.name }));
+    this.route('GET', '/api/breakglass', BG, () => ({ pending: v.privileged.pending(), summary: v.privileged.monthlySummary() }));
+    this.route('GET', '/api/breakglass/summary', BG, ({ query }) => v.privileged.monthlySummary(
+      query.from ? { from: Date.parse(query.from), to: query.to ? Date.parse(query.to) : undefined } : {}));
+    this.route('GET', '/api/breakglass/:id', BG, ({ params }) => v.privileged.sessionReport(params.id));
+    this.route('POST', '/api/breakglass/:id/approve', BG, ({ params, body, principal }) =>
+      v.privileged.approve(params.id, { approver: principal.name, chain: body?.chain ?? null, note: body?.note ?? null }));
+    this.route('POST', '/api/breakglass/:id/deny', BG, ({ params, body, principal }) =>
+      v.privileged.deny(params.id, { approver: principal.name, reason: body?.reason }));
+    this.route('POST', '/api/breakglass/:id/record', BG, ({ params, body, principal }) =>
+      v.privileged.record(params.id, { ...body, actor: principal.name }));
+    this.route('POST', '/api/breakglass/:id/close', BG, ({ params, body, principal }) =>
+      v.privileged.close(params.id, { actor: principal.name, summary: body?.summary ?? null }));
+  }
+
   // -- HTTP ----------------------------------------------------------------
 
   _principal(req) {
-    const header = req.headers.authorization || '';
-    const token = header.startsWith('Bearer ') ? header.slice(7) : (req.headers['x-vault-token'] || '');
+    const token = bearerOf(req);
     if (!token) return this.requireAuth ? null : { name: 'anonymous', role: 'platform' };
     for (const [t, p] of this.tokens) {
       if (constantTimeEqual(t, token)) return p;
+    }
+    // An SSO session. Checked against server-side state on every request, which
+    // is the entire reason sessions are not self-describing tokens: SCIM
+    // deprovisioning has to bite here, on the next call, not at the next
+    // refresh.
+    if (token.startsWith('vsx_') && this.vault.sessions) {
+      const seen = this.vault.sessions.verify(token, { ip: clientIp(req), deviceId: req.headers['x-vault-device'] || null });
+      if (seen.valid) return { ...seen.principal, session: seen.session };
+      return null;
     }
     // Customer-side API keys are a first-class principal, not a second auth
     // system: they resolve to the same roles §24 already enforces.
@@ -543,16 +727,33 @@ export class ApiServer {
     res.setHeader('Referrer-Policy', 'no-referrer');
     if (req.method === 'OPTIONS') { res.writeHead(204); return res.end(); }
 
-    if (!path.startsWith('/api/')) return this._serveUi(path, res);
+    const isScim = path.startsWith('/scim/');
+    if (!path.startsWith('/api/') && !isScim) return this._serveUi(path, res);
 
     // Signature-verified integration endpoints authenticate by HMAC over the
     // raw body, not by bearer token: the caller is Slack or Teams, not a Vault
     // principal. They are identified here so the token check does not reject
     // them, and they verify their own signature before reading a single field.
     const signedRoute = this.routes.find((r) => r.roles === 'signed' && r.method === req.method && r.rx.test(path));
+    // A public route is one the IdP redirects an unauthenticated browser into:
+    // the SAML ACS, the OIDC callback, SP metadata. They cannot require a token
+    // because the whole point is that the caller does not have one yet.
+    const publicRoute = this.routes.find((r) => r.roles === 'public' && r.method === req.method && r.rx.test(path));
+    // SCIM's caller is the identity provider, holding a provisioning secret
+    // that is deliberately NOT a Vault API token — so a leaked SCIM credential
+    // creates accounts but never reads memory.
+    const scimRoute = isScim && this.routes.find((r) => r.roles === 'scim' && r.method === req.method && r.rx.test(path));
+    if (scimRoute) {
+      if (!this.vault.scim?.verifyBearer(bearerOf(req))) {
+        return this._scimError(res, 401, 'this endpoint requires the SCIM provisioning credential');
+      }
+    }
+
     const principal = signedRoute
       ? { name: 'integration', role: 'agent', signed: true }
-      : this._principal(req);
+      : scimRoute ? { name: 'scim', role: 'scim' }
+        : publicRoute ? { name: 'anonymous', role: 'anonymous' }
+          : this._principal(req);
     if (!principal) return this._json(res, 401, { error: 'unauthenticated', message: 'present a bearer token' });
 
     // Rate limit AFTER identifying the caller, so one noisy integration cannot
@@ -573,7 +774,7 @@ export class ApiServer {
     const match = this.routes.find((r) => r.method === req.method && r.rx.test(path));
     if (!match) return this._json(res, 404, { error: 'not_found', message: `no route for ${req.method} ${path}` });
 
-    if (match.roles && match.roles !== 'signed' && !match.roles.includes(principal.role)) {
+    if (match.roles && typeof match.roles !== 'string' && !match.roles.includes(principal.role)) {
       return this._json(res, 403, {
         error: 'forbidden',
         message: `role "${principal.role}" may not access this endpoint`,
@@ -597,6 +798,11 @@ export class ApiServer {
 
     try {
       const result = await match.handler({ params, query, body, rawBody, headers: req.headers, principal, req });
+      if (result instanceof HttpResponse) {
+        this._log(req, principal, result.status, Date.now() - started);
+        this._emitSiem({ at: iso(), actor: principal.name, method: req.method, path, status: result.status });
+        return result.send(res);
+      }
       this._log(req, principal, 200, Date.now() - started);
       this._emitSiem({ at: iso(), actor: principal.name, method: req.method, path, status: 200 });
       return this._json(res, 200, result === undefined ? { ok: true } : result);
@@ -604,8 +810,23 @@ export class ApiServer {
       const status = e instanceof VaultError ? e.status : 500;
       this._log(req, principal, status, Date.now() - started);
       // No content in error messages, ever (§9.11).
+      if (scimRoute) return this._scimError(res, status, e instanceof VaultError ? e.message : 'unexpected error', e?.meta?.scimType);
       return this._json(res, status, e instanceof VaultError ? e.toJSON() : { error: 'internal', message: 'unexpected error' });
     }
+  }
+
+  /** RFC 7644 §3.12 — an IdP parses this shape, not Vault's. */
+  _scimError(res, status, detail, scimType = null) {
+    const body = JSON.stringify({
+      schemas: ['urn:ietf:params:scim:api:messages:2.0:Error'],
+      // The RFC really does make this a string, and Okta's parser really does
+      // care.
+      status: String(status), detail, ...(scimType ? { scimType } : {})
+    });
+    res.writeHead(status, {
+      'Content-Type': 'application/scim+json; charset=utf-8', 'Content-Length': Buffer.byteLength(body)
+    });
+    res.end(body);
   }
 
   _log(req, principal, status, ms) {
@@ -667,6 +888,89 @@ export class ApiServer {
   close() {
     return new Promise((resolve) => (this.server ? this.server.close(resolve) : resolve()));
   }
+}
+
+/**
+ * A handler's escape hatch from "200 with a JSON body".
+ *
+ * Needed because three of the identity endpoints are not API calls at all: the
+ * SAML ACS answers a browser form POST with a 302 and a cookie, SP metadata is
+ * XML, and SCIM insists on 201/204 with its own content type. Encoding those in
+ * the handler's return value keeps the dispatcher one path rather than a
+ * growing list of special cases.
+ */
+export class HttpResponse {
+  constructor({ status = 200, body = null, json = undefined, contentType = 'application/json; charset=utf-8', headers = {}, cookie = null } = {}) {
+    this.status = status;
+    this.headers = { ...headers };
+    if (cookie) this.headers['Set-Cookie'] = cookie;
+    if (json !== undefined) {
+      this.body = JSON.stringify(json, replacer);
+      this.headers['Content-Type'] = contentType;
+    } else {
+      this.body = body ?? '';
+      if (this.body !== '') this.headers['Content-Type'] = contentType;
+    }
+  }
+
+  static redirect(location, { cookie = null, status = 302 } = {}) {
+    return new HttpResponse({ status, headers: { Location: location }, cookie, body: '' });
+  }
+
+  header(name, value) { this.headers[name] = value; return this; }
+
+  send(res) {
+    const headers = { ...this.headers };
+    if (this.body !== '') headers['Content-Length'] = Buffer.byteLength(this.body);
+    res.writeHead(this.status, headers);
+    res.end(this.body);
+  }
+}
+
+function bearerOf(req) {
+  const header = req.headers.authorization || '';
+  if (header.startsWith('Bearer ')) return header.slice(7).trim();
+  if (req.headers['x-vault-token']) return String(req.headers['x-vault-token']);
+  // The SSO cookie, so a browser that just completed a SAML login is
+  // authenticated without JavaScript having to read the token — which is
+  // exactly what HttpOnly prevents.
+  const cookie = /(?:^|;\s*)vault_session=([^;]+)/.exec(req.headers.cookie || '');
+  return cookie ? decodeURIComponent(cookie[1]) : '';
+}
+
+/**
+ * HttpOnly so XSS cannot read it, Secure so it never crosses plaintext, and
+ * SameSite=Lax rather than Strict because the SAML ACS arrives as a
+ * cross-site POST redirect and Strict would drop the cookie on the very
+ * request that sets it.
+ */
+function sessionCookie(token) {
+  return `vault_session=${encodeURIComponent(token)}; Path=/; HttpOnly; Secure; SameSite=Lax`;
+}
+
+/**
+ * RelayState and `next` are attacker-influenced — the IdP echoes back whatever
+ * it was handed. Anything that is not a same-site absolute path is dropped
+ * rather than sanitised, because a login endpoint that redirects off-origin is
+ * a ready-made phishing primitive.
+ */
+function safeRelayState(value) {
+  if (!value) return null;
+  const s = String(value);
+  if (!s.startsWith('/') || s.startsWith('//')) return null;
+  if (/[\r\n]/.test(s)) return null;
+  return s;
+}
+
+function clientIp(req) {
+  const fwd = req.headers['x-forwarded-for'];
+  if (fwd) return String(fwd).split(',')[0].trim();
+  return req.socket?.remoteAddress ?? null;
+}
+
+/** Group names from the assertion, mapped through the same table SCIM uses. */
+function roleFromGroups(scim, groups = []) {
+  return scim._roleFor(groups.map((g) => (typeof g === 'string' ? g : g?.display ?? g?.value)).filter(Boolean));
 }
 
 function principalActor(principal) {
