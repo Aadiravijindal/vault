@@ -17,6 +17,7 @@ import { join } from 'node:path';
 import { randomBytes } from 'node:crypto';
 import { Db } from './storage/db.js';
 import { Kms, KEY_MODES } from './storage/kms.js';
+import { FieldCrypto, FIELD_POLICIES } from './storage/fields.js';
 import { createKeyClient, RemoteKeyBridge } from './storage/kmsclient.js';
 import { TieringEngine } from './storage/tiers.js';
 import { createBucket, DRIVERS, HashOnlyBucket as HashOnlyBucketType } from './storage/buckets.js';
@@ -172,6 +173,24 @@ export class Vault {
     this._contentCollection = (name, extra = {}) => this.db.collection(name, {
       encrypted: this.encryptAtRest, keyScope: nsOf, ...extra
     });
+
+    /**
+     * Field-level encryption for collections that are NOT whole-record sealed.
+     *
+     * The operational collections — sessions, SCIM users — have to stay
+     * partly legible: an operator debugging a login needs to see that a session
+     * exists, when it was created and whether it was revoked. Sealing the whole
+     * record would take that away; leaving it alone put employee email
+     * addresses, names and departments on disk in the clear, which is what a
+     * raw scan of a live data directory showed.
+     *
+     * So the identifying columns are sealed under their own key scopes and the
+     * operational ones are not. `principal` and `userName` additionally carry a
+     * blind index, so "revoke every session for this person" and SCIM's
+     * `userName eq` filter still work without a key.
+     */
+    this.fieldCrypto = new FieldCrypto({ kms: this.kms });
+    this._fields = (policy) => ({ fields: { policy, crypto: this.fieldCrypto } });
 
     // ---- L8 ledger (constructed early: everything else logs to it) -------
     this.witnesses = witnesses.map((w) => (typeof w === 'string' ? new Witness(w) : w));
@@ -448,7 +467,7 @@ export class Vault {
     // on the NEXT REQUEST, not at the next token refresh. That requirement is
     // what makes this a session store rather than a JWT issuer.
     this.sessions = new SessionStore({
-      collection: this.db.collection('sessions'),
+      collection: this.db.collection('sessions', this._fields({ principal: 'sealed+indexed', ip: 'sealed', userAgent: 'sealed' })),
       ledger: this.ledger,
       ...(options.sessions ?? {})
     });
@@ -458,7 +477,12 @@ export class Vault {
     this.oidc = options.oidc ? new OidcProvider({ ...options.oidc, ledger: this.ledger }) : null;
     this.scim = new ScimService({
       sessions: this.sessions, ledger: this.ledger,
-      collection: this.db.collection('scim_users'),
+      collection: this.db.collection('scim_users', this._fields({
+        // displayName defaults to userName, so leaving it out would have put
+        // the address back on disk beside the sealed copy of itself.
+        userName: 'sealed+indexed', externalId: 'sealed+indexed',
+        emails: 'sealed', name: 'sealed', displayName: 'sealed', department: 'sealed'
+      })),
       ...(options.scim ?? {})
     });
     // The half of break-glass that never existed: enforcement lived in

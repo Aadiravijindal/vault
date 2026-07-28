@@ -77,12 +77,23 @@ export class Collection {
    * @param {Db} db
    * @param {string} name
    */
-  constructor(db, name, { worm = false, encrypted = false, keyScope } = {}) {
+  constructor(db, name, { worm = false, encrypted = false, keyScope, fields = null } = {}) {
     this.db = db;
     this.name = name;
     this.worm = worm;
     this.encrypted = encrypted;
     this.keyScope = keyScope || (() => `collection:${name}`);
+    /**
+     * Field-level encryption policy, if this collection has one.
+     *
+     * Applied on the way in and reversed on the way out, so callers see
+     * plaintext while the file on disk holds ciphertext for exactly the named
+     * fields. Independent of `encrypted`: a collection can be field-sealed
+     * without being whole-record sealed, which is the case where the
+     * distinction is observable — and therefore the case the tests use.
+     */
+    this.fieldPolicy = fields ? (fields.crypto.assertPolicy(fields.policy), fields.policy) : null;
+    this.fieldCrypto = fields?.crypto ?? null;
     this.path = db.dir ? join(db.dir, `${name}.jsonl`) : null;
     /** @type {Map<string, any>} */
     this.records = new Map();
@@ -145,16 +156,18 @@ export class Collection {
 
   // -- reads ---------------------------------------------------------------
 
-  get(id) { return this.records.get(id) || null; }
+  get(id) { const r = this.records.get(id); return r ? this._open(r) : null; }
   has(id) { return this.records.has(id); }
+  /** The stored form, still sealed. Internal callers that must not decrypt. */
+  raw(id) { return this.records.get(id) || null; }
   require(id) {
     const d = this.records.get(id);
     if (!d) throw notFound(this.name, id);
     return d;
   }
-  all() { return [...this.records.values()]; }
-  find(pred) { return [...this.records.values()].filter(pred); }
-  first(pred) { for (const d of this.records.values()) if (pred(d)) return d; return null; }
+  all() { return [...this.records.values()].map((d) => this._open(d)); }
+  find(pred) { return [...this.records.values()].filter(pred).map((d) => this._open(d)); }
+  first(pred) { for (const d of this.records.values()) if (pred(d)) return this._open(d); return null; }
   count(pred) { return pred ? this.find(pred).length : this.records.size; }
   *[Symbol.iterator]() { yield* this.records.values(); }
 
@@ -170,11 +183,11 @@ export class Collection {
     if (this.records.has(id)) {
       throw new VaultError('conflict', `duplicate id in ${this.name}`, { id });
     }
-    const rec = { ...doc, id, _v: 1, _created: doc._created ?? now(), _updated: now() };
+    const rec = this._seal({ ...doc, id, _v: 1, _created: doc._created ?? now(), _updated: now() });
     this.records.set(id, rec);
     for (const name of this.indexes.keys()) this._indexDoc(name, rec);
     this._append({ o: 'i', id, t: rec._updated, d: rec });
-    return rec;
+    return this._open(rec);
   }
 
   /**
@@ -188,12 +201,15 @@ export class Collection {
     }
     const prev = this.require(id);
     this._deindexDoc(prev);
-    const delta = typeof patch === 'function' ? patch(structuredClone(prev)) : patch;
-    const rec = { ...prev, ...delta, id, _v: prev._v + 1, _created: prev._created, _updated: now() };
+    const delta = typeof patch === 'function' ? patch(structuredClone(this._open(prev))) : patch;
+    // Re-sealed from the opened previous record, so a field that was already
+    // sealed and is not being changed does not get double-wrapped, and one that
+    // IS being changed never touches the file in the clear.
+    const rec = this._seal({ ...this._open(prev), ...delta, id, _v: prev._v + 1, _created: prev._created, _updated: now() });
     this.records.set(id, rec);
     for (const name of this.indexes.keys()) this._indexDoc(name, rec);
     this._append({ o: 'u', id, t: rec._updated, d: rec });
-    return rec;
+    return this._open(rec);
   }
 
   /** Insert or update. */
@@ -225,6 +241,42 @@ export class Collection {
     this.compact();
     this.db.onEvent({ type: 'storage.erased', collection: this.name, id, requestId: auth.requestId });
     return true;
+  }
+
+  // -- field-level encryption ----------------------------------------------
+
+  _seal(rec) {
+    return this.fieldPolicy ? this.fieldCrypto.seal(this.name, rec, this.fieldPolicy) : rec;
+  }
+
+  _open(rec) {
+    return this.fieldCrypto ? this.fieldCrypto.open(rec) : rec;
+  }
+
+  /**
+   * Exact-match search over a sealed field, without decrypting anything.
+   *
+   * The token is computed from the query value and compared against the tokens
+   * stored beside the ciphertext. Nothing here opens a seal — which is why this
+   * keeps working after the field's key has been destroyed, and why a fallback
+   * to "decrypt everything and scan" is refused rather than provided: that
+   * fallback would quietly undo the entire property.
+   */
+  byEncrypted(field, value) {
+    if (!this.fieldPolicy) {
+      throw new VaultError('config', `${this.name} has no field-encryption policy, so it has no blind indexes`, { field });
+    }
+    if (!String(this.fieldPolicy[field] ?? '').includes('indexed')) {
+      throw new VaultError('unsupported',
+        `${field} is not indexed — searching it would mean decrypting every record and scanning, which defeats the reason it is sealed`,
+        { field, indexed: Object.keys(this.fieldPolicy).filter((f) => this.fieldPolicy[f].includes('indexed')) });
+    }
+    const token = this.fieldCrypto.indexToken(this.name, field, value);
+    const out = [];
+    for (const rec of this.records.values()) {
+      if (rec.__bi?.[field] === token) out.push(this._open(rec));
+    }
+    return out;
   }
 
   // -- persistence ---------------------------------------------------------
