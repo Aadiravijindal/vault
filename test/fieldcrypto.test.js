@@ -335,3 +335,31 @@ describe('the identity collections on a real Vault, scanned on disk', () => {
     assert.equal(col.byEncrypted('userName', 'someone@else.com').length, 0);
   });
 });
+
+describe('the deprovision path, which is where the seal was quietly undone', () => {
+  test('deactivating a user does not write their identifier back to disk in the clear', async () => {
+    // Found by the end-of-session adversarial pass rather than by any unit
+    // test: `revokeAllFor` echoes the principal back, and persisting that
+    // result put the userName on disk unsealed — on the one path where
+    // identity data matters most.
+    const { Vault } = await import('../src/index.js');
+    const dir = tmp();
+    const vault = new Vault({ dir, seedRules: false });
+    const user = vault.scim.createUser({ userName: 'REVOKE-CANARY@acme.com' });
+    vault.sessions.create({ principal: { name: 'REVOKE-CANARY@acme.com', role: 'security' }, amr: ['hwk'] });
+
+    vault.scim.patchUser(user.id, { Operations: [{ op: 'replace', path: 'active', value: false }] });
+    // The operational part of the record survives and is still useful.
+    assert.equal(vault.scim.users.get(user.id).lastRevocation.revoked, 1);
+    vault.scim.deleteUser(user.id);
+
+    for (const file of readdirSync(dir)) {
+      if (file === 'ledger.jsonl') continue;
+      const bytes = readFileSync(join(dir, file), 'utf8');
+      assert.ok(!bytes.includes('REVOKE-CANARY'),
+        `${file} holds the identifier in the clear after deprovisioning: ${bytes.split('\n').find((l) => l.includes('REVOKE-CANARY'))?.slice(0, 200)}`);
+    }
+    // A second revocation legitimately finds nothing left to revoke.
+    assert.equal(vault.scim.users.get(user.id).lastRevocation.revoked, 0);
+  });
+});

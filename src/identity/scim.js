@@ -224,7 +224,12 @@ export class ScimService {
     const result = this.sessions.revokeAllFor(user.userName, { actor, reason, at });
     this.stats.deactivated++;
     this.stats.sessionsRevoked += result.revoked;
-    user.lastRevocation = { ...result, at: iso(at) };
+    // `revokeAllFor` echoes the principal back, and persisting that would write
+    // the userName to disk in the clear on the deprovision path — undoing the
+    // field-level seal on `userName` for exactly the records that most need it.
+    // The record IS that user, so the name here is redundant as well as unsafe.
+    const { principal, ...safe } = result;
+    user.lastRevocation = { ...safe, at: iso(at) };
     this.col?.update?.(user.id, { lastRevocation: user.lastRevocation });
     this.ledger?.append('admin.action', {
       subject: user.userName, actor, action: 'scim.user_deprovisioned', reason,
