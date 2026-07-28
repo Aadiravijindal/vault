@@ -305,6 +305,39 @@ export class FolderTree {
     return { ...updated, added, removed };
   }
 
+  /**
+   * Pin where this folder's data may live.
+   *
+   * Treated like a wall change rather than a setting, because it is one:
+   * everything already filed here becomes subject to it, and replication and
+   * cross-border reads are decided by it. Children inherit unless they pin
+   * their own, and re-pinning a folder that already has a region is called out
+   * loudly — data written under the old pin does not move itself.
+   */
+  setResidency(path, region, { actor, reason }) {
+    const f = this.get(path);
+    if (!f) throw new VaultError('not_found', 'folder not found', { path });
+    if (!actor || !reason) throw forbidden('pinning residency requires a named actor and a reason');
+    const before = f.residency ?? null;
+    const after = region ?? null;
+    if (before === after) return f;
+
+    const updated = this.col.update(f.id, { residency: after });
+    for (const child of this.col.by('byParent', f.id)) {
+      if ((child.residency ?? null) === before) this.setResidency(child.path, after, { actor, reason: `inherited from ${f.path}` });
+    }
+    this.ledger.append('folder.wall_changed', {
+      subject: f.path, actor, reason, before: { residency: before }, after: { residency: after }
+    });
+    if (before && before !== after) {
+      this.onAlert({
+        severity: 'high', kind: 'residency_changed', subject: f.path, actor,
+        detail: `${f.path} was pinned to ${before} and is now pinned to ${after} — data written under the old pin is still physically where it was; moving it is a separate, deliberate act — ${reason}`
+      });
+    }
+    return updated;
+  }
+
   /** Moving a folder moves its wall, its retention and its history (§8.6). */
   move(fromPath, toPath, { actor, reason }) {
     const from = this.get(fromPath);

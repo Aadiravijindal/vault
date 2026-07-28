@@ -435,6 +435,29 @@ export class ApiServer {
 
     this.route('GET', '/api/ledger/verify/tail', R('security', 'compliance', 'legal', 'auditor', 'admin', 'platform'), () => v.verifyLedgerTail());
 
+    // ---- backup and disaster recovery (§5.10, §28) ---------------------------
+    const backup = () => {
+      if (!v.backup) throw new VaultError('config', 'no backup store is configured on this deployment');
+      return v.backup;
+    };
+    const DR = R('admin', 'platform', 'security');
+    this.route('GET', '/api/backup/status', DR, () => backup().status());
+    this.route('GET', '/api/backup/objectives', DR, () => backup().objectives());
+    this.route('GET', '/api/backup/verify', DR, ({ query }) => ({
+      objects: backup().verify(query.id ?? null), chain: backup().verifyChain()
+    }));
+    this.route('POST', '/api/backup/full', R('admin', 'platform'), ({ body, principal }) =>
+      backup().full({ actor: principal.name, reason: body?.reason }));
+    this.route('POST', '/api/backup/incremental', R('admin', 'platform'), ({ body, principal }) =>
+      backup().incremental({ actor: principal.name, reason: body?.reason }));
+    // Restore writes a directory; it never overwrites the running vault, which
+    // is why it takes a destination rather than doing it in place.
+    this.route('POST', '/api/backup/restore', R('admin'), ({ body, principal }) =>
+      backup().restore({
+        into: body.into, to: body.to ? Date.parse(body.to) : null,
+        actor: principal.name, reason: body.reason, includeKeys: body.includeKeys !== false
+      }));
+
     this._installIdentity(v, R);
 
     // ---- configuration as code -----------------------------------------------

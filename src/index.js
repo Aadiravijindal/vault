@@ -56,6 +56,7 @@ import { BulkImport, Offboarding } from './lifecycle/lifecycle.js';
 import { OnboardingWizard, DemoData, timingReport } from './onboarding/onboarding.js';
 import { StatusPage } from './status/status.js';
 import { RestoreDrill } from './continuity/drill.js';
+import { BackupEngine, BackupStore } from './continuity/backup.js';
 import { ConfigEngine } from './iac/iac.js';
 import { SlackApp, TeamsApp } from './integrations/chatops.js';
 import { SamlProvider, OidcProvider, SessionStore, AccessPolicy, MfaRegistry } from './identity/identity.js';
@@ -476,6 +477,17 @@ export class Vault {
       collection: this.db.collection('restore_drills'),
       spawn: ({ dir: freshDir }) => new Vault({ dir: freshDir, signingKey, seedRules: false })
     });
+
+    // Backups need somewhere immutable to go and a credential the primary does
+    // not also hold for deletion, so they are configured rather than defaulted:
+    // silently backing up to a directory this process can also erase would be
+    // worse than having no backup, because it would look like having one.
+    this.backup = options.backup
+      ? new BackupEngine({
+        source: dir, db: this.db, kms: this.kms, ledger: this.ledger, folders: this.folders,
+        alerts: this.alerts, ...options.backup
+      })
+      : null;
 
     this.startedAt = now();
   }
@@ -1079,6 +1091,7 @@ export { SlackApp, TeamsApp } from './integrations/chatops.js';
 export { I18n, LOCALES, coverage as localeCoverage, negotiate } from './ui/i18n.js';
 export { Benchmark, Samples, growth, BUDGETS } from './observability/bench.js';
 export { RestoreDrill } from './continuity/drill.js';
+export { BackupEngine, BackupStore } from './continuity/backup.js';
 export { StatusPage, COMPONENTS } from './status/status.js';
 export { OnboardingWizard, DemoData, STEPS as SETUP_STEPS } from './onboarding/onboarding.js';
 export { ExternalKeyService } from './storage/kms.js';
