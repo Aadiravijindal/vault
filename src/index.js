@@ -64,6 +64,7 @@ import { SamlProvider, OidcProvider, SessionStore, AccessPolicy, MfaRegistry } f
 import { ScimService } from './identity/scim.js';
 import { PrivilegedAccess } from './identity/privileged.js';
 import { RateLimiter, ApiKeyStore } from './api/ratelimit.js';
+import { analyseAttachment } from './media/media.js';
 import { coverageMap } from './connectors/catalog.js';
 import { now, iso } from './util/time.js';
 import { VaultError } from './util/errors.js';
@@ -570,6 +571,37 @@ export class Vault {
     // ---- L2: SEAL FIRST, before extraction, before any check -------------
     const conversation = this.archive.seal(raw);
 
+    // ---- attachments: pixels and audio are text too (§5 Check 7) ---------
+    //
+    // Until this existed, an attachment was sealed into the archive and never
+    // looked at, so a PNG carrying "ignore previous instructions" as pale grey
+    // text reached extraction with the gate never having seen the words. The
+    // recovered text goes through the same detector as anything typed into the
+    // conversation — not a parallel, weaker check.
+    const attachmentFindings = [];
+    for (const a of raw.attachments ?? []) {
+      let finding = null;
+      try {
+        finding = analyseAttachment(a, { detector: this.gate.instructions });
+      } catch (e) {
+        // A crash in a decoder must not become a bypass.
+        finding = { kind: 'unknown', name: a?.name ?? 'attachment', hold: true, reasons: [`the attachment could not be inspected (${e.message})`] };
+      }
+      if (!finding) continue;
+      attachmentFindings.push(finding);
+      if (!finding.hold) continue;
+      this.ledger.append('security.detection', {
+        subject: conversation.id, actor: raw.agentId ?? ctx.agentId ?? 'unknown',
+        action: 'attachment.held', attachment: finding.name, kind: finding.kind,
+        sha256: finding.sha256 ?? null, reason: (finding.reasons ?? []).join('; ')
+      });
+      this.alerts.raise({
+        severity: 'high', kind: 'attachment_injection', subject: finding.name,
+        actor: raw.agentId ?? ctx.agentId ?? 'unknown',
+        detail: (finding.reasons ?? []).join('; ')
+      });
+    }
+
     // ---- L3: extract candidates -----------------------------------------
     const agent = this.registry.get(raw.agentId ?? ctx.agentId);
     const { candidates, stats } = this.extractor.extract(conversation, {
@@ -668,6 +700,10 @@ export class Vault {
       sealHash: conversation.sealHash,
       extraction: stats,
       facts: results,
+      // What the images and audio said. Reported even when nothing was held,
+      // so a caller can see that the check ran rather than inferring it from
+      // silence.
+      attachmentFindings,
       summary: summarise(results),
       latencyMs: Math.round(elapsed * 100) / 100
     };
