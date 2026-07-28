@@ -12,6 +12,9 @@
  *   L5  fact store            L11 storage
  *   L6  hygiene               L12 control surface
  */
+import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs';
+import { join } from 'node:path';
+import { randomBytes } from 'node:crypto';
 import { Db } from './storage/db.js';
 import { Kms, KEY_MODES } from './storage/kms.js';
 import { createKeyClient, RemoteKeyBridge } from './storage/kmsclient.js';
@@ -100,14 +103,71 @@ export class Vault {
         ttlMs: kmsOpts.keyCacheTtlMs, onEvent: (e) => this._keyEvent(e)
       });
     }
+    // A Vault-managed root key is random per process, which is fine when
+    // nothing is encrypted and fatal once something is: the next restart could
+    // not read its own store. So when Vault manages the key AND there is a data
+    // directory, the root is persisted beside it — see _rootKeyFile for exactly
+    // what that does and does not protect against.
+    this.rootKeySource = kmsOpts.rootKey ? 'customer-supplied'
+      : kmsOpts.provider ? `${kmsOpts.provider} key service`
+        : dir ? 'vault-managed, persisted in the data directory'
+          : 'vault-managed, in memory only';
+    const managedRoot = (!kmsOpts.rootKey && !kmsOpts.provider && dir)
+      ? Vault._rootKeyFile(dir)
+      : null;
     this.kms = new Kms({
       ...kmsOpts,
+      ...(managedRoot ? { rootKey: managedRoot } : {}),
       ...(this.keyBridge ? this.keyBridge.adapters() : {}),
       ...(this.keyBridge && !KEY_MODES.includes(kmsOpts.mode) ? { mode: 'cmk' } : {}),
+      // Destroyed keys are recorded on disk, so a crypto-shred survives the
+      // restart it would otherwise be undone by.
+      ...(dir ? { tombstonePath: join(dir, 'shredded.jsonl') } : {}),
       onEvent: (e) => this._keyEvent(e)
     });
     this.db = new Db({ dir, kms: this.kms });
     this.signingKey = signingKey;
+
+    /**
+     * Encryption at rest, actually switched on.
+     *
+     * The envelope machinery has always worked — per-object DEK, per-scope KEK,
+     * crypto-shredding — but no collection was ever constructed with
+     * `encrypted: true`, so transcripts and facts sat on disk as readable JSON.
+     * A capability nothing enables is not a control, and "AES-256-GCM at rest"
+     * was not true of the default build.
+     *
+     * The key scope is the namespace, so destroying `ns:hr` makes every HR
+     * record on disk, in every backup and in the archive tier undecryptable in
+     * one step — which is what makes the erasure receipt's crypto-shred claim
+     * real rather than aspirational.
+     *
+     * Records are plaintext in memory, so the gate, search, verification and
+     * export are unaffected; only the bytes on disk change.
+     *
+     * How much this is worth depends entirely on where the key is, and the
+     * product reports which case it is in rather than letting a reader assume
+     * the strongest one. See `storage().encryptionAtRest.protectsAgainst`.
+     */
+    this.encryptAtRest = options.encryptAtRest !== false;
+    /**
+     * The key scope decides what a crypto-shred can actually destroy, so it has
+     * to match what the erasure path destroys — otherwise erasure destroys a key
+     * that was not the one encrypting the record, and the receipt is false.
+     *
+     * Facts carry a folder, so they key by namespace: shredding `ns:hr` removes
+     * every HR fact from disk and from every backup at once.
+     *
+     * Conversations do not — a transcript can produce facts in several folders,
+     * so no single namespace owns it. They key per conversation, which is
+     * exactly the scope `LegalOps.erase` destroys (`conversation:<id>`) when it
+     * removes a transcript from the WORM archive.
+     */
+    const nsOf = (doc) => `ns:${String(doc?.folder ?? doc?.namespace ?? 'unfiled').split('/')[0] || 'unfiled'}`;
+    const perConversation = (doc) => `conversation:${doc?.id ?? 'unknown'}`;
+    this._contentCollection = (name, extra = {}) => this.db.collection(name, {
+      encrypted: this.encryptAtRest, keyScope: nsOf, ...extra
+    });
 
     // ---- L8 ledger (constructed early: everything else logs to it) -------
     this.witnesses = witnesses.map((w) => (typeof w === 'string' ? new Witness(w) : w));
@@ -150,8 +210,8 @@ export class Vault {
 
     // ---- L2 archive ------------------------------------------------------
     this.archive = new Archive({
-      collection: this.db.collection('conversations', { worm: true }),
-      reviews: this.db.collection('supervision_reviews'),
+      collection: this._contentCollection('conversations', { worm: true, keyScope: perConversation }),
+      reviews: this._contentCollection('supervision_reviews'),
       state: this.db.collection('archive_state'),
       ledger: this.ledger,
       tiering: this.tiering,
@@ -165,13 +225,13 @@ export class Vault {
       onAlert: (a) => this.alerts.raise(a)
     });
     this.entities = new EntityResolver({
-      collection: this.db.collection('entities'),
+      collection: this._contentCollection('entities'),
       ledger: this.ledger
     });
     this.facts = new FactStore({
-      collection: this.db.collection('facts'),
-      golden: this.db.collection('golden_facts'),
-      versions: this.db.collection('fact_versions'),
+      collection: this._contentCollection('facts'),
+      golden: this._contentCollection('golden_facts'),
+      versions: this._contentCollection('fact_versions'),
       ledger: this.ledger,
       entities: this.entities,
       signingKey
@@ -188,7 +248,7 @@ export class Vault {
 
     // ---- consent & legal --------------------------------------------------
     this.consent = new ConsentRegistry({
-      collection: this.db.collection('consent'),
+      collection: this._contentCollection('consent'),
       ledger: this.ledger
     });
     this.legal = new LegalOps({
@@ -264,7 +324,7 @@ export class Vault {
 
     // ---- review queue -----------------------------------------------------
     this.review = new ReviewQueue({
-      collection: this.db.collection('reviews'),
+      collection: this._contentCollection('reviews'),
       ledger: this.ledger, folders: this.folders, facts: this.facts,
       alerts: this.alerts, temporal: this.temporal, archive: this.archive, gate: this.gate
     });
@@ -283,8 +343,10 @@ export class Vault {
       signingKey
     });
     this.vaultTrace = new VaultTrace({
-      spans: this.db.collection('spans'),
-      evals: this.db.collection('eval_runs'),
+      // Spans and eval runs carry model inputs and outputs — which is customer
+      // content whatever the observability screen calls it.
+      spans: this._contentCollection('spans'),
+      evals: this._contentCollection('eval_runs'),
       ledger: this.ledger,
       modules: this.modules,
       state: this.db.collection('observability_state')
@@ -733,7 +795,8 @@ export class Vault {
         }
         : { driver: 'vault-managed', note: 'no customer bucket configured — data is in Vault storage' },
       driversAvailable: Object.keys(DRIVERS),
-      keyService: this.keyBridge ? this.keyBridge.status() : { provider: 'vault-managed' }
+      keyService: this.keyBridge ? this.keyBridge.status() : { provider: 'vault-managed' },
+      encryptionAtRest: this.encryptionPosture()
     };
   }
 
@@ -771,6 +834,63 @@ export class Vault {
       });
     }
     return health;
+  }
+
+  /**
+   * What encryption at rest actually protects against here.
+   *
+   * Stated rather than implied, because "AES-256-GCM at rest" means something
+   * very different depending on where the key is, and a security questionnaire
+   * answered with the strong reading when the weak one is true is a false
+   * statement somebody signs.
+   */
+  encryptionPosture() {
+    if (!this.encryptAtRest) {
+      return {
+        enabled: false, keyLocation: 'n/a',
+        protectsAgainst: 'nothing — encryption at rest is switched off',
+        recommendation: 'remove encryptAtRest:false unless you have a specific reason'
+      };
+    }
+    const external = Boolean(this.keyClient) || this.kms.mode === 'byok' || Boolean(this.options.kms?.rootKey);
+    return {
+      enabled: true,
+      algorithm: 'AES-256-GCM, per-object data key wrapped by a per-namespace key',
+      keySource: this.rootKeySource,
+      keyOnSameHostAsData: !external && Boolean(this.options.dir),
+      protectsAgainst: external
+        ? 'a stolen bucket, a copied backup, a decommissioned disk, AND a compromised Vault host — the root key is never on this machine'
+        : 'a stolen bucket, a copied backup, a decommissioned disk, an exposed object store, a snapshot shared with a vendor',
+      doesNotProtectAgainst: external
+        ? 'an attacker who can call your key service as this process can'
+        : 'anyone who can read the whole data directory — the root key is in it, at root.key. This is NOT what a security questionnaire means by encryption at rest.',
+      recommendation: external ? null : 'configure kms.rootKey (BYOK) or kms.provider (AWS/Azure/GCP) so the key is never on this host'
+    };
+  }
+
+  /**
+   * Load or create the Vault-managed root key for a data directory.
+   *
+   * Written 0600 alongside the data. Be precise about what that buys:
+   *
+   *   Protects against — a stolen bucket, a copied backup, a decommissioned
+   *   disk, an exposed object store, a snapshot shared with a vendor. These are
+   *   the common breaches, and in all of them the attacker has the data files
+   *   and not the host filesystem.
+   *
+   *   Does NOT protect against — anyone who can read the whole directory,
+   *   because the key is in it. That is not encryption at rest in the sense a
+   *   security questionnaire means, and doctor() says so.
+   *
+   * The fix is BYOK or a cloud KMS, where the key is never on this host at all.
+   */
+  static _rootKeyFile(dir) {
+    const path = join(dir, 'root.key');
+    if (existsSync(path)) return Buffer.from(readFileSync(path, 'utf8').trim(), 'hex');
+    mkdirSync(dir, { recursive: true });
+    const key = randomBytes(32);
+    writeFileSync(path, key.toString('hex'), { mode: 0o600 });
+    return key;
   }
 
   /** ⚙️ ADMIN → MODULES. */
@@ -855,6 +975,19 @@ export class Vault {
 
     for (const f of this.registry.findings()) warn(f.severity === 'high' ? 'high' : 'medium', 'agents', f.finding, f.fix ?? 'assign owners or register the agent');
     for (const f of this.folders.findings()) warn('medium', 'folders', `${f.path}: ${f.finding}`, 'assign a business and technical owner');
+
+    const enc = this.encryptionPosture();
+    if (!enc.enabled) {
+      warn('high', 'encryption', 'encryption at rest is switched off — transcripts and facts are readable JSON on disk',
+        'remove encryptAtRest:false');
+    } else if (enc.keyOnSameHostAsData) {
+      // Deliberately a finding rather than a footnote: a customer who answers
+      // "yes, AES-256 at rest" on a questionnaire while the key sits in the same
+      // directory has said something they cannot defend in an audit.
+      warn('medium', 'encryption',
+        'the root key is stored beside the data, so encryption at rest protects a stolen bucket or backup but not a compromised host',
+        'configure kms.rootKey (BYOK) or kms.provider (AWS/Azure/GCP) — then the key is never on this machine');
+    }
 
     if (!this.killswitch.specification().namedAdministrators.length) {
       warn('high', 'killswitch', 'no named kill switch administrator', 'name one — it is an RFP question and an insurance question');

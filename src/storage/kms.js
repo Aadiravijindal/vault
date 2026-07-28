@@ -13,6 +13,8 @@
  * It is the only honest way to prove deletion from immutable media, which is why
  * the erasure receipt names it explicitly.
  */
+import { appendFileSync, existsSync, readFileSync, mkdirSync } from 'node:fs';
+import { dirname } from 'node:path';
 import { newDataKey, wrapKey, unwrapKey, encrypt, decrypt, sha256, randomToken } from '../util/crypto.js';
 import { now, iso } from '../util/time.js';
 import { VaultError } from '../util/errors.js';
@@ -31,13 +33,20 @@ export class Kms {
    * @param {number} [opts.quorum] for split mode: how many shares must be present
    * @param {(event:object)=>void} [opts.onEvent] audit sink
    */
-  constructor({ mode = 'vault-managed', rootKey, externalWrap, externalUnwrap, quorum = 2, onEvent } = {}) {
+  constructor({ mode = 'vault-managed', rootKey, externalWrap, externalUnwrap, quorum = 2, onEvent, tombstonePath = null } = {}) {
     this.mode = mode;
     this.onEvent = onEvent || (() => {});
     this.quorum = quorum;
     this.externalWrap = externalWrap;
     this.externalUnwrap = externalUnwrap;
     this.presentShares = new Set();
+    /**
+     * While replaying persisted records, key derivation is not key *activity*.
+     * The KEK for a namespace is derived deterministically from the root, so
+     * re-deriving it on startup creates nothing — emitting key.created there
+     * would append to the audit ledger on every restart and move the chain head.
+     */
+    this.replaying = 0;
     this.root = rootKey
       ? (Buffer.isBuffer(rootKey) ? rootKey : Buffer.from(String(rootKey).padEnd(32, '0').slice(0, 32)))
       : newDataKey();
@@ -46,9 +55,47 @@ export class Kms {
     /** @type {Array<object>} */
     this.keyAccessLog = [];
     this.rotations = [];
+    /**
+     * Destroyed scopes, on disk.
+     *
+     * A KEK is derived deterministically from the root, so marking one
+     * destroyed in memory achieves nothing across a restart: the next process
+     * re-derives it and the "unrecoverable" data is readable again. The erasure
+     * receipt states that backups are crypto-shredded and that the ciphertext
+     * cannot be recovered — that has to survive a reboot or it is a false
+     * statement on a document a regulator reads.
+     *
+     * Append-only, because un-destroying a key is not an operation that should
+     * exist.
+     */
+    this.tombstonePath = tombstonePath;
+    if (tombstonePath && existsSync(tombstonePath)) {
+      for (const line of readFileSync(tombstonePath, 'utf8').split('\n')) {
+        if (!line.trim()) continue;
+        try {
+          const t = JSON.parse(line);
+          this.keks.set(t.scope, {
+            id: t.keyId, key: null, version: t.version ?? 1, created: t.created ?? 0,
+            destroyed: Date.parse(t.destroyedAt) || now(), reason: t.reason ?? 'destroyed in a previous session'
+          });
+        } catch { /* a truncated final line is not a reason to refuse to start */ }
+      }
+    }
     if (mode === 'byok' && !rootKey) {
       throw new VaultError('config', 'byok mode requires customer-supplied root key material');
     }
+  }
+
+  /** Suppress key-lifecycle events for the duration of a replay. Returns the undo. */
+  beginReplay() {
+    this.replaying++;
+    let ended = false;
+    return () => { if (!ended) { ended = true; this.replaying--; } };
+  }
+
+  _emit(event) {
+    if (this.replaying > 0) return;
+    this.onEvent(event);
   }
 
   /** For split-key / M-of-N: present a share. Unlock requires `quorum` shares. */
@@ -82,7 +129,7 @@ export class Kms {
         reason: null
       };
       this.keks.set(scope, entry);
-      this.onEvent({ type: 'key.created', scope, keyId: entry.id, version: 1, at: iso() });
+      this._emit({ type: 'key.created', scope, keyId: entry.id, version: 1, at: iso() });
     }
     if (entry.destroyed) {
       throw new VaultError('crypto_shredded', 'key for this scope was destroyed — data is unrecoverable by design', {
@@ -186,7 +233,11 @@ export class Kms {
       // Proof that the key existed and no longer does, without revealing it.
       witness: sha256(`shred|${scope}|${entry.id}|${entry.destroyed}`)
     };
-    this.onEvent({ type: 'key.destroyed', ...record });
+    if (this.tombstonePath) {
+      mkdirSync(dirname(this.tombstonePath), { recursive: true });
+      appendFileSync(this.tombstonePath, `${JSON.stringify({ ...record, version: entry.version, created: entry.created })}\n`);
+    }
+    this._emit({ type: 'key.destroyed', ...record });
     return record;
   }
 

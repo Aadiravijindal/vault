@@ -140,6 +140,26 @@ export const CHECKLIST = [
         return { ok: Object.keys(KEY_PROVIDERS).length === 3, evidence: Object.keys(KEY_PROVIDERS).join(', ') };
       } },
       { item: 'Crypto-shredding, named honestly in the erasure receipt', kind: 'symbol', check: 'kms.cryptoShred' },
+      { item: 'Encryption at rest is switched ON, not merely available', kind: 'behaviour', run: (v) => {
+        // The gap this catches: the envelope machinery was correct for months
+        // while no collection was constructed with encrypted:true, so
+        // transcripts sat on disk as readable JSON under a claim of AES-256-GCM.
+        const names = ['conversations', 'facts', 'golden_facts', 'fact_versions', 'reviews', 'spans'];
+        const off = names.filter((n) => {
+          const col = v.db.collections?.get?.(n);
+          return col && !col.encrypted;
+        });
+        return off.length
+          ? { ok: false, evidence: `${off.join(', ')} hold customer content and are not encrypted` }
+          : { ok: true, evidence: 'every content collection is constructed encrypted' };
+      } },
+      { item: 'Encryption posture states what it does and does not protect', kind: 'behaviour', run: (v) => {
+        const p = v.encryptionPosture();
+        return p.protectsAgainst && p.doesNotProtectAgainst
+          ? { ok: true, evidence: `key: ${p.keySource}` }
+          : { ok: false, evidence: 'the posture does not state its own limits' };
+      } },
+      { item: 'A crypto-shred survives a restart', kind: 'test', check: 'survive the restart, or the receipt is a false statement' },
       { item: 'Key access log independent of the provider console', kind: 'symbol', check: 'kms.accessLog' }
     ]
   },

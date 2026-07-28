@@ -262,14 +262,21 @@ export class Collection {
   _load() {
     if (!this.path || !existsSync(this.path)) return;
     const raw = readFileSync(this.path, 'utf8');
-    for (const line of raw.split('\n')) {
-      if (!line.trim()) continue;
-      let op;
-      try { op = this._deserialise(line); } catch { continue; }
-      this.opCount++;
-      if (op.o === 'x' || op.shredded) { this.records.delete(op.id); continue; }
-      if (op.d) this.records.set(op.id, op.d);
-    }
+    // Replaying stored records is not key activity. Without this, opening an
+    // encrypted collection re-derives its namespace key and emits key.created
+    // into the ledger, so a restart appends events and the chain head no longer
+    // matches where it was left — a restart would look like tampering.
+    const done = this.db.kms?.beginReplay?.();
+    try {
+      for (const line of raw.split('\n')) {
+        if (!line.trim()) continue;
+        let op;
+        try { op = this._deserialise(line); } catch { continue; }
+        this.opCount++;
+        if (op.o === 'x' || op.shredded) { this.records.delete(op.id); continue; }
+        if (op.d) this.records.set(op.id, op.d);
+      }
+    } finally { done?.(); }
     for (const name of this.indexes.keys()) {
       this.indexes.set(name, new Map());
       for (const doc of this.records.values()) this._indexDoc(name, doc);
