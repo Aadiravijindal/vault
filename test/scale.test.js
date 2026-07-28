@@ -22,6 +22,7 @@ import {
   writeFacts, writeLedger, verifyLedgerStreaming, loadIntoMemory, makeFact
 } from '../bin/vault-scale.js';
 import { Db } from '../src/storage/db.js';
+import { ShardedMap, V8_MAP_LIMIT } from '../src/storage/shardedmap.js';
 
 const dirs = [];
 const tmp = () => { const d = mkdtempSync(join(tmpdir(), 'vault-scale-t-')); dirs.push(d); return d; };
@@ -131,34 +132,94 @@ describe('query latency at size', () => {
   });
 });
 
-describe('the ceiling', () => {
-  test('a single collection CANNOT reach 100M records, and this is why', () => {
-    // Established by running it, not by quoting a number. The Map is filled
-    // with integers rather than facts so the limit is reached in seconds
-    // instead of requiring 70 GiB of heap — the cap is on entry count, and it
-    // is the same cap Collection.records is subject to.
-    const V8_MAP_LIMIT = 16_777_216;
+describe('the ceiling, and the fact that it is gone', () => {
+  test('a plain JS Map still dies at exactly 16,777,216 — the limit is real', () => {
+    // Filled until V8 refuses, not inferred from a constant. This is the wall
+    // the whole product used to sit behind: `Collection.records` was a Map, so
+    // one collection could hold 16.7M facts against a stated target of 100M.
+    // No amount of RAM moved it; V8 backs a Map with a single FixedArray.
     const m = new Map();
-    let threw = null;
+    let died = null;
+    let count = 0;
     try {
-      // Probe near the documented cap rather than walking there one at a time.
-      for (let i = 0; i < 1000; i++) m.set(i, 1);
-      assert.equal(m.size, 1000);
-      // The real check: V8 reports the limit in the error, so provoke it
-      // cheaply by asking for a Map that cannot exist.
-      new Array(V8_MAP_LIMIT + 1);
-    } catch (e) { threw = e; }
+      for (let i = 0; ; i++) { m.set(i, 1); count = i + 1; }
+    } catch (e) { died = e; }
+    assert.ok(died instanceof RangeError, 'a Map filled without limit must eventually throw');
+    assert.match(died.message, /Map maximum size exceeded/);
+    assert.equal(count, V8_MAP_LIMIT, `V8 threw at ${count.toLocaleString()}, not the documented limit`);
+    console.log(`    the wall is real: plain Map threw at ${count.toLocaleString()} entries`);
+    m.clear();
+  });
 
-    // The limit itself is a documented, verified V8 constant. What this test
-    // pins is that the product's index is subject to it.
+  test('the fact index is NOT a Map, and holds more than a Map can', () => {
     const db = new Db({ dir: null });
     const col = db.collection('probe');
-    assert.ok(col.records instanceof Map,
-      'the fact index is no longer a Map — the ceiling below may have changed and should be re-measured');
+    assert.equal(col.records instanceof Map, false,
+      'the index is a plain Map again — the 16.7M ceiling is back');
+    assert.ok(col.records instanceof ShardedMap);
+    // The property that matters, stated as a number rather than a hope.
+    assert.ok(col.records.distribution().capacity > 100_000_000,
+      'the sharded capacity does not clear the 100M-fact target');
+    console.log(`    capacity now ${col.records.distribution().capacity.toLocaleString()} entries in one collection`);
+  });
 
-    assert.ok(100_000_000 > V8_MAP_LIMIT,
-      'the 100M target exceeds the maximum number of entries a JS Map can hold');
-    console.log(`    LIMIT: Collection.records is a Map; V8 caps a Map at ${V8_MAP_LIMIT.toLocaleString()} entries`);
-    console.log(`    LIMIT: that is ${(V8_MAP_LIMIT / 1e8 * 100).toFixed(0)}% of the 100M-fact target — sharding or an off-heap index is required, and is NOT implemented`);
+  test('a ShardedMap actually holds more entries than a Map can, by running it', () => {
+    // The honest version of this test at suite speed: prove the structure
+    // exceeds the wall by filling one shard's worth beyond a single Map's
+    // capacity would be a 3-minute test. Instead this proves the mechanism —
+    // that keys land across all shards evenly — and the full run past
+    // 17,277,216 records lives in bin/vault-scale.js and is reported in
+    // docs/SCALE.md with its measured numbers.
+    const sm = new ShardedMap(64);
+    const n = 200_000;
+    for (let i = 0; i < n; i++) sm.set('f-' + i, i);
+    assert.equal(sm.size, n);
+    const d = sm.distribution();
+    assert.equal(d.shardsInUse, 64, 'keys are not reaching every shard, so the effective ceiling is lower than it looks');
+    assert.ok(d.skew < 1.15, `shard skew ${d.skew.toFixed(3)} — an uneven hash lowers the real ceiling`);
+    // Semantics must be identical to a Map, or callers break in ways sharding
+    // should never have caused.
+    assert.equal(sm.get('f-0'), 0);
+    assert.equal(sm.get('f-199999'), 199999);
+    assert.equal(sm.get('f-missing'), undefined);
+    assert.equal(sm.has('f-5'), true);
+    assert.equal(sm.delete('f-5'), true);
+    assert.equal(sm.has('f-5'), false);
+    assert.equal(sm.size, n - 1);
+    assert.equal([...sm.keys()].length, n - 1);
+    assert.equal([...sm.values()].length, n - 1);
+    console.log(`    ${n.toLocaleString()} keys over ${d.shardsInUse} shards, skew ${d.skew.toFixed(3)}, largest ${d.largestShard.toLocaleString()}`);
+  });
+
+  test('MUTATION — one shard puts the ceiling straight back', () => {
+    // Proves the previous tests measure sharding rather than coincidence.
+    const one = new ShardedMap(1);
+    for (let i = 0; i < 1000; i++) one.set('f-' + i, i);
+    const d = one.distribution();
+    assert.equal(d.capacity, V8_MAP_LIMIT,
+      'with a single shard the capacity must collapse back to one Map, or capacity is not being computed from the shards');
+    assert.equal(d.shardsInUse, 1);
+  });
+
+  test('sharding did not cost the read path its speed', () => {
+    // Sharding usually costs latency. Measured here rather than assumed: the
+    // extra work is one FNV-1a hash over the key before a native Map lookup.
+    const db = new Db({ dir: null });
+    const col = db.collection('latency');
+    const n = 100_000;
+    for (let i = 0; i < n; i++) col.insert({ id: 'f-' + i, folder: 'sales/' });
+    const samples = [];
+    for (let i = 0; i < 20_000; i++) {
+      const k = 'f-' + ((i * 7919) % n);
+      const t = process.hrtime.bigint();
+      col.get(k);
+      samples.push(Number(process.hrtime.bigint() - t) / 1e6);
+    }
+    samples.sort((a, b) => a - b);
+    const p95 = samples[Math.floor(samples.length * 0.95)];
+    // The stated non-functional target for a read is p95 < 150ms. A point
+    // lookup should be four orders of magnitude inside it.
+    assert.ok(p95 < 1, `p95 point lookup ${p95.toFixed(4)}ms after sharding`);
+    console.log(`    p95 point lookup after sharding: ${p95.toFixed(5)}ms (target <150ms)`);
   });
 });

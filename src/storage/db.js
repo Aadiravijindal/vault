@@ -24,6 +24,7 @@ import { join, dirname } from 'node:path';
 import { newId } from '../util/id.js';
 import { now } from '../util/time.js';
 import { VaultError, immutable, notFound } from '../util/errors.js';
+import { ShardedMap } from './shardedmap.js';
 
 export class Db {
   /**
@@ -115,7 +116,7 @@ export class Collection {
    * @param {Db} db
    * @param {string} name
    */
-  constructor(db, name, { worm = false, encrypted = false, keyScope, fields = null } = {}) {
+  constructor(db, name, { worm = false, encrypted = false, keyScope, fields = null, shards = 64 } = {}) {
     this.db = db;
     this.name = name;
     this.worm = worm;
@@ -133,8 +134,14 @@ export class Collection {
     this.fieldPolicy = fields ? (fields.crypto.assertPolicy(fields.policy), fields.policy) : null;
     this.fieldCrypto = fields?.crypto ?? null;
     this.path = db.dir ? join(db.dir, `${name}.jsonl`) : null;
-    /** @type {Map<string, any>} */
-    this.records = new Map();
+    /**
+     * @type {import('./shardedmap.js').ShardedMap}
+     *
+     * Not a Map. V8 caps a Map at 16,777,216 entries and throws after that,
+     * which capped the whole product at 17% of its stated 100M-fact target.
+     * See shardedmap.js — the interface is identical, the ceiling is not.
+     */
+    this.records = new ShardedMap(shards);
     /** @type {Map<string, Map<any, Set<string>>>} */
     this.indexes = new Map();
     /** @type {Map<string, (doc:any)=>any|any[]>} */
