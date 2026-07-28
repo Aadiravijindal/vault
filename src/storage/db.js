@@ -19,8 +19,9 @@
  *  - optional envelope encryption per record, keyed by scope, so crypto-shred
  *    reaches backups too (§5.6)
  */
-import { mkdirSync, existsSync, readFileSync, writeFileSync, appendFileSync, renameSync, statSync } from 'node:fs';
+import { mkdirSync, existsSync, readFileSync, writeFileSync, appendFileSync, renameSync, statSync, openSync, readSync, closeSync } from 'node:fs';
 import { join, dirname } from 'node:path';
+import { StringDecoder } from 'node:string_decoder';
 import { newId } from '../util/id.js';
 import { now } from '../util/time.js';
 import { VaultError, immutable, notFound } from '../util/errors.js';
@@ -356,24 +357,61 @@ export class Collection {
     appendFileSync(this.path, this._serialise(op) + '\n');
   }
 
+  /**
+   * Replay the segment.
+   *
+   * Streamed in fixed-size chunks rather than read into one string. The
+   * previous version was `readFileSync(path, 'utf8')`, and V8 throws
+   * ERR_STRING_TOO_LONG above roughly 512 MB — so a collection past that size
+   * could not be opened AT ALL. At the measured ~500 bytes per fact that is
+   * about one million facts, after which the process failed to start against
+   * its own data directory. Not a degradation: a hard stop, well below the
+   * 16.7M index ceiling that was previously believed to be the binding limit,
+   * and invisible until something was run at that size.
+   *
+   * Found by a disaster-recovery drill at 12,000 facts whose conversation
+   * archive crossed the cap.
+   */
   _load() {
     if (!this.path || !existsSync(this.path)) return;
-    const raw = readFileSync(this.path, 'utf8');
     // Replaying stored records is not key activity. Without this, opening an
     // encrypted collection re-derives its namespace key and emits key.created
     // into the ledger, so a restart appends events and the chain head no longer
     // matches where it was left — a restart would look like tampering.
     const done = this.db.kms?.beginReplay?.();
+    const fd = openSync(this.path, 'r');
+    const buf = Buffer.allocUnsafe(1 << 20);
+    // StringDecoder, not Buffer.toString, because a multi-byte character can
+    // straddle a chunk boundary and toString would replace the split halves
+    // with U+FFFD. The product stores content in every language it ingests, so
+    // that is silent corruption of exactly the records least likely to be
+    // spot-checked.
+    const decoder = new StringDecoder('utf8');
+    let carry = '';
+    let pos = 0;
+    const apply = (line) => {
+      if (!line.trim()) return;
+      let op;
+      try { op = this._deserialise(line); } catch { return; }
+      this.opCount++;
+      if (op.o === 'x' || op.shredded) { this.records.delete(op.id); return; }
+      if (op.d) this.records.set(op.id, op.d);
+    };
     try {
-      for (const line of raw.split('\n')) {
-        if (!line.trim()) continue;
-        let op;
-        try { op = this._deserialise(line); } catch { continue; }
-        this.opCount++;
-        if (op.o === 'x' || op.shredded) { this.records.delete(op.id); continue; }
-        if (op.d) this.records.set(op.id, op.d);
+      for (;;) {
+        const n = readSync(fd, buf, 0, buf.length, pos);
+        if (n === 0) break;
+        pos += n;
+        // A multi-byte character can straddle a chunk boundary, so the tail is
+        // carried rather than decoded twice.
+        const text = carry + decoder.write(buf.subarray(0, n));
+        const parts = text.split('\n');
+        carry = parts.pop();
+        for (const line of parts) apply(line);
       }
-    } finally { done?.(); }
+      carry += decoder.end();
+      if (carry) apply(carry);
+    } finally { closeSync(fd); done?.(); }
     for (const name of this.indexes.keys()) {
       this.indexes.set(name, new Map());
       for (const doc of this.records.values()) this._indexDoc(name, doc);
@@ -386,13 +424,21 @@ export class Collection {
     const before = statSync(this.path).size;
     const tmp = `${this.path}.compact`;
     mkdirSync(dirname(tmp), { recursive: true });
-    const lines = [];
+    // Appended incrementally rather than joined into one string: a compacted
+    // collection can exceed V8's ~512 MB string cap for the same reason the
+    // load path could, and compaction failing on a large collection is how a
+    // segment stops being reclaimable exactly when it most needs to be.
+    writeFileSync(tmp, '');
+    let batch = [];
+    let lines = 0;
     for (const rec of this.records.values()) {
-      lines.push(this._serialise({ o: 'i', id: rec.id, t: rec._updated, d: rec }));
+      batch.push(this._serialise({ o: 'i', id: rec.id, t: rec._updated, d: rec }));
+      lines++;
+      if (batch.length >= 10_000) { appendFileSync(tmp, batch.join('\n') + '\n'); batch = []; }
     }
-    writeFileSync(tmp, lines.length ? lines.join('\n') + '\n' : '');
+    if (batch.length) appendFileSync(tmp, batch.join('\n') + '\n');
     renameSync(tmp, this.path);
-    this.opCount = lines.length;
+    this.opCount = lines;
     return Math.max(0, before - statSync(this.path).size);
   }
 

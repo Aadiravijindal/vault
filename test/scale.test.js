@@ -15,7 +15,7 @@
  */
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, rmSync, statSync, readFileSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, rmSync, statSync, readFileSync, writeFileSync, appendFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
@@ -221,5 +221,62 @@ describe('the ceiling, and the fact that it is gone', () => {
     // lookup should be four orders of magnitude inside it.
     assert.ok(p95 < 1, `p95 point lookup ${p95.toFixed(4)}ms after sharding`);
     console.log(`    p95 point lookup after sharding: ${p95.toFixed(5)}ms (target <150ms)`);
+  });
+});
+
+describe('the limit that was actually binding: opening a large collection', () => {
+  test('a collection larger than V8\'s string cap can be opened at all', () => {
+    // Found by a DR drill, not by reasoning. `Collection._load` was
+    // `readFileSync(path, 'utf8')`, and V8 throws ERR_STRING_TOO_LONG above
+    // about 512 MB — so a data directory holding a collection past that size
+    // could not be opened. At ~500 bytes per fact that is roughly one million
+    // facts, which is a far lower ceiling than the 16,777,216 Map limit
+    // everyone was worried about, and it stopped the process from starting
+    // rather than merely slowing it down.
+    //
+    // Writing 520 MiB takes a while, so this test builds the smallest file that
+    // proves the property: one whose size exceeds the cap.
+    const V8_STRING_CAP = 0x1fffffe8;
+    const dir = tmp();
+    const path = join(dir, 'big.jsonl');
+
+    // Multi-byte characters, deliberately, so a chunk boundary that splits one
+    // shows up as corruption rather than passing unnoticed.
+    const pad = 'é'.repeat(180) + '日本語テキスト';
+    let batch = [];
+    let bytes = 0;
+    let n = 0;
+    while (bytes < V8_STRING_CAP + (2 << 20)) {
+      const line = JSON.stringify({ o: 'i', id: `f-${n}`, t: 1_750_000_000_000 + n, d: { id: `f-${n}`, claim: `Renewal ${n} ${pad}`, folder: 'sales/' } });
+      batch.push(line);
+      bytes += Buffer.byteLength(line) + 1;
+      n++;
+      if (batch.length >= 20_000) { appendFileSync(path, batch.join('\n') + '\n'); batch = []; }
+    }
+    if (batch.length) appendFileSync(path, batch.join('\n') + '\n');
+
+    const size = statSync(path).size;
+    assert.ok(size > V8_STRING_CAP, `the fixture is ${size} bytes, which does not exceed the cap it exists to exceed`);
+
+    // The old implementation, run against the same file, to prove the fixture
+    // genuinely trips the limit rather than merely being large.
+    assert.throws(() => readFileSync(path, 'utf8'), (e) => {
+      assert.equal(e.code, 'ERR_STRING_TOO_LONG');
+      return true;
+    }, 'readFileSync did not throw, so this test is not measuring what it claims');
+
+    const col = new Db({ dir }).collection('big');
+    assert.equal(col.size, n, `loaded ${col.size} of ${n} records`);
+
+    const mid = col.get(`f-${Math.floor(n / 2)}`);
+    assert.ok(mid, 'a record from the middle of the file is missing');
+    assert.ok(mid.claim.includes('日本語テキスト'), 'multi-byte content did not survive the chunked read');
+    assert.equal(mid.claim.includes('�'), false, 'a character was split across a chunk boundary and replaced');
+
+    const last = col.get(`f-${n - 1}`);
+    assert.ok(last, 'the final record is missing — the trailing partial chunk was dropped');
+    assert.equal(last.claim.includes('�'), false);
+
+    console.log(`    opened ${n.toLocaleString()} records from a ${(size / 1024 ** 2).toFixed(0)} MiB file (V8 string cap ${(V8_STRING_CAP / 1024 ** 2).toFixed(0)} MiB)`);
   });
 });
