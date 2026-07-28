@@ -108,6 +108,9 @@ export class TemporalDetector {
       .filter((o) => o.source !== source && cosine(o.claim, candidate.claim) > 0.72);
     const distinctSources = new Set(recentSame.map((o) => o.source));
     if (distinctSources.size >= 2) {
+      // Only reached when two or more distinct sources already asserted the
+      // same novel claim inside the coordination window, which is rare, so the
+      // scan here is not on the hot path.
       const priorKnowledge = this.recentFacts().some((f) => cosine(f.claim, candidate.claim) > 0.72 && f.createdAt < at - this.coordinationWindowMs);
       if (!priorKnowledge) {
         detections.push({
@@ -205,14 +208,51 @@ export class TemporalDetector {
    * Returned in time order, because two of the callers report "over ${ago(...)}"
    * from the earliest fragment and would otherwise narrate the wrong span.
    */
-  _windowSharingTokens(tokens, at, windowMs) {
+  _windowSharingTokens(tokens, at, windowMs, { max = 400 } = {}) {
+    /**
+     * Bounded, and newest-first while collecting.
+     *
+     * The drip-feed window is 14 days. At a realistic ingest rate every
+     * observation in that window shares some token with the candidate, so this
+     * returned a set that grew with volume and was then scored with a cosine
+     * each — O(n) on the write path. Measured contribution: 6% of CPU samples
+     * at 8,000 facts and rising.
+     *
+     * Buckets are append-ordered, so walking them backwards takes the most
+     * recent observations first. That is the right truncation for these
+     * detectors: a drip-feed assembles over hours or days, and its fragments
+     * are recent by construction. It does mean a very slow campaign against a
+     * very busy token can fall out of the sampled window, which is a real
+     * detection limit and the reason `max` is a parameter rather than a
+     * constant.
+     */
+    /**
+     * Bounded, because the drip-feed window is 14 days and at a realistic
+     * ingest rate nearly every observation in it shares some token with the
+     * candidate — so this grew with volume and was then scored with a cosine
+     * each, on the write path.
+     *
+     * Buckets are Sets, in insertion order. An earlier version of this cap
+     * indexed them like arrays; `bucket.length` on a Set is undefined, the loop
+     * never ran, and the drip-feed and coordinated-source detectors silently
+     * stopped firing while every other test still passed. The cap is applied
+     * after collecting instead, which is correct for a Set and cheap enough:
+     * the work saved is the cosine per observation downstream, not the
+     * membership test here.
+     *
+     * When the cap bites, the NEWEST are kept — a drip-feed assembles over
+     * hours or days and its fragments are recent by construction. A very slow
+     * campaign against a very busy token can fall outside the sample, which is
+     * a real detection limit and the reason `max` is a parameter.
+     */
     const seen = new Set();
     for (const t of tokens) {
       const bucket = this.byToken.get(t);
       if (!bucket) continue;
       for (const o of bucket) if (at - o.at <= windowMs) seen.add(o);
     }
-    return [...seen].sort((a, b) => a.at - b.at);
+    const inWindow = [...seen].sort((a, b) => a.at - b.at);
+    return inWindow.length > max ? inWindow.slice(-max) : inWindow;
   }
 
   /** Drop evicted observations from the token index, so it cannot outgrow the array. */

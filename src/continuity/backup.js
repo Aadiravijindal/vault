@@ -43,6 +43,7 @@ import { VaultError, forbidden } from '../util/errors.js';
 import { constantTimeEqual } from '../util/crypto.js';
 
 const sha256 = (buf) => createHash('sha256').update(buf).digest('hex');
+const NEWLINE = Buffer.from('\n');
 
 /** Files that are keys, not data. Backed up only when explicitly asked for. */
 const KEY_FILES = new Set(['root.key']);
@@ -719,8 +720,28 @@ function prefixSha(path, length) {
  * a restore that merely stopped *reading* early would leave the data recoverable
  * by anyone who opened the file.
  */
+/**
+ * Iterate JSONL lines out of a Buffer without stringifying the whole thing.
+ *
+ * `Buffer.toString()` throws ERR_STRING_TOO_LONG past V8's ~512 MB cap, so
+ * every helper that did it crashed on a large collection — in the backup path,
+ * which is the one that must not fail when there is a lot of data.
+ */
+function* jsonlLines(bytes) {
+  let start = 0;
+  while (start < bytes.length) {
+    let nl = bytes.indexOf(0x0a, start);
+    if (nl === -1) nl = bytes.length;
+    if (nl > start) {
+      const line = bytes.subarray(start, nl).toString('utf8');
+      if (line.trim()) yield line;
+    }
+    start = nl + 1;
+  }
+}
+
 function truncateTo(bytes, to) {
-  const lines = bytes.toString('utf8').split('\n');
+  const lines = jsonlLines(bytes);
   const kept = [];
   let dropped = 0;
   for (const line of lines) {
@@ -732,24 +753,46 @@ function truncateTo(bytes, to) {
     if (t != null && t > to) { dropped++; continue; }
     kept.push(line);
   }
-  return { bytes: Buffer.from(kept.length ? kept.join('\n') + '\n' : ''), kept: kept.length, dropped };
+  // Concatenated as buffers rather than joined as one string, for the same
+  // reason: the kept portion of a large collection can itself exceed the cap.
+  const out = [];
+  for (const line of kept) { out.push(Buffer.from(line, 'utf8'), NEWLINE); }
+  return { bytes: out.length ? Buffer.concat(out) : Buffer.alloc(0), kept: kept.length, dropped };
 }
 
 function countLines(bytes) {
   let n = 0;
-  for (const line of bytes.toString('utf8').split('\n')) if (line.trim()) n++;
+  for (const _ of jsonlLines(bytes)) n++;
   return n;
 }
 
-/** The newest `t` in a chunk — what an RPO is honestly measured against. */
+/**
+ * The newest `t` in a chunk — what an RPO is honestly measured against.
+ *
+ * Scanned backwards over the raw bytes rather than by stringifying the chunk.
+ * `bytes.toString()` throws ERR_STRING_TOO_LONG above V8's ~512 MB string cap,
+ * which meant taking a backup of a large collection crashed the backup — found
+ * by a DR drill at 12,000 facts, and it would have happened to any tenant whose
+ * conversation archive passed that size. A backup path that fails on large
+ * inputs fails precisely when a backup matters most.
+ *
+ * Only the tail is examined. Operations are appended in time order, so the
+ * newest timestamp is at the end; reading the last few lines answers the
+ * question without materialising the file.
+ */
 function lastRecordTimestamp(bytes) {
+  const TAIL = 1 << 20;
+  const from = Math.max(0, bytes.length - TAIL);
   let latest = 0;
-  for (const line of bytes.toString('utf8').split('\n')) {
+  const tail = bytes.subarray(from).toString('utf8');
+  // The first line of the tail may be truncated mid-record; JSON.parse rejects
+  // it and the loop moves on, which is why this is safe to slice blindly.
+  for (const line of tail.split('\n')) {
     if (!line.trim()) continue;
     try {
       const t = JSON.parse(line).t;
       if (typeof t === 'number' && t > latest) latest = t;
-    } catch { /* not every line is an operation */ }
+    } catch { /* a torn first line, or a line that is not an operation */ }
   }
   return latest || null;
 }

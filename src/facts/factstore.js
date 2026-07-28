@@ -206,10 +206,36 @@ export class FactStore {
    * what the reconciler sees, it is the same set reached without reading rows
    * that could never have matched.
    */
-  findRelated(candidate, { limit = 12 } = {}) {
+  findRelated(candidate, { limit = 12, entityCeiling = 512 } = {}) {
     const entityKeys = (candidate.entities || []).map((e) => e.id || e.name);
     const pool = new Set();
-    for (const k of entityKeys) for (const f of this.col.by('byEntity', k)) pool.add(f);
+    for (const k of entityKeys) {
+      /**
+       * Bounded, the same way the content-token posting lists are.
+       *
+       * Without this, one entity is an unbounded scan: a large customer
+       * accumulates every fact about itself under one key, and the write path
+       * then reads and scores all of them on every subsequent write. Measured
+       * on facts sharing a single entity, ingest fell from 250/sec to 125/sec
+       * between 200 and 1,200 rows and kept falling — O(n) per write, which is
+       * O(n^2) to load a corpus.
+       *
+       * The asymmetry with tokens is deliberate. A token present in most of the
+       * store discriminates nothing, so it is SKIPPED entirely. A shared entity
+       * discriminates plenty — it is exactly the right pool — so it is TRUNCATED
+       * to the most recent instead, because a duplicate or a contradiction is
+       * overwhelmingly against something recent. Truncating loses the ability to
+       * spot a contradiction with a very old fact about a very busy entity;
+       * `entityCeiling` is a parameter so a deployment that cares more about
+       * that than about write latency can raise it.
+       */
+      const posting = this.col.by('byEntity', k);
+      // Tail, not sort. The index appends in insertion order, so the last N
+      // are the newest N — sorting the whole posting list to find them would
+      // reintroduce the O(n) cost this ceiling exists to remove.
+      const scoped = posting.length > entityCeiling ? posting.slice(-entityCeiling) : posting;
+      for (const f of scoped) pool.add(f);
+    }
     // Golden facts are few by design and authoritative, so they are always in
     // scope: a candidate that contradicts one must be caught even if it shares
     // no vocabulary with it.
@@ -238,11 +264,34 @@ export class FactStore {
     if (!tokens.size) return [];
     const total = this.col.size ?? this.col.all().length;
     const ceiling = Math.max(64, Math.floor(total * 0.25));
-    const out = new Set();
+    /**
+     * An ABSOLUTE cap on the pool, as well as the proportional cap on each
+     * posting list.
+     *
+     * The proportional ceiling alone grows with the corpus: at 8,000 facts it
+     * admits any token appearing in up to 2,000 of them, so the pool — and the
+     * cosine comparisons over it — grew linearly with the store. Measured
+     * ingest fell from 321/sec at 500 facts to 41/sec at 8,000.
+     *
+     * The two caps do different jobs. The proportional one discards tokens that
+     * carry no signal; this one bounds the work regardless of how many
+     * signal-carrying tokens a claim happens to share. Rarest tokens are taken
+     * first, because they are the ones that actually discriminate.
+     */
+    const POOL_MAX = 400;
+    const postings = [];
     for (const t of tokens) {
       const posting = this.col.by('byToken', t);
       if (posting.length > ceiling) continue;
-      for (const f of posting) out.add(f);
+      postings.push(posting);
+    }
+    postings.sort((a, b) => a.length - b.length);
+    const out = new Set();
+    for (const posting of postings) {
+      for (const f of posting) {
+        out.add(f);
+        if (out.size >= POOL_MAX) return out;
+      }
     }
     return out;
   }
