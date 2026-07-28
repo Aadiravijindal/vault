@@ -867,3 +867,80 @@ describe('A11 — identity state survives a restart, or the control is decorativ
     rmSync(dir, { recursive: true, force: true });
   });
 });
+
+// ===========================================================================
+// F7 — the organisational artifacts exist, on disk, with real content
+// ===========================================================================
+
+describe('F7 — a document that says TBD anywhere has not been written', () => {
+  const ROOT = new URL('../', import.meta.url).pathname;
+
+  /** Artifacts this session claims to have produced, and what each must contain. */
+  const ARTIFACTS = [
+    ['docs/BUG-BOUNTY.md', 3000, [/safe harbour/i, /gate bypass/i, /\$\d/, /disclosure/i]],
+    ['docs/VULNERABILITY-DISCLOSURE.md', 2000, [/safe harbour/i, /90 days/i, /security@/]],
+    ['docs/PENTEST-PACKAGE.md', 5000, [/rules of engagement/i, /out of scope/i, /mutation/i, /credential/i]],
+    ['docs/SELF-REVIEW.md', 8000, [/written by the same agent/i, /root cause/i, /questions for the reviewer/i]]
+  ];
+
+  test('each artifact exists and is not a stub', () => {
+    for (const [rel, minBytes] of ARTIFACTS) {
+      const path = join(ROOT, rel);
+      assert.ok(existsSync(path), `${rel} does not exist`);
+      const body = readFileSync(path, 'utf8');
+      assert.ok(body.length >= minBytes,
+        `${rel} is ${body.length} bytes — an outline is not a deliverable`);
+    }
+  });
+
+  test('none of them contains a placeholder', () => {
+    // "It can be marked done when it is written" is the whole point; a document
+    // containing TBD has not been written, whatever the checklist says.
+    const forbidden = /\bTBD\b|\bTODO\b|placeholder|lorem ipsum|\bXXX\b|\[insert |\[your |coming soon/i;
+    for (const [rel] of ARTIFACTS) {
+      const body = readFileSync(join(ROOT, rel), 'utf8');
+      const hit = body.split('\n').find((l) => forbidden.test(l));
+      assert.equal(hit, undefined, `${rel} still contains a placeholder: ${hit}`);
+    }
+  });
+
+  test('none of them has an empty section', () => {
+    // A heading with nothing under it is a placeholder that dodges the grep.
+    for (const [rel] of ARTIFACTS) {
+      const lines = readFileSync(join(ROOT, rel), 'utf8').split('\n');
+      for (let i = 0; i < lines.length; i++) {
+        const m = /^(#{1,6}) /.exec(lines[i]);
+        if (!m) continue;
+        const rest = lines.slice(i + 1);
+        const next = rest.findIndex((l) => /^#{1,6} /.test(l));
+        // A heading whose next heading is DEEPER is a container for its
+        // subsections, not an empty section. Only a heading followed by
+        // nothing before a sibling or an uncle is a stub.
+        if (next !== -1) {
+          const depth = /^(#{1,6}) /.exec(rest[next])[1].length;
+          if (depth > m[1].length) continue;
+        }
+        const body = (next === -1 ? rest : rest.slice(0, next)).join('').replace(/[-|\s*]/g, '');
+        assert.ok(body.length > 0, `${rel}: section "${lines[i].trim()}" is empty`);
+      }
+    }
+  });
+
+  test('each names its required content rather than gesturing at it', () => {
+    for (const [rel, , required] of ARTIFACTS) {
+      const body = readFileSync(join(ROOT, rel), 'utf8');
+      for (const pattern of required) {
+        assert.match(body, pattern, `${rel} is missing required content: ${pattern}`);
+      }
+    }
+  });
+
+  test('the self-review names every prior claim proven false, not a summary count', () => {
+    // The list has been non-empty every session. If it is ever empty that must
+    // be stated explicitly, not achieved by omitting the section.
+    const body = readFileSync(join(ROOT, 'docs/SELF-REVIEW.md'), 'utf8');
+    const rows = body.split('\n').filter((l) => /^\| \d+ \|/.test(l));
+    assert.ok(rows.length >= 13,
+      `the false-claim register lists ${rows.length} entries; eight were known before this session and five were found during it`);
+  });
+});
