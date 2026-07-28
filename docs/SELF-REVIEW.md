@@ -1,6 +1,6 @@
 # Structured Self-Review for a Human Reviewer
 
-**Version:** 1.0 — 2026-07-28.
+**Version:** 2.0 — 2026-07-28 (second pass).
 
 ---
 
@@ -15,10 +15,12 @@ and specific: to make an independent review *faster and better targeted* by
 saying where the author already knows the ground is soft.
 
 There is a concrete reason to distrust this document's confident passages. Over
-four working sessions on this codebase, the same author reported eleven
+five working sessions on this codebase, the same author reported **eighteen**
 mechanisms as complete and working which were subsequently proven, by execution,
-not to be. Several were written minutes before being declared done. The full list
-is §5, and it is the most useful section here.
+not to be. Several were written minutes before being declared done. One was
+introduced *during the writing of this document*, by the author, while fixing
+another entry on the list — see the end of §5. The full register is §5, and it
+is the most useful section here.
 
 The pattern in every case was identical: **the code existed, was well-structured,
 had tests, and did not do what it said.** The tests asserted against the code's
@@ -95,6 +97,10 @@ genuinely exercised. Do not read this table as assurance of correctness.
 | 5 | Erasure suppression persistence | Removed `_persistSuppression` | Pre-erasure backup restore returned the erased canary | 1 test failed; restored → green |
 | 6 | Erasure key-scope selection | Shredded `subject:<name>` as the old code did, without consulting the record | Assertion that the guessed scope ≠ the real scope and the real key survives | Reproduced the original bug exactly |
 | 7 | MFA enrolment persistence | Detached the collection (`v.mfa.col = null`) | Restart round-trip | Enrolment vanished, as required |
+| 8 | Sharding past the V8 Map ceiling | `ShardedMap(1)` — one shard | Capacity assertion collapses to 16,777,216 | Caught; the ceiling returns with one shard |
+| 9 | Parallel chain verification | Byte-level tamper at 0.2%, 50% and 99.8% of a 3,000,000-entry file, in place, same-length | `verifyParallel` reported the exact seq each time; clean after restore | Caught at all three positions, including across worker seams |
+| 10 | Vendor adapter error handling | A conforming server returning 401/403/404/409/422/429/500/503 | Every status surfaced with `vendorStatus` and `Retry-After` read | Caught; none swallowed |
+| 11 | Readiness evidence integrity | Re-read all 92 cited ledger entries and compared hashes | Any mismatch fails the package test | 0 mismatched |
 
 **What is NOT mutation-tested, and should be:** the gate's ten checks
 individually, the wall enforcement, break-glass two-person control, and Employee
@@ -272,9 +278,32 @@ This is the most useful section for a reviewer, because it locates the pattern.
 | 12 | "Backups crypto-shredded — the ciphertext is unrecoverable" (on the erasure receipt) | Restoring a pre-erasure backup returned the record verbatim. The shred destroyed `subject:<name>`, a scope created by the shred call itself, which had encrypted nothing | Same root cause as #3, in a second place: the scope was **guessed rather than read from the record** | Fixed, mutation-tested |
 | 13 | MFA, device bindings and SCIM groups persist | All three were bare `Map`s. Every restart unenrolled every second factor, forgot every bound device, and emptied the group directory | In-memory state in the security-critical layer | Fixed, mutation-tested |
 
+### Found in this session's second pass (5)
+
+| # | Claim | Reality | Root cause | Status |
+|---|---|---|---|---|
+| 14 | "100M facts" was a target the architecture could reach | `Collection.records` was a JS `Map`; V8 throws at exactly 16,777,216 entries. Proven by filling one until it died | A hard platform limit nobody had run into, because nobody had run it | Fixed — sharded, 17,277,216 records proven in one collection |
+| 15 | "Full-corpus chain verification under one hour" at 10B entries | Measured 17 hours single-threaded. A 17× miss | The target was written without a measurement behind it | Partly fixed — parallel verification, 3.51× on 4 cores; needs 36 cores to hit the target, and that is now stated |
+| 16 | The Built-in/Connected/Both toggle can reach the named vendors | 81 vendors were listed with only a generic `POST /{op}` adapter. No named vendor implements that | A catalogue was mistaken for an integration | Fixed — 81 bespoke adapters, contract- and conformance-tested |
+| 17 | The backup path works | `Buffer.toString()` on a whole collection chunk throws past V8's ~512 MB string cap. Taking a backup of a large collection crashed the backup | Never run at a size where it mattered | Fixed — buffer-based throughout |
+| 18 | Ingest throughput is 84,000/sec | That was a storage-layer benchmark, not the gated write path. End-to-end ingest measured 250/sec at 200 facts falling to 16/sec at 8,000 — quadratic | Two bounds that grew with the corpus, and one recomputation per comparison | Improved 5× to 79/sec at 8,000; still not flat, and stated in KNOWN-LIMITS.md |
+
+### And one I introduced, mid-session, while fixing #18
+
+Capping the temporal detector's token window, I indexed its buckets like
+arrays. They are `Set`s. `bucket.length` is `undefined`, the loop never ran, and
+**the drip-feed and coordinated-source detectors silently stopped firing** —
+while 795 of 797 tests still passed.
+
+Two did not. That is the suite doing its job, and it is the reason the suite
+exists. But it is worth recording as its own entry, because it is this
+session's failure class committed by the person writing about this session's
+failure class: a mechanism that is present, reports nothing wrong, and does
+nothing.
+
 ### The pattern, stated plainly
 
-Of thirteen, **eleven** are one of three shapes:
+Of eighteen, **fifteen** are one of three shapes:
 
 1. **A capability implemented and never enabled** (#7, #10). The code is correct.
    Nothing calls it. Every unit test of the mechanism passes.
@@ -284,7 +313,16 @@ Of thirteen, **eleven** are one of three shapes:
 3. **State that must outlive the process, kept in the process** (#2, #11, #13).
    Tests pass because they never cross the boundary.
 
-A reviewer looking for #14 should look for those three shapes first.
+And a fourth shape emerged in the second pass, which earlier sessions had no
+way to see because they never ran anything to failure:
+
+4. **A number that was never measured** (#14, #15, #18). The 100M target, the
+   one-hour verification target and the 84,000/sec figure were all written
+   down, carried forward, and repeated. Two were false and one was measuring
+   something other than what it was quoted for. Running the system to
+   destruction is the only thing that found them.
+
+A reviewer looking for #19 should look for those four shapes first.
 
 ### One correction to my own method, this session
 
@@ -335,7 +373,36 @@ Not "please review". These are the questions I cannot answer myself.
 
 ---
 
-## 7. What this session did not reach
+## 7. What the second pass reached, and what it did not
+
+**Reached, with measurements:** the scale ceiling (fixed and proven past),
+parallel chain verification, 81 vendor adapters, the three readiness packages
+generated from real ledger evidence, the attack corpus with 24 seam variants,
+the drills, the MSA/DPA and escrow as final text, and KNOWN-LIMITS.md as a
+shipped document.
+
+**Still not reached, and blocked on things code cannot supply:**
+
+- **Live verification of any vendor.** Re-probed from scratch: hosts now
+  resolve, and all but five return 403 from the egress proxy. That is an
+  organisation policy denial which the proxy documentation says to report
+  rather than route around, so it was reported. Needs a network path and one
+  credential per vendor.
+- **An executed penetration test, audit, or certification.** All three need a
+  contract, a budget and a counterparty.
+- **Independent human code review.** Still the one thing that cannot be
+  self-certified, and the reason this document opens the way it does.
+- **100M facts and 50 TB** run for real. 100M needs ~32 GiB of heap against
+  this machine's 15 GiB; 50 TB needs 50 TB. Both are extrapolated with the
+  method and the error bars stated, and neither should be claimed in a sales
+  context until run.
+- **A7–A10 re-verification** (token-exchange ordering across all two-step
+  connectors, the programmatic gate-bypass assertion, break-glass attacks,
+  Employee Privacy Mode attacks). The attack corpus covers a great deal of the
+  gate, but the specific claim that *no code path* reaches the fact store
+  without the gate is still asserted only by its author.
+
+## 7b. What the first pass did not reach
 
 Stated plainly, because an incomplete list is its own form of over-claiming.
 

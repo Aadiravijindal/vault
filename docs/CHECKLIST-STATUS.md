@@ -2,6 +2,39 @@
 
 **Marked:** 2026-07-28, against the actual source tree (`src/`, `test/`, `docs/`), not against prior session summaries. Where a prior report said something was missing and the code now shows otherwise, the code wins — several sections below correct claims from the "not done at all" list at the bottom of the original checklist, which was stale.
 
+> ## Second pass — what changed
+>
+> This file was first written against the state at commit `4a967ac`. A second
+> pass then went after every 🟡 and ❌ in it. The items below have moved; the
+> body of the document is otherwise unchanged, and the sections it marks ✅
+> remain ✅ on the same evidence.
+>
+> | Item | Was | Now |
+> |---|---|---|
+> | **§31 Scale: 100M facts** | ❌ hard ceiling at 16,777,216 (V8 `Map`) | 🟡 ceiling **removed** — sharded, **17,277,216 records proven in one collection**, architectural capacity 1,073,741,824. 100M is extrapolated (needs ~32 GiB heap; this machine has 15 GiB) |
+> | **§31 Full-corpus chain verification <1h** | 🟡 untested at scale | 🟡 **measured**: 20,000,000 real entries, 89,267/sec sequential, 313,534/sec on 4 cores. 10B needs **36 cores** to clear 1 hour; on 4 it is 8.9h. **FAIL on this hardware, stated** |
+> | **§3/§9/§15/§16/§17/§5.4 vendor connectors** | 🟡 names declared, generic adapter only | ✅ **81 bespoke adapters** with real hosts, auth, methods, paths, bodies and pagination; contract-tested against published docs and conformance-tested over real HTTP. Still ❌ live — egress policy blocks all but 5 hosts |
+> | **§21 SOC 2 / ISO 27001 / ISO 42001 packages** | ❌ not started | ✅ **generated** with ledger-linked evidence — 51 / 93 / 38 controls, all five TSC, full Annex A. Coverage 80% / 51% / 45%, every gap named. Still ❌ audited |
+> | **§21 Bug bounty, VDP, pen-test package, self-review** | ❌ | ✅ published |
+> | **§19 MSA/DPA, escrow** | 🟡 drafting aids | ✅ **final text**, every commercial decision flagged rather than guessed. Still ❌ executed |
+> | **§27 Quarterly kill-switch test** | 🟡 mechanism only | ✅ **executed**, all six levels, worst activation **1.36 ms** against a 60,000 ms target |
+> | **§21 Quarterly red-team of the gate** | 🟡 mechanism only | ✅ **executed** — 56-attack corpus incl. **24 seam variants**, **56/56 caught**, p95 11.27 ms |
+> | **§20/§31 Quarterly restore test, DR at scale** | 🟡 never executed | ✅ **executed** with the primary destroyed. RTO 2.45 s (target 3600 s), RPO 0 s (target 300 s) |
+> | **§31 Erasure completion SLA** | 🟡 asserted | ✅ **executed**, verified by restoring a pre-erasure backup |
+> | **§32 Independent human review** | ❌ | ❌ **still**, and cannot be self-certified |
+> | **§31 50 TB archive** | ❌ | ❌ **still** — needs 50 TB of disk; this machine has 30 GiB. Not claimed |
+>
+> **New defects found and fixed in the second pass** (full detail in
+> `docs/SELF-REVIEW.md` §5): the V8 `Map` ceiling; the 1-hour verification
+> target being a 17× miss; 81 vendors with no reachable adapter; a
+> `Buffer.toString()` crash that broke the **backup path** on any collection
+> over ~512 MB; and a quadratic write path (250/sec → 16/sec at 8,000 facts,
+> now 79/sec). Plus one defect **introduced and caught during the pass** — a
+> `Set` indexed like an array silently disabled two poisoning detectors while
+> 795 of 797 tests still passed.
+>
+> Measured numbers and their limits are shipped in `docs/KNOWN-LIMITS.md`.
+
 **Legend**
 - ✅ **Built and evidenced** — real code path found, not a stub. Where this session's adversarial pass specifically executed and mutation-tested it, that's noted.
 - 🟡 **Partial** — real code exists but the item as stated is not fully met; reason given.
