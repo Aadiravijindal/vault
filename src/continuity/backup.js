@@ -48,6 +48,14 @@ const sha256 = (buf) => createHash('sha256').update(buf).digest('hex');
 const KEY_FILES = new Set(['root.key']);
 
 /**
+ * Metadata objects live in the store alongside the data, under reserved
+ * prefixes. `_sourceFiles` never produces a name with a `--` in this position,
+ * so a data object can't collide with one.
+ */
+const MANIFEST_PREFIX = 'manifest--';
+const SUPPRESSION_PREFIX = 'suppression--';
+
+/**
  * The immutable backup target.
  *
  * Modelled on object-lock storage (S3 Object Lock in compliance mode, Azure
@@ -223,18 +231,63 @@ export class BackupEngine {
         return previous(e);
       };
     }
+    // Order matters: read the store first, then let the live KMS add anything
+    // newer. A fresh process standing up against an existing store has no KMS
+    // and no primary, and the store is the only thing left.
+    this._rehydrateFromStore();
     this._absorbSuppressions();
+  }
+
+  /**
+   * Rebuild the manifest chain and the suppression list from the store.
+   *
+   * Both used to live only in the memory of the process that took the backup,
+   * which meant they did not exist in the one situation backups are for. The
+   * primary being gone is what a disaster IS; every restore test passed
+   * because it restored from the same live process that had just written the
+   * backup, so the boundary was never crossed. Standing up a new engine
+   * against the store threw "there are no backups to restore from", and had
+   * the manifest survived on its own, a restore would have handed back data an
+   * erasure receipt said was destroyed — because the suppression list was gone
+   * with it.
+   */
+  _rehydrateFromStore() {
+    let objects;
+    try { objects = this.store.list(); } catch { return; }
+
+    const manifests = [];
+    for (const object of objects) {
+      if (object.startsWith(MANIFEST_PREFIX)) {
+        try { manifests.push(JSON.parse(this.store.get(object).toString('utf8'))); } catch { /* a torn object is not a reason to refuse to restore the rest */ }
+      } else if (object.startsWith(SUPPRESSION_PREFIX)) {
+        try { this.recordSuppression(JSON.parse(this.store.get(object).toString('utf8'))); } catch { /* same */ }
+      }
+    }
+    if (!manifests.length) return;
+    manifests.sort((a, b) => (a.at ?? 0) - (b.at ?? 0));
+    this.manifests = manifests;
+
+    // Rebuild the incremental cursor too. Without it the next backup after a
+    // failover would be an append starting at offset 0 of a file the store
+    // already holds a prefix of, which is silent duplication.
+    for (const m of manifests) {
+      for (const f of m.files ?? []) {
+        if (f.mode === 'full') this.state.set(f.name, { size: f.size, prefixSha: f.sha256 });
+      }
+    }
   }
 
   /** Note a crypto-shred. Idempotent, and there is no un-record. */
   recordSuppression(record) {
     if (!record?.scope) return null;
     if (!this.suppressions.has(record.scope)) {
-      this.suppressions.set(record.scope, {
+      const tombstone = {
         scope: record.scope, keyId: record.keyId, destroyedAt: record.destroyedAt ?? iso(),
         actor: record.actor ?? 'unknown', reason: record.reason ?? 'crypto-shredded',
         requestId: record.requestId ?? null, version: record.version ?? 1, created: record.created ?? 0
-      });
+      };
+      this.suppressions.set(record.scope, tombstone);
+      this._persistSuppression(tombstone);
     }
     return this.suppressions.get(record.scope);
   }
@@ -245,6 +298,23 @@ export class BackupEngine {
     for (const k of this.kms.inventory()) {
       if (k.destroyed) this.recordSuppression({ scope: k.scope, keyId: k.keyId, destroyedAt: k.destroyed, version: k.version });
     }
+  }
+
+  /**
+   * Write the tombstone into the backup store, beside the ciphertext it
+   * suppresses.
+   *
+   * An erasure that only exists on the primary is undone by restoring a backup
+   * taken before it, on any machine that never saw the primary. Putting it in
+   * the store means the ciphertext and the instruction never to decrypt it
+   * travel together.
+   */
+  _persistSuppression(tombstone) {
+    const object = `${SUPPRESSION_PREFIX}${sha256(tombstone.scope).slice(0, 24)}.json`;
+    if (this.store.has(object)) return;
+    try {
+      this.store.put(object, Buffer.from(JSON.stringify(tombstone)), { credential: this.credential });
+    } catch { /* a store we cannot write to is reported by the backup itself, not here */ }
   }
 
   // -- taking backups ------------------------------------------------------
@@ -316,6 +386,10 @@ export class BackupEngine {
     };
     manifest.hash = sha256(Buffer.from(JSON.stringify({ ...manifest, hash: undefined })));
     this.manifests.push(manifest);
+    // The manifest goes into the store with the data it describes. A list of
+    // objects with no manifest is not a backup — nothing knows which objects
+    // belong to which point in time, or what order to lay them down in.
+    this.store.put(`${MANIFEST_PREFIX}${id}.json`, Buffer.from(JSON.stringify(manifest)), { credential: this.credential, at });
 
     this.ledger?.append('admin.action', {
       subject: id, actor, action: 'backup.completed', reason,

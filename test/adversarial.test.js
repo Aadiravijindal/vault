@@ -27,6 +27,7 @@ import { Vault, PLAINTEXT_COLLECTIONS } from '../src/index.js';
 import { Ledger } from '../src/ledger/ledger.js';
 import { Db } from '../src/storage/db.js';
 import { Kms } from '../src/storage/kms.js';
+import { BackupEngine, BackupStore } from '../src/continuity/backup.js';
 
 const tmp = (p = 'vault-adv-') => mkdtempSync(join(tmpdir(), p));
 
@@ -402,5 +403,90 @@ describe('the ledger reduces what it is given, by shape and not by key name', ()
         'the salt was not stable across restart — yesterday\'s entries are unfindable');
       again.close();
     } finally { rmSync(dir, { recursive: true, force: true }); }
+  });
+});
+
+// ===========================================================================
+// A3 — crypto-shredding, across a restart AND across a restore
+// ===========================================================================
+
+describe('A3 — an erasure survives a restart and a restore from before it', () => {
+  /**
+   * The disaster the backups exist for is the one where the primary is gone.
+   * Every restore test before this one ran the restore from the same process
+   * that took the backup, so it never crossed the boundary that matters.
+   */
+  function scenario() {
+    const primary = tmp('a3-primary-');
+    const storeDir = tmp('a3-store-');
+    const key = Ledger.newSigningKey();
+
+    const v = new Vault({ dir: primary, signingKey: key, administrators: ['ciso', 'cto'], seedRules: false });
+    v.registerAgent({ id: 'a-1', name: 'S', purpose: 'p', businessOwner: 'd', technicalOwner: 's', department: 'sales', mode: 'inline', folders: ['sales/'] });
+    const cred = v.issueCredential('a-1', {}).credential;
+    v.ingest({ agentId: 'a-1', channel: 'system_of_record', turns: [{ speaker: 's', text: 'A3SHRED-CANARY belongs to one data subject' }] },
+      { credential: cred, folderHint: 'sales/accounts/', sampleRoll: 0 });
+    const fact = v.facts.all().find((f) => /A3SHRED-CANARY/.test(f.claim));
+    assert.ok(fact, 'nothing to shred means nothing to prove');
+    const scope = v.db.collection('facts').keyScope(fact);
+
+    const store = new BackupStore({ dir: storeDir, writeCredential: 'wr', deleteCredential: 'del' });
+    const engine = new BackupEngine({ source: primary, db: v.db, kms: v.kms, ledger: v.ledger, store, credential: 'wr' });
+    engine.full({ actor: 'ops', reason: 'taken BEFORE the erasure' });
+
+    // The erasure happens after that backup was taken.
+    v.kms.cryptoShred(scope, { actor: 'dpo', reason: 'erasure ER-1', requestId: 'ER-1' });
+    v.close();
+    return { primary, storeDir, key, scope };
+  }
+
+  test('after a restart the shredded record cannot be read from the primary', () => {
+    const { primary, key } = scenario();
+    const again = new Vault({ dir: primary, signingKey: key, administrators: ['ciso', 'cto'], seedRules: false });
+    const claims = again.facts.all().map((f) => f.claim ?? '').join(' ');
+    assert.equal(claims.includes('A3SHRED-CANARY'), false,
+      'the key was destroyed and the record came back anyway — the tombstone did not survive the restart');
+    again.close();
+  });
+
+  test('a fresh process holding only the backup store can restore at all', () => {
+    // This failed outright before: the manifest chain lived in the memory of
+    // the process that took the backup, so restore() threw "there are no
+    // backups to restore from" the moment the primary was gone. Every passing
+    // restore test had been restoring from the same live process.
+    const { primary, storeDir, key } = scenario();
+    rmSync(primary, { recursive: true, force: true });
+
+    const store = new BackupStore({ dir: storeDir, writeCredential: 'wr', deleteCredential: 'del' });
+    const engine = new BackupEngine({ source: primary, store, credential: 'wr' });
+    assert.ok(engine.manifests.length >= 1,
+      'a backup engine standing up against an existing store found no backups — the manifest was never persisted');
+
+    const into = tmp('a3-restore-');
+    const out = engine.restore({ into, actor: 'dr', reason: 'the primary is gone' });
+    assert.ok(out.files.length > 0, 'the restore produced no files');
+    assert.ok(existsSync(join(into, 'facts.jsonl')), 'the restored directory has no fact collection in it');
+    const restored = new Vault({ dir: into, signingKey: key, seedRules: false });
+    assert.ok(restored.facts.stats().total >= 0);
+    restored.close();
+  });
+
+  test('and that restore does NOT hand back what was erased', () => {
+    const { primary, storeDir, key } = scenario();
+    rmSync(primary, { recursive: true, force: true });
+
+    const store = new BackupStore({ dir: storeDir, writeCredential: 'wr', deleteCredential: 'del' });
+    const engine = new BackupEngine({ source: primary, store, credential: 'wr' });
+    const into = tmp('a3-restore2-');
+    const out = engine.restore({ into, actor: 'dr', reason: 'the primary is gone' });
+
+    assert.ok(out.unreadable > 0,
+      'the restore reported nothing suppressed, so the suppression list did not survive the loss of the primary');
+
+    const restored = new Vault({ dir: into, signingKey: key, seedRules: false });
+    const claims = restored.facts.all().map((f) => f.claim ?? '').join(' ');
+    assert.equal(claims.includes('A3SHRED-CANARY'), false,
+      'erased content came back from a pre-erasure backup restored on a clean machine — the erasure receipt is false');
+    restored.close();
   });
 });
