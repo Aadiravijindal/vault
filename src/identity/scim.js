@@ -321,7 +321,14 @@ export class ScimService {
     const roles = groups.map((g) => this.groupRoles[g] ?? this.groupRoles[String(g).toLowerCase()]).filter(Boolean);
     if (!roles.length) return this.defaultRole;
     const precedence = ['admin', 'security', 'legal', 'compliance', 'platform', 'risk', 'auditor', 'finance', 'works_council', 'department_head', 'folder_owner', 'end_user'];
-    return roles.sort((a, b) => precedence.indexOf(a) - precedence.indexOf(b))[0];
+    // A role this list has never heard of ranks last, not first. `groupRoles`
+    // is a customer-supplied map, so any name they choose that is not on this
+    // list scored -1 from indexOf and sorted ahead of `admin` — one custom
+    // group in the IdP silently deciding the role of everyone who also holds a
+    // known one. Ranking unknowns last means a custom mapping can only ever be
+    // overridden by a role Vault understands, never the other way round.
+    const rank = (r) => { const i = precedence.indexOf(r); return i === -1 ? Number.MAX_SAFE_INTEGER : i; };
+    return roles.sort((a, b) => rank(a) - rank(b))[0];
   }
 
   // -- reads ---------------------------------------------------------------

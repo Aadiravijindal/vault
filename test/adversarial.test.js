@@ -626,3 +626,133 @@ describe('A4 — every method the erasure receipt claims actually happened', () 
     rmSync(dir, { recursive: true, force: true });
   });
 });
+
+// ===========================================================================
+// A5 — SCIM: every route by which access should end
+// ===========================================================================
+
+describe('A5 — deprovisioning takes effect on the NEXT request, by every route', () => {
+  const ROLES = { 'vault-admins': 'admin', 'vault-users': 'end_user' };
+
+  function withUser(groups = ['vault-admins']) {
+    const dir = tmp('a5-');
+    const v = new Vault({
+      dir, signingKey: Ledger.newSigningKey(), administrators: ['a', 'b'], seedRules: false,
+      scim: { groupRoles: ROLES }
+    });
+    const user = v.scim.createUser({
+      userName: 'sarah@acme.com', name: { givenName: 'Sarah', familyName: 'R' },
+      groups: groups.map((g) => ({ value: g })), active: true
+    }, { actor: 'idp' });
+    const session = v.sessions.create({
+      principal: { name: 'sarah@acme.com', role: v.scim.require(user.id).role },
+      amr: ['pwd'], ip: '10.0.0.1'
+    });
+    assert.equal(v.sessions.verify(session.token).valid, true, 'the session must start valid or the test proves nothing');
+    return { v, dir, user, session };
+  }
+
+  /** The measured revocation latency for each route, reported by the suite. */
+  const latencies = [];
+
+  function revokes(name, fn, { expectRevoked = true } = {}) {
+    test(name, () => {
+      const { v, dir, user, session } = withUser();
+      const t0 = process.hrtime.bigint();
+      fn(v, user);
+      const t1 = process.hrtime.bigint();
+      const ms = Number(t1 - t0) / 1e6;
+      latencies.push({ route: name, ms });
+
+      const after = v.sessions.verify(session.token);
+      assert.equal(after.valid, !expectRevoked,
+        expectRevoked
+          ? `${name} left the session usable — access does not end until the token expires`
+          : `${name} revoked a session it had no reason to`);
+      // Sub-second is the bar: this is the difference between server-side
+      // sessions and self-describing tokens, which is why sessions are stored.
+      assert.ok(ms < 1000, `${name} took ${ms.toFixed(2)}ms to revoke`);
+      v.close();
+      rmSync(dir, { recursive: true, force: true });
+    });
+  }
+
+  revokes('PATCH replace active:false', (v, u) => v.scim.patchUser(u.id, { Operations: [{ op: 'replace', path: 'active', value: false }] }, { actor: 'idp' }));
+  revokes('PATCH path-less replace, Entra style', (v, u) => v.scim.patchUser(u.id, { Operations: [{ op: 'replace', value: { active: false } }] }, { actor: 'idp' }));
+  revokes('PATCH replace groups — substitution, not append', (v, u) => v.scim.patchUser(u.id, { Operations: [{ op: 'replace', path: 'groups', value: [{ value: 'vault-users' }] }] }, { actor: 'idp' }));
+  revokes('PATCH remove groups', (v, u) => v.scim.patchUser(u.id, { Operations: [{ op: 'remove', path: 'groups', value: [{ value: 'vault-admins' }] }] }, { actor: 'idp' }));
+  revokes('PUT replaceUser active:false', (v, u) => v.scim.replaceUser(u.id, { userName: 'sarah@acme.com', active: false, groups: [{ value: 'vault-admins' }] }, { actor: 'idp' }));
+  revokes('PUT replaceUser de-escalates the role', (v, u) => v.scim.replaceUser(u.id, { userName: 'sarah@acme.com', active: true, groups: [{ value: 'vault-users' }] }, { actor: 'idp' }));
+  revokes('DELETE user', (v, u) => v.scim.deleteUser(u.id, { actor: 'idp' }));
+  revokes('deactivate, then delete', (v, u) => {
+    v.scim.patchUser(u.id, { Operations: [{ op: 'replace', path: 'active', value: false }] }, { actor: 'idp' });
+    v.scim.deleteUser(u.id, { actor: 'idp' });
+  });
+  revokes('Groups endpoint removes the member', (v, u) => {
+    const g = v.scim.createGroup({ displayName: 'vault-admins', members: [{ value: u.id }] }, { actor: 'idp' });
+    v.scim.patchGroup(g.id, { Operations: [{ op: 'remove', path: 'members', value: [{ value: u.id }] }] }, { actor: 'idp' });
+  });
+  revokes('Groups endpoint replaces members with an empty set', (v, u) => {
+    const g = v.scim.createGroup({ displayName: 'vault-admins', members: [{ value: u.id }] }, { actor: 'idp' });
+    v.scim.patchGroup(g.id, { Operations: [{ op: 'replace', path: 'members', value: [] }] }, { actor: 'idp' });
+  });
+  revokes('the group itself is deleted', (v, u) => {
+    const g = v.scim.createGroup({ displayName: 'vault-admins', members: [{ value: u.id }] }, { actor: 'idp' });
+    v.scim.deleteGroup(g.id, { actor: 'idp' });
+  });
+
+  // Adding a group that does not change the effective role is not a privilege
+  // change, and revoking there would log everyone out on every IdP sync.
+  revokes('adding a lower group leaves an admin logged in', (v, u) => {
+    v.scim.patchUser(u.id, { Operations: [{ op: 'add', path: 'groups', value: [{ value: 'vault-users' }] }] }, { actor: 'idp' });
+  }, { expectRevoked: false });
+
+  test('a replace substitutes the group list rather than appending to it', () => {
+    const { v, dir, user } = withUser();
+    v.scim.patchUser(user.id, { Operations: [{ op: 'replace', path: 'groups', value: [{ value: 'vault-users' }] }] }, { actor: 'idp' });
+    const after = v.scim.require(user.id);
+    assert.deepEqual(after.groups, ['vault-users'],
+      'replace appended instead of substituting, so a demotion leaves the old entitlement in place');
+    assert.equal(after.role, 'end_user');
+    v.close();
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  test('an escalation revokes the session too, not only a demotion', () => {
+    const { v, dir, user, session } = withUser(['vault-users']);
+    assert.equal(v.scim.require(user.id).role, 'end_user');
+    v.scim.patchUser(user.id, { Operations: [{ op: 'replace', path: 'groups', value: [{ value: 'vault-admins' }] }] }, { actor: 'idp' });
+    assert.equal(v.scim.require(user.id).role, 'admin');
+    assert.equal(v.sessions.verify(session.token).valid, false,
+      'the session still carries the old role in its principal — it must be re-minted, not silently upgraded');
+    v.close();
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  test('a role name Vault does not recognise ranks last, not first', () => {
+    // `groupRoles` is customer-supplied. indexOf returned -1 for any name not
+    // on the precedence list, and -1 sorts ahead of admin's 0, so one custom
+    // group in the IdP decided the role of everyone who also held a known one.
+    const dir = tmp('a5-rank-');
+    const v = new Vault({
+      dir, signingKey: Ledger.newSigningKey(), administrators: ['a', 'b'], seedRules: false,
+      scim: { groupRoles: { 'vault-admins': 'admin', 'vault-contractors': 'contractor' } }
+    });
+    const u = v.scim.createUser({
+      userName: 'sarah@acme.com', active: true,
+      groups: [{ value: 'vault-admins' }, { value: 'vault-contractors' }]
+    }, { actor: 'idp' });
+    assert.equal(v.scim.require(u.id).role, 'admin',
+      'an unrecognised custom role outranked admin');
+    v.close();
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  test('the measured revocation latency for every route', () => {
+    // Not an assertion so much as the number the report has to quote.
+    assert.ok(latencies.length >= 11, 'every route above must have been measured');
+    const worst = latencies.reduce((a, b) => (a.ms > b.ms ? a : b));
+    console.log(`    SCIM revocation latency: ${latencies.length} routes, worst ${worst.ms.toFixed(2)}ms (${worst.route})`);
+    assert.ok(worst.ms < 1000);
+  });
+});
