@@ -45,49 +45,42 @@ Langfuse / OneTrust") by agreeing with it.
 
 ### The headline this produces
 
-> **One memory for every AI agent. Nothing enters it unchecked.**
+> **One memory for every AI agent. Ten checks before anything gets in.**
 
-Nine words. First clause states the category so a CIO knows what it is. Second clause
-states the differentiator so they know why it isn't the other nine. It matches the
-category's own cadence — short declarative noun phrase, the convention across Zep, Mem0,
-Letta and Microsoft — while making a claim none of them makes.
+Twelve words, two sentences. The first states the category so a CIO knows what it is; the
+second states the differentiator, and states it as a *number* rather than an adjective —
+"ten checks" is concrete and checkable in a way "unchecked" was not. (v1 used "Nothing
+enters it unchecked," which was accurate but vaguer, and gave the reader nothing to
+count.) It keeps the category's own cadence — short declarative clauses, the convention
+across Zep, Mem0, Letta and Microsoft — while making a claim none of them makes.
 
 ---
 
 ## 2. Information architecture, and why this order
 
-One page. The order is derived from what enterprise-infrastructure sites actually do
-(Zep, Smarsh, ServiceNow, Microsoft) rather than what developer-tool sites do (Mem0,
-Cognee, Supermemory) — because the buyers are CIO, CISO, GC, CFO and CCO, not an
-individual developer. The developer-credibility signals the memory category expects
-(integration modes, connectors, a real API response) are kept, but placed after the
-enterprise argument rather than at the top.
-
-The first five sections are a single continuous 3D scene. Everything after is flat,
-fast and dense.
+**Revised after the first version was rejected as too long and too wordy.** v1 ran
+3,460 words over 16 sections and ~20,000px. A YC-style landing page runs 400–700 words.
+v2 is 1,351 words over 10 sections and ~9,900px — and, following Paul Graham's rule to
+"put the impressive thing on the front page," the product now *runs* in the first screen
+instead of being described.
 
 | # | Section | Why it sits here |
 |---|---|---|
-| 1 | **Hero** — headline, subhead, two CTAs | Five-second test. The category and the differentiator in one line. Two CTAs is the universal convention; the secondary one ("See what it can and can't see") is deliberately an admission, which no competitor offers. |
-| 2 | **The problem** — the write path is unguarded | Enterprise sites state the problem; developer sites skip it. This is a category that does not yet exist in the buyer's head, so it must be named. Three short paragraphs, two of them citable (Unit 42, OWASP ASI06), and one that lands the quieter and more expensive version: *a guess an AI made on Tuesday gets read back on Friday as though it were policy.* |
-| 3 | **The gate** — ten checks, pinned, scroll-driven | The differentiator, shown rather than described. Placed third because everything else on the page depends on the reader believing this one thing. The scroll *is* the write path. |
-| 4 | **What survives** — folders, entities, provenance at read time | The payoff of the gate. Short, because the visual carries it. |
-| 5 | **The record** — sealed ledger, customer keys, external witnesses, standalone verifier | The second differentiator and the one a CISO/GC actually buys. It also occupies the slot where a competitor site would put customer logos — Vault has none and invents none, so verifiable proof substitutes for social proof. That substitution is the honest one. |
-| 6 | **Trace / Undo / Contagion / Incident bundle** | Four concrete capabilities, in flat cards, immediately after the abstract claim they make real. |
-| 7 | **Golden facts** | Short, distinct, memorable. Its own beat because "no agent can create one and there is no API path that does" is the single most quotable thing on the site. |
-| 8 | **Connect** — Watch / Inline / Gateway, 74 connectors, coverage map, a real API response | Where the technical evaluator lands. The `curl` block does in ten lines what three paragraphs cannot. The coverage-map paragraph — publishing what Vault *cannot* see, including personal AI accounts — is a differentiator precisely because nobody in the category does it. |
-| 9 | **The archive** | The regulated buyer's section. Verbatim retention, WORM, eDiscovery, privilege, and the rule mappings. FINRA 24-09/25-07 context in fine print rather than as a scare. |
-| 10 | **Modules** | Answers the loudest objection — "we already own half of this" — by conceding it, then noting the one row with no toggle. |
-| 11 | **People** — employee privacy mode | Works-council and DPO risk kills deployments. Placed before the legal section because it is the objection raised in the room, not in the contract. |
-| 12 | **Law** — the retention/deletion conflict, erasure, holds, dated obligations | GC and Privacy. Leads with the conflict rather than pretending it away. Dates are the verified ones. |
-| 13 | **Run it / Leave** — nine deployments, encryption, identity; then exit and continuity | Paired deliberately: how to run it and how to leave it, side by side. For an early company, "leaving should be boring" is a stronger trust signal than any certification badge. |
-| 14 | **When it goes wrong** — graduated kill switch, slow-attack detectors, break-glass | The CISO's last question. |
-| 15 | **Where to start** — Discover → Unify → Govern → Prove → Sovereign, and the pricing model | Converts a large product into a small first step. Priced per agent, not per seat. |
-| 16 | **Demo CTA** | One ask, with a form. |
-| 17 | **Footer + investor form** | Below everything, separate from the product CTA. |
+| 1 | **Hero + the live gate** | Headline, one line, two CTAs — and a working gate card beside them. Four real write attempts cycle through the ten checks and land a verdict with the actual reasons: a lookalike-domain invoice that contradicts a golden fact, a clean sales note that passes, an injected instruction in a GitHub comment, a leaked connection string. This is the demo, in the first five seconds, instead of a `curl` block 6,000px down. |
+| 2 | **The problem** — "A lie only has to get written once." | Four short lines. The punch is the Tuesday/Friday sentence; Unit 42 and OWASP ASI06 sit under it as fine print rather than as the argument. |
+| 3 | **The gate** — ten checks, scroll-driven | The differentiator, shown. Each check is now a question as a heading and one ~25-word answer, down from a paragraph each. |
+| 4 | **Proof** — sealed ledger on your keys + four capability cards | The second differentiator, and the slot where a competitor would put logos. Vault has none and invents none, so verifiable proof substitutes for social proof. |
+| 5 | **Golden facts** | One band. Kept because "no agent can create one, and there is no API path that does" is the most quotable line on the site. |
+| 6 | **Connect** — three modes, 74 connectors, the coverage map | Where the technical evaluator lands. Publishing what Vault *can't* see is a differentiator because nobody in the category does it. |
+| 7 | **Modules** — "You already own half of this. Keep it." | Answers the loudest real objection by conceding it, then shows the one row with no toggle. |
+| 8 | **The boring questions** | v1 spent four separate sections on deployment, law, privacy and exit. They are now one scannable 8-cell grid. Same facts, a quarter of the words, and far better for the buyer who is scanning for one answer. |
+| 9 | **Where to start** — five stages + the pricing model | Turns a large product into a small first step. |
+| 10 | **Demo CTA**, then footer + investor form | One ask. |
 
-Total reading time at the intended skim depth is roughly ninety seconds; the scene adds
-scroll distance but no reading obligation, and the ten checks are one short paragraph each.
+Cut entirely from v1: the standalone archive section, the separate privacy and law
+sections, the emergency-controls section, the exit section, the value-reporting
+paragraph, and the `curl` block. Everything that survived was compressed into the spec
+grid or into the live card.
 
 ---
 
@@ -95,29 +88,29 @@ scroll distance but no reading obligation, and the ten checks are one short para
 
 Read back as someone who has never heard of Vault.
 
-**Do I know what this does?** Yes. "One memory for every AI agent. Nothing enters it
-unchecked," plus a subhead naming the mechanism (ten checks, any agent, any platform) and
-the receipt (a sealed ledger on your keys).
+**Do I know what this does?** Yes, and faster than in v1 — because the page no longer
+*tells* you, it shows you. The headline names the category and the count; the card beside
+it runs a real write through the ten checks and blocks it with three specific reasons.
 
-**Do I believe it?** This is where the first draft failed, and what changed:
+**Do I believe it?** The evidence discipline from v1 is unchanged and still the reason to:
+the shadow-AI statistics found in research (79% of IT leaders, "50% ungoverned", 340% YoY)
+all traced back to content farms and were cut. What is cited is Unit 42's memory-poisoning
+proof of concept, OWASP ASI06, the FINRA notices, and the post-Digital-Omnibus EU AI Act
+dates — Article 50 from 2 Aug 2026, high-risk moved to 2 Dec 2027, which most vendor pages
+still get wrong. The CTA still says out loud that Vault is early.
 
-- The first draft opened the problem with shadow-AI statistics — *79% of IT leaders*,
-  *50% of agents ungoverned*, *340% year over year*. Every one traced back to vendor
-  blogs and content farms. All were **cut**. What replaced them is one documented attack
-  (Unit 42), one standards-body classification (OWASP ASI06), and a plain description of
-  the failure mode. Fewer numbers, all of them checkable.
-- The EU AI Act paragraph originally used the August 2026 high-risk deadline, which the
-  Digital Omnibus superseded in June 2026. Corrected to: Article 50 transparency from
-  2 August 2026, high-risk to 2 December 2027. A GC who knows this file will notice.
-- The closing CTA now says out loud that Vault is early, and offers to say on the call
-  what isn't ready. A page this dense with capability claims reads as vapour without it.
+**Do I want it?** This is what v1 got wrong and what changed. v1 buried the want in
+3,460 words; the reader never reached it. The desire now comes from two places, both in
+the first two screens: the card blocking a fake-invoice write that *contradicts a golden
+fact signed by the CFO*, and the line "a guess an AI made on Tuesday gets read back on
+Friday as company policy." A CIO recognises the second from their own week, and has just
+watched the first get stopped.
 
-**Do I want it?** The line that does the work isn't in the hero — it's in the problem
-section: *"a guess an AI made on Tuesday gets read back on Friday as though it were
-company policy, and nobody can tell the difference."* That is the sentence a CIO
-recognizes from their own week. The gate is the answer to it, and section 4 closes the
-loop by saying every returned fact is labelled with whether a person signed it or an AI
-guessed it.
+**What else changed in v2:** words cut 61% (3,460 → 1,351); sections 16 → 10; page height
+halved (20,124px → ~9,900px); every ten-check paragraph rewritten as a question plus one
+short answer; four sections collapsed into one scannable spec grid; and a real measure bug
+fixed — `.head{max-width:34ch}` sat on a 17px `div`, so `ch` resolved against 17px and
+clamped every section heading to ~290px instead of the intended measure.
 
 ---
 
