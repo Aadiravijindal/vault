@@ -2,9 +2,17 @@
 
 ## 1. The positioning decision, in one sentence
 
-> **Vault is the shared memory every AI agent in the company reads and writes — and the
-> only one that checks what goes in, with a record of every decision that the customer,
-> not Vault, holds the keys to.**
+> **Every AI agent keeps its memory to itself; Vault is the one memory they all share, so
+> connecting a new agent means it already knows what the others learned — with ten checks
+> on every write and a record the customer, not Vault, holds the keys to.**
+
+**This replaced an earlier, worse positioning.** v1 and v2 led with the gate — with
+*security*. That was the wrong order. Governance is the reason a buyer keeps Vault; it is
+not the reason they want it in the first place. The reason they want it is that their
+company's memory is scattered across a dozen tools and every new agent starts from zero.
+Leading with the gate sold insurance for the bad day. Leading with connection sells the
+thing that gets used every day, and the gate then arrives as the answer to the obvious
+follow-up question: *if everything shares one memory, how do I trust what's in it?*
 
 ### Why the research forces this sentence
 
@@ -45,72 +53,66 @@ Langfuse / OneTrust") by agreeing with it.
 
 ### The headline this produces
 
-> **One memory for every AI agent. Ten checks before anything gets in.**
+> **Every AI agent remembers alone. Vault gives them one memory.**
 
-Twelve words, two sentences. The first states the category so a CIO knows what it is; the
-second states the differentiator, and states it as a *number* rather than an adjective —
-"ten checks" is concrete and checkable in a way "unchecked" was not. (v1 used "Nothing
-enters it unchecked," which was accurate but vaguer, and gave the reader nothing to
-count.) It keeps the category's own cadence — short declarative clauses, the convention
-across Zep, Mem0, Letta and Microsoft — while making a claim none of them makes.
+Ten words, two sentences. The first names the problem in four words that anyone
+running more than one AI tool recognises immediately. The second names the fix. Neither
+clause mentions security, because security is not why anyone shows up.
+
+Earlier headlines and why they were worse: *"One memory for every AI agent. Nothing enters
+it unchecked."* (v1) and *"...Ten checks before anything gets in."* (v2) both spent the
+second half of the headline on the gate. Both described a guard rather than a benefit, and
+both asked a reader who had not yet felt the problem to care about the solution to it.
 
 ---
 
 ## 2. Information architecture, and why this order
 
-**Revised after the first version was rejected as too long and too wordy.** v1 ran
-3,460 words over 16 sections and ~20,000px. A YC-style landing page runs 400–700 words.
-v2 is 1,351 words over 10 sections and ~9,900px — and, following Paul Graham's rule to
-"put the impressive thing on the front page," the product now *runs* in the first screen
-instead of being described.
+Rebuilt twice. v1: 3,460 words, 16 sections, ~20,000px — rejected as yapping. v2: cut to
+1,351 words and 10 sections, gate-first. v3 (current) keeps the compression but **reverses
+the argument**: connection first, security second.
 
 | # | Section | Why it sits here |
 |---|---|---|
-| 1 | **Hero + the live gate** | Headline, one line, two CTAs — and a working gate card beside them. Four real write attempts cycle through the ten checks and land a verdict with the actual reasons: a lookalike-domain invoice that contradicts a golden fact, a clean sales note that passes, an injected instruction in a GitHub comment, a leaked connection string. This is the demo, in the first five seconds, instead of a `curl` block 6,000px down. |
-| 2 | **The problem** — "A lie only has to get written once." | Four short lines. The punch is the Tuesday/Friday sentence; Unit 42 and OWASP ASI06 sit under it as fine print rather than as the argument. |
-| 3 | **The gate** — ten checks, scroll-driven | The differentiator, shown. Each check is now a question as a heading and one ~25-word answer, down from a paragraph each. |
-| 4 | **Proof** — sealed ledger on your keys + four capability cards | The second differentiator, and the slot where a competitor would put logos. Vault has none and invents none, so verifiable proof substitutes for social proof. |
-| 5 | **Golden facts** | One band. Kept because "no agent can create one, and there is no API path that does" is the most quotable line on the site. |
-| 6 | **Connect** — three modes, 74 connectors, the coverage map | Where the technical evaluator lands. Publishing what Vault *can't* see is a differentiator because nobody in the category does it. |
-| 7 | **Modules** — "You already own half of this. Keep it." | Answers the loudest real objection by conceding it, then shows the one row with no toggle. |
-| 8 | **The boring questions** | v1 spent four separate sections on deployment, law, privacy and exit. They are now one scannable 8-cell grid. Same facts, a quarter of the words, and far better for the buyer who is scanning for one answer. |
-| 9 | **Where to start** — five stages + the pricing model | Turns a large product into a small first step. |
-| 10 | **Demo CTA**, then footer + investor form | One ask. |
+| 1 | **Hero — the handoff, running live** | `claude-code`, `cursor` and `vapi-sales-agent` have written 47 facts to `engineering/atlas`. Then `emergent` connects and the panel fills in what it now knows: the schema, that auth is session cookies and why the token plan died, that Redis went in March. Ends on "Nobody re-explained anything." This is the whole pitch, demonstrated, in the first screen. |
+| 2 | **The problem** — memory locked inside twelve tools | Three cards on three timescales: *every day* (re-explaining), *every week* (two agents, two answers), *the bad day* (something false gets remembered). The bad day is third on purpose — it's real, but it isn't the reason anyone buys. |
+| 3 | **Connect** — Watch / Inline / Gateway, 74 connectors | Answers "will it work with what I actually run?" while the reader still cares. Voice, chat, code, API. Includes what Vault *can't* see, which nobody else publishes. |
+| 4 | **Structure** — folders build themselves | A real folder tree: `sales/acme/`, `engineering/atlas/backend/`, `hr/` marked walled. Answers "so where does it all go?" without a paragraph about taxonomy. |
+| 5 | **One company, four teams** | Tabbed: Sales, Engineering, Support, Legal. Each shows the agents actually running, what lands, **what changes**, and **what gets stopped**. This is the concrete department-by-department walkthrough — the same company, four teams that don't talk to each other. |
+| 6 | **Security** — the ten checks, scroll-driven, with the live verdict card | Arrives as the answer to the question section 5 just raised: if all four teams write to one memory, how do I trust it? Four write attempts cycle — a lookalike-domain invoice, a clean sales note, an injected PR comment, an unapproved support promise. |
+| 7 | **What it does, in plain words** | Four grouped Feature / Plain meaning tables — Keeping it clean, Proving what happened, Emergency and legal, Showing the value. 33 features, one short sentence each, no jargon. Dense and scannable rather than prose. |
+| 8 | **Modules** — you already own half of this | Concedes the loudest objection, then shows the one row with no toggle. |
+| 9 | **The boring questions** | Deployment, keys, records, employees, identity, dates, leaving, pricing — one 8-cell grid. |
+| 10 | **Where to start** → **CTA** → footer + investor form | Discover / Connect / Govern / Prove / Sovereign. The CTA is "Connect one agent. Then connect a second," because the second one *is* the demo. |
 
-Cut entirely from v1: the standalone archive section, the separate privacy and law
-sections, the emergency-controls section, the exit section, the value-reporting
-paragraph, and the `curl` block. Everything that survived was compressed into the spec
-grid or into the live card.
+The reorder is the substantive change. Everything security-related still exists and is
+still specific — it just stopped being the opening argument.
 
 ---
 
 ## 3. The cold read
 
-Read back as someone who has never heard of Vault.
+**Do I know what this does?** In four words: agents remember alone. The panel beside the
+headline then shows a new agent connecting and inheriting a project it has never seen.
 
-**Do I know what this does?** Yes, and faster than in v1 — because the page no longer
-*tells* you, it shows you. The headline names the category and the count; the card beside
-it runs a real write through the ten checks and blocks it with three specific reasons.
+**Do I believe it?** Evidence discipline is unchanged from v1: the shadow-AI statistics
+found in research (79% of IT leaders, "50% ungoverned", 340% YoY) all traced to content
+farms and were cut. The department scenarios are labelled as what this looks like in one
+company — no invented customer is presented as real, and no incident is cited that wasn't
+verified. Dates are the checked ones: EU AI Act Article 50 from 2 Aug 2026, high-risk moved
+to 2 Dec 2027; India DPDP Consent Manager 13 Nov 2026, full compliance 13 May 2027. The CTA
+still says plainly that Vault is early.
 
-**Do I believe it?** The evidence discipline from v1 is unchanged and still the reason to:
-the shadow-AI statistics found in research (79% of IT leaders, "50% ungoverned", 340% YoY)
-all traced back to content farms and were cut. What is cited is Unit 42's memory-poisoning
-proof of concept, OWASP ASI06, the FINRA notices, and the post-Digital-Omnibus EU AI Act
-dates — Article 50 from 2 Aug 2026, high-risk moved to 2 Dec 2027, which most vendor pages
-still get wrong. The CTA still says out loud that Vault is early.
+**Do I want it?** This is what v1 and v2 both got wrong. They led with a guard. A guard is
+something you accept; a team that stops re-explaining its own project to every new tool is
+something you want. The engineering tab is the strongest thing on the page: Team A builds
+with Claude Code, Team B connects Emergent, and Emergent starts already knowing the
+project. Anyone who has run two coding agents on one codebase recognises that instantly.
 
-**Do I want it?** This is what v1 got wrong and what changed. v1 buried the want in
-3,460 words; the reader never reached it. The desire now comes from two places, both in
-the first two screens: the card blocking a fake-invoice write that *contradicts a golden
-fact signed by the CFO*, and the line "a guess an AI made on Tuesday gets read back on
-Friday as company policy." A CIO recognises the second from their own week, and has just
-watched the first get stopped.
-
-**What else changed in v2:** words cut 61% (3,460 → 1,351); sections 16 → 10; page height
-halved (20,124px → ~9,900px); every ten-check paragraph rewritten as a question plus one
-short answer; four sections collapsed into one scannable spec grid; and a real measure bug
-fixed — `.head{max-width:34ch}` sat on a 17px `div`, so `ch` resolved against 17px and
-clamped every section heading to ~290px instead of the intended measure.
+**Bugs fixed this pass:** the folder tree collapsed into one line because HTML eats
+newlines in a `div` (needed `white-space: pre`); and the fixed WebGL canvas bled through
+the sections above the gate, because the render loop returned early on "not visible"
+without clearing the buffer, leaving the last frame painted.
 
 ---
 
