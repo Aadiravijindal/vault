@@ -1,0 +1,1478 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Vault — one memory for every AI agent</title>
+<meta name="description" content="Vault sits between your AI agents and what they remember. Every write passes ten checks before it becomes something the company believes, and every check lands in a sealed ledger you hold the keys to.">
+<meta name="theme-color" content="#fcfcfa">
+<style>
+/* ─────────────────────────────────────────────────────────────
+   Vault — marketing site
+   Colour discipline: the page is black and white except where
+   the gate makes a decision. pass / hold / block / golden are
+   the only colours on the site, and they are all semantic.
+   ───────────────────────────────────────────────────────────── */
+*,*::before,*::after{box-sizing:border-box}
+:root{
+  --paper:#fcfcfa;
+  --paper-2:#f4f4f0;
+  --ink:#0b0b0c;
+  --ink-2:#3a3a3e;
+  --muted:#77777d;
+  --rule:#e3e3dd;
+  --rule-2:#d2d2ca;
+  --pass:#0e6b4c;
+  --hold:#a25f00;
+  --block:#b32a1e;
+  --golden:#8a6a12;
+  --sans:-apple-system,BlinkMacSystemFont,"Segoe UI","Inter","Helvetica Neue",Arial,sans-serif;
+  --mono:ui-monospace,SFMono-Regular,"SF Mono",Menlo,Consolas,"Liberation Mono",monospace;
+  --pad:clamp(20px,5vw,64px);
+  --maxw:1180px;
+}
+html{-webkit-text-size-adjust:100%}
+html,body{margin:0;padding:0;background:var(--paper);color:var(--ink);overflow-x:clip}
+body{font-family:var(--sans);font-size:17px;line-height:1.55;font-weight:400;
+     -webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility}
+img,svg,canvas{display:block;max-width:100%}
+a{color:inherit}
+h1,h2,h3,h4{margin:0;font-weight:560;letter-spacing:-0.025em;line-height:1.06}
+p{margin:0}
+ul,ol{margin:0;padding:0;list-style:none}
+
+/* ── type scale ── */
+.d1{font-size:clamp(38px,6.2vw,76px);letter-spacing:-0.04em;line-height:0.99}
+.d2{font-size:clamp(29px,4.4vw,56px);letter-spacing:-0.033em;line-height:1.03}
+.d3{font-size:clamp(22px,2.6vw,32px);letter-spacing:-0.025em;line-height:1.14}
+.lead{font-size:clamp(17px,1.62vw,21px);line-height:1.5;color:var(--ink-2);letter-spacing:-0.011em}
+.body{font-size:16.5px;line-height:1.62;color:var(--ink-2)}
+.small{font-size:14.5px;line-height:1.58;color:var(--muted)}
+.eyebrow{font-family:var(--mono);font-size:11.5px;letter-spacing:0.14em;text-transform:uppercase;
+         color:var(--muted);font-weight:500}
+.mono{font-family:var(--mono);font-size:13px;letter-spacing:-0.01em}
+.tnum{font-variant-numeric:tabular-nums}
+
+/* ── layout ── */
+.wrap{max-width:var(--maxw);margin:0 auto;padding-inline:var(--pad)}
+.sec{padding-block:clamp(72px,10vw,132px)}
+.rule{height:1px;background:var(--rule);border:0;margin:0}
+.grid2{display:grid;grid-template-columns:minmax(0,0.92fr) minmax(0,1.08fr);gap:clamp(28px,5vw,72px)}
+.stack-sm>*+*{margin-top:14px}
+.stack-md>*+*{margin-top:22px}
+.stack-lg>*+*{margin-top:38px}
+
+/* ── header ── */
+header{position:fixed;inset:0 0 auto 0;z-index:50;background:rgba(252,252,250,0);
+       border-bottom:1px solid transparent;transition:background .3s,border-color .3s,backdrop-filter .3s}
+header.stuck{background:rgba(252,252,250,.82);backdrop-filter:saturate(1.6) blur(14px);
+             -webkit-backdrop-filter:saturate(1.6) blur(14px);border-bottom-color:var(--rule)}
+.bar{max-width:var(--maxw);margin:0 auto;padding:15px var(--pad);
+     display:flex;align-items:center;gap:26px}
+.brand{display:flex;align-items:center;gap:9px;font-weight:600;letter-spacing:-0.03em;font-size:18.5px;
+       text-decoration:none}
+.brand i{display:block;width:13px;height:13px;border:1.6px solid var(--ink);border-radius:3px;position:relative}
+.brand i::after{content:"";position:absolute;inset:3.4px;border-radius:1px;background:var(--ink)}
+nav{margin-left:auto;display:flex;align-items:center;gap:24px}
+nav a{font-size:14.5px;color:var(--ink-2);text-decoration:none;letter-spacing:-0.008em}
+nav a:hover{color:var(--ink)}
+@media(max-width:860px){nav .hide-s{display:none}}
+
+/* ── buttons ── */
+.btn{display:inline-flex;align-items:center;gap:8px;height:41px;padding:0 17px;border-radius:7px;
+     font-size:14.5px;font-weight:520;letter-spacing:-0.011em;text-decoration:none;cursor:pointer;
+     border:1px solid transparent;transition:transform .15s,background .18s,border-color .18s,box-shadow .18s;
+     white-space:nowrap;font-family:inherit}
+.btn-p{background:var(--ink);color:var(--paper);box-shadow:0 1px 2px rgba(0,0,0,.14)}
+.btn-p:hover{transform:translateY(-1px);box-shadow:0 4px 14px rgba(0,0,0,.18)}
+.btn-s{border-color:var(--rule-2);color:var(--ink);background:transparent}
+.btn-s:hover{background:var(--paper-2);border-color:var(--ink-2)}
+.btn-lg{height:47px;padding:0 22px;font-size:15.5px}
+.arrow{transition:transform .18s}
+.btn:hover .arrow{transform:translateX(3px)}
+
+/* ── canvas scene ── */
+/* The scene lives in the right-hand column. The frustum is shifted so the
+   vanishing point sits off-centre; this mask cleans up whatever drifts left. */
+#gl{position:fixed;inset:0;width:100vw;height:100vh;z-index:0;pointer-events:none;
+    -webkit-mask-image:linear-gradient(90deg,transparent 0,transparent 41%,#000 68%);
+    mask-image:linear-gradient(90deg,transparent 0,transparent 41%,#000 68%)}
+@media(max-width:900px){
+  #gl{-webkit-mask-image:linear-gradient(180deg,transparent 0,#000 30%,#000 100%);
+      mask-image:linear-gradient(180deg,transparent 0,#000 30%,#000 100%);opacity:.26}
+}
+#scene{position:relative;z-index:1}
+#scene section{background:transparent}
+.page{position:relative;z-index:2;background:var(--paper)}
+
+/* progress hairline */
+#prog{position:fixed;top:0;left:0;height:2px;width:0;background:var(--ink);z-index:60;
+      transition:opacity .3s;opacity:0}
+#prog.on{opacity:1}
+
+/* ── hero ── */
+.hero{min-height:100svh;display:flex;align-items:center;padding-top:88px;padding-bottom:56px}
+.hero h1{max-width:12.5ch}
+.hero .lead{max-width:38ch;margin-top:26px}
+.cta-row{display:flex;flex-wrap:wrap;gap:11px;margin-top:34px}
+.hint{margin-top:54px;display:flex;align-items:center;gap:11px;color:var(--muted)}
+.hint span{font-family:var(--mono);font-size:11.5px;letter-spacing:0.13em;text-transform:uppercase}
+.hint b{display:block;width:1px;height:26px;background:var(--rule-2);animation:drop 2.4s ease-in-out infinite}
+@keyframes drop{0%,100%{transform:scaleY(.35);transform-origin:top;opacity:.5}50%{transform:scaleY(1);opacity:1}}
+
+/* ── problem ── */
+.problem{padding-block:clamp(64px,12vh,140px);min-height:86svh;display:flex;align-items:center}
+.problem .col{max-width:42ch}
+.cite{font-family:var(--mono);font-size:12.5px;color:var(--muted);letter-spacing:-0.005em}
+.cite b{font-weight:500;color:var(--ink-2)}
+
+/* ── the gate (sticky) ── */
+.gate{position:relative}
+.gate-track{height:460vh}
+.gate-stick{position:sticky;top:0;height:100svh;display:flex;align-items:center}
+.gate-inner{width:100%;max-width:var(--maxw);margin:0 auto;padding-inline:var(--pad);
+            display:grid;grid-template-columns:auto minmax(0,1fr);gap:clamp(20px,4vw,44px);align-items:center}
+.rail{display:flex;flex-direction:column;gap:9px;padding-top:4px}
+.rail b{display:block;width:2px;height:15px;background:var(--rule-2);border-radius:2px;
+        transition:background .3s,height .3s}
+.rail b.on{background:var(--ink);height:26px}
+.rail b.done{background:var(--ink-2)}
+.gate-copy{max-width:38ch;min-height:300px}
+.gate-num{font-family:var(--mono);font-size:12px;letter-spacing:0.13em;color:var(--muted);
+          margin-bottom:16px;display:block}
+.gate-copy h3{font-size:clamp(27px,3.6vw,44px);letter-spacing:-0.032em;line-height:1.04}
+.gate-copy p{margin-top:16px;font-size:clamp(16px,1.42vw,19px);line-height:1.52;color:var(--ink-2)}
+.check{display:none}
+.check.on{display:block;animation:fadein .5s cubic-bezier(.2,.6,.2,1)}
+@keyframes fadein{from{opacity:0;transform:translateY(11px)}to{opacity:1;transform:none}}
+.gate-head{max-width:var(--maxw);margin:0 auto;padding:0 var(--pad)}
+.gate-intro{min-height:78svh;display:flex;align-items:flex-end;padding-bottom:clamp(40px,8vh,88px)}
+.legend{display:flex;flex-wrap:wrap;gap:20px;margin-top:26px}
+.legend li{display:flex;align-items:center;gap:8px;font-family:var(--mono);font-size:12px;
+           letter-spacing:0.02em;color:var(--ink-2)}
+.legend i{width:8px;height:8px;border-radius:2px;display:block}
+.dot-pass{background:var(--pass)}.dot-hold{background:var(--hold)}.dot-block{background:var(--block)}
+
+/* ── scene text sections ── */
+.scene-sec{min-height:92svh;display:flex;align-items:center;padding-block:clamp(56px,8vh,110px)}
+.scene-sec .col{max-width:40ch}
+/* On narrow screens the scene sits behind the copy, so text gets a flat scrim.
+   No backdrop blur — it smears the lattice into mush. */
+.frost{background:transparent}
+@media(max-width:900px){
+  .frost{background:rgba(252,252,250,.88);border-radius:12px;
+         margin:calc(-1*clamp(12px,3vw,20px));padding:clamp(12px,3vw,20px)}
+}
+
+/* ── generic content bits ── */
+.kicker{display:flex;align-items:baseline;gap:14px;margin-bottom:22px}
+.kicker::after{content:"";flex:1;height:1px;background:var(--rule)}
+.cards{display:grid;gap:1px;background:var(--rule);border:1px solid var(--rule);border-radius:12px;
+       overflow:hidden;grid-template-columns:repeat(auto-fit,minmax(248px,1fr))}
+.cards>li{background:var(--paper);padding:clamp(20px,2.4vw,28px)}
+.cards h3{font-size:19px;letter-spacing:-0.022em;margin-bottom:9px}
+.cards p{font-size:15.2px;line-height:1.58;color:var(--ink-2)}
+.cards .tag{font-family:var(--mono);font-size:11px;letter-spacing:0.11em;text-transform:uppercase;
+            color:var(--muted);display:block;margin-bottom:13px}
+
+.rows{border-top:1px solid var(--rule)}
+.rows>li{border-bottom:1px solid var(--rule);padding:19px 0;display:grid;
+         grid-template-columns:minmax(0,190px) minmax(0,1fr);gap:clamp(12px,3vw,40px);align-items:start}
+.rows h3{font-size:16.5px;letter-spacing:-0.017em;font-weight:560}
+.rows p{font-size:15.2px;line-height:1.58;color:var(--ink-2)}
+@media(max-width:720px){.rows>li{grid-template-columns:1fr;gap:6px}}
+
+.spec{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:1px;background:var(--rule);
+      border-block:1px solid var(--rule)}
+.spec>div{background:var(--paper);padding:20px clamp(14px,2vw,24px)}
+.spec dt{font-family:var(--mono);font-size:11px;letter-spacing:0.11em;text-transform:uppercase;
+         color:var(--muted);margin-bottom:9px}
+.spec dd{margin:0;font-size:15px;line-height:1.55;color:var(--ink-2)}
+
+/* code */
+.code{background:#0b0b0c;color:#e8e8e4;border-radius:12px;padding:clamp(16px,2vw,24px);
+      font-family:var(--mono);font-size:12.6px;line-height:1.72;overflow-x:auto;
+      -webkit-overflow-scrolling:touch}
+.code .c{color:#8d8d86}.code .k{color:#d8d8d2}.code .s{color:#a9c9b6}
+.code .pass{color:#63c79c}.code .hold{color:#e0aa5a}.code .block{color:#e08c82}
+.code b{font-weight:400}
+
+/* connector marquee */
+.conn{border-block:1px solid var(--rule);padding-block:26px;overflow:hidden;
+      -webkit-mask-image:linear-gradient(90deg,transparent,#000 8%,#000 92%,transparent);
+      mask-image:linear-gradient(90deg,transparent,#000 8%,#000 92%,transparent)}
+.conn-t{display:flex;gap:11px;width:max-content;animation:slide 64s linear infinite}
+.conn-t:nth-child(2){animation-duration:78s;animation-direction:reverse;margin-top:11px}
+.conn-t span{border:1px solid var(--rule-2);border-radius:999px;padding:6px 14px;font-size:13.4px;
+             color:var(--ink-2);white-space:nowrap;background:var(--paper)}
+@keyframes slide{from{transform:translateX(0)}to{transform:translateX(-50%)}}
+
+/* module toggle */
+.mods{display:grid;gap:1px;background:var(--rule);border:1px solid var(--rule);border-radius:12px;overflow:hidden}
+.mod{background:var(--paper);padding:18px clamp(16px,2vw,24px);display:grid;
+     grid-template-columns:minmax(0,168px) minmax(0,1fr) auto;gap:clamp(10px,2.4vw,28px);align-items:center}
+.mod h3{font-size:16px;letter-spacing:-0.016em}
+.mod p{font-size:14.6px;color:var(--ink-2);line-height:1.5}
+.state{font-family:var(--mono);font-size:11px;letter-spacing:0.09em;text-transform:uppercase;
+       border:1px solid var(--rule-2);border-radius:999px;padding:4px 10px;color:var(--muted);white-space:nowrap}
+.mod.fixed{background:var(--paper-2)}
+.mod.fixed .state{border-color:var(--ink);color:var(--ink)}
+@media(max-width:760px){.mod{grid-template-columns:1fr;gap:7px}.mod .state{justify-self:start}}
+
+/* stages */
+.stages{display:grid;grid-template-columns:repeat(auto-fit,minmax(196px,1fr));gap:1px;background:var(--rule);
+        border:1px solid var(--rule);border-radius:12px;overflow:hidden}
+.stage{background:var(--paper);padding:22px clamp(16px,1.8vw,22px)}
+.stage b{font-family:var(--mono);font-size:11px;letter-spacing:0.12em;color:var(--muted);
+         display:block;margin-bottom:12px;font-weight:500}
+.stage h3{font-size:17.5px;letter-spacing:-0.02em;margin-bottom:8px}
+.stage p{font-size:14.6px;line-height:1.55;color:var(--ink-2)}
+
+/* golden */
+.golden-mark{display:inline-flex;align-items:center;gap:7px;font-family:var(--mono);font-size:11.5px;
+             letter-spacing:0.11em;text-transform:uppercase;color:var(--golden)}
+.golden-mark i{width:8px;height:8px;border-radius:2px;background:var(--golden);display:block}
+
+/* forms */
+.form{display:grid;gap:11px}
+.form .two{display:grid;grid-template-columns:1fr 1fr;gap:11px}
+@media(max-width:560px){.form .two{grid-template-columns:1fr}}
+label{display:block;font-family:var(--mono);font-size:11px;letter-spacing:0.1em;text-transform:uppercase;
+      color:var(--muted);margin-bottom:7px}
+input,textarea{width:100%;font:inherit;font-size:15.5px;color:var(--ink);background:var(--paper);
+   border:1px solid var(--rule-2);border-radius:8px;padding:11px 13px;transition:border-color .18s,box-shadow .18s}
+input:focus,textarea:focus{outline:none;border-color:var(--ink);box-shadow:0 0 0 3px rgba(11,11,12,.07)}
+textarea{resize:vertical;min-height:96px;line-height:1.5}
+.form-note{font-size:13.4px;color:var(--muted);line-height:1.55}
+.sent{border:1px solid var(--rule-2);border-radius:9px;padding:15px;font-size:14.6px;color:var(--ink-2);
+      background:var(--paper-2);display:none}
+.sent.on{display:block}
+.sent code{font-family:var(--mono);font-size:13.4px;color:var(--ink)}
+.linkbtn{background:none;border:0;padding:0;font:inherit;font-size:13.6px;color:var(--ink);
+         text-decoration:underline;text-underline-offset:3px;cursor:pointer}
+
+/* footer */
+footer{border-top:1px solid var(--rule);background:var(--paper-2)}
+.foot{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,420px);gap:clamp(34px,6vw,80px);
+      padding-block:clamp(48px,7vw,76px)}
+@media(max-width:880px){.foot{grid-template-columns:1fr}}
+.foot-links{display:flex;flex-wrap:wrap;gap:8px 26px;margin-top:20px}
+.foot-links a{font-size:14.4px;color:var(--ink-2);text-decoration:none}
+.foot-links a:hover{color:var(--ink);text-decoration:underline;text-underline-offset:3px}
+.colophon{border-top:1px solid var(--rule-2);padding-block:20px;display:flex;flex-wrap:wrap;gap:12px 24px;
+          align-items:center;font-size:13.4px;color:var(--muted)}
+
+/* reveal */
+.rv{opacity:0;transform:translateY(15px)}
+.rv.in{opacity:1;transform:none;transition:opacity .7s cubic-bezier(.2,.6,.2,1),transform .7s cubic-bezier(.2,.6,.2,1)}
+
+@media(prefers-reduced-motion:reduce){
+  .rv,.rv.in{opacity:1;transform:none;transition:none}
+  .conn-t{animation:none}
+  .hint b{animation:none}
+  .check{display:block !important;margin-bottom:34px}
+  .gate-track{height:auto}
+  .gate-stick{position:static;height:auto;padding-block:60px}
+  .gate-copy{min-height:0;max-width:60ch}
+  .rail{display:none}
+  .gate-inner{grid-template-columns:1fr}
+  #gl{display:none}
+}
+@media(max-width:900px){
+  .grid2{grid-template-columns:1fr}
+  .gate-track{height:400vh}
+  .gate-inner{grid-template-columns:auto minmax(0,1fr)}
+}
+</style>
+</head>
+<body>
+
+<div id="prog"></div>
+<canvas id="gl" aria-hidden="true"></canvas>
+
+<header id="hdr">
+  <div class="bar">
+    <a class="brand" href="#top"><i></i>Vault</a>
+    <nav>
+      <a class="hide-s" href="#gate">The gate</a>
+      <a class="hide-s" href="#proof">Proof</a>
+      <a class="hide-s" href="#connect">Connect</a>
+      <a class="hide-s" href="#run">Run it</a>
+      <a class="btn btn-s" href="#demo">Book a demo</a>
+    </nav>
+  </div>
+</header>
+
+<main id="top">
+
+<!-- ══════════════════ SCENE: hero → problem → gate → memory → ledger ══════════════════ -->
+<div id="scene">
+
+  <!-- HERO -->
+  <section class="hero">
+    <div class="wrap">
+      <h1 class="d1">One memory for every AI&nbsp;agent. Nothing enters it unchecked.</h1>
+      <p class="lead">Vault sits between your AI tools and what they remember. Every write — from any agent,
+        on any platform — passes ten checks before it becomes something the company believes. Every check
+        lands in a sealed ledger you hold the keys to.</p>
+      <div class="cta-row">
+        <a class="btn btn-p btn-lg" href="#demo">Book a demo <span class="arrow">→</span></a>
+        <a class="btn btn-s btn-lg" href="#connect">See what it can and can't see</a>
+      </div>
+      <div class="hint"><b></b><span>Scroll — you're following a write</span></div>
+    </div>
+  </section>
+
+  <!-- PROBLEM -->
+  <section class="problem">
+    <div class="wrap">
+      <div class="col stack-md frost">
+        <span class="eyebrow">The write path</span>
+        <h2 class="d2">Your agents read from memory. Almost nothing checks what got written to&nbsp;it.</h2>
+        <p class="lead">An agent takes in an email, a support ticket, a web page, another agent's output —
+          and writes what it learned somewhere it will read again tomorrow. That write usually happens with no
+          identity check on the agent, no judgment about where the content came from, and no record that it
+          happened at all.</p>
+        <p class="body">It is a documented attack. Palo Alto Networks' Unit&nbsp;42 showed a hidden instruction
+          in ordinary web content writing itself into an AI agent's long-term memory, where it persisted into
+          every later session. OWASP now lists Memory and Context Poisoning as ASI06 in its 2026 Agentic AI
+          Top&nbsp;10.</p>
+        <p class="body"><strong>The quieter problem is worse.</strong> A guess an AI made on Tuesday gets read
+          back on Friday as though it were company policy, and nobody can tell the difference.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- GATE -->
+  <section class="gate" id="gate">
+    <div class="gate-intro">
+      <div class="gate-head">
+        <div class="stack-md" style="max-width:48ch">
+          <span class="eyebrow">The gate</span>
+          <h2 class="d2">Ten checks. Every write. Every agent. No off&nbsp;switch.</h2>
+          <p class="lead">The gate runs in every configuration Vault ships. It is not a setting, a plan tier or
+            a toggle. Pass, hold, mask, block, escalate and quarantine are all logged the same way — because the
+            blocked write is the one the auditor asks about.</p>
+          <ul class="legend">
+            <li><i class="dot-pass"></i>Passed</li>
+            <li><i class="dot-hold"></i>Held for a person</li>
+            <li><i class="dot-block"></i>Blocked</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+
+    <div class="gate-track">
+      <div class="gate-stick">
+        <div class="gate-inner">
+          <div class="rail" id="rail" aria-hidden="true"></div>
+          <div class="gate-copy" id="checks">
+
+            <article class="check on" data-i="0">
+              <span class="gate-num">Check 01 / 10 — Identity</span>
+              <h3>Is this agent allowed to write here?</h3>
+              <p>Registered, with named business and technical owners. Credential valid, used from an expected
+                origin. Cleared for this folder, at this sensitivity, in this region. Model version still
+                approved. Inside its rate budget. An unregistered agent writing to memory is blocked, and
+                somebody is told.</p>
+            </article>
+
+            <article class="check" data-i="1">
+              <span class="gate-num">Check 02 / 10 — Channel trust</span>
+              <h3>Trust comes from where it came from, not from a score.</h3>
+              <p>Fourteen tiers, decided by architecture rather than by a filter's opinion. A logged-in employee
+                with MFA is trusted. An internal system of record is trusted. Email is not — including internal
+                email. Neither are web forms, customer chat, external issue comments, scraped documents,
+                third-party API responses, or another agent's output. The default is deny by source.</p>
+            </article>
+
+            <article class="check" data-i="2">
+              <span class="gate-num">Check 03 / 10 — Source verification</span>
+              <h3>Prove the sender is who the sender says.</h3>
+              <p>SPF, DKIM and DMARC on mail. Signature verification on webhooks. mTLS between services.
+                First contact from a new sender escalates. Domain age, sender reputation, threat feeds, and
+                lookalike and homoglyph domains caught before anything downstream reads the content.</p>
+            </article>
+
+            <article class="check" data-i="3">
+              <span class="gate-num">Check 04 / 10 — Private information</span>
+              <h3>Forty-five detectors, and credentials never make it in.</h3>
+              <p>Card numbers checked against Luhn, bank and IBAN and SWIFT, UPI IDs, SSN, Aadhaar, PAN, NINO,
+                passports, national tax IDs, medical record numbers, ICD codes, cloud keys across nine
+                providers, JWTs, private keys, connection strings, every GDPR Article 9 category, plus your own
+                detectors. Mask, tokenise, redact, block or quarantine. Credentials are blocked outright —
+                never masked and stored.</p>
+            </article>
+
+            <article class="check" data-i="4">
+              <span class="gate-num">Check 05 / 10 — Sensitivity</span>
+              <h3>When it isn't sure, it labels higher.</h3>
+              <p>Public, internal, confidential, secret — or your own taxonomy. Uncertainty resolves upward and
+                goes to a person. Vault never guesses a label downward.</p>
+            </article>
+
+            <article class="check" data-i="5">
+              <span class="gate-num">Check 06 / 10 — Walls</span>
+              <h3>What sales knows does not leak into what legal knows.</h3>
+              <p>Hard isolation between departments, and between projects inside a department, enforced on read
+                and on write. Cross-wall attempts are blocked, logged and alerted — never silently dropped.
+                Walls apply to derived facts, summaries, search results and exports, so nothing leaks by
+                inference either. There is no admin bypass: break-glass takes two named humans, a stated
+                reason, a time box, and a loud entry in the log.</p>
+            </article>
+
+            <article class="check" data-i="6">
+              <span class="gate-num">Check 07 / 10 — Instruction detection</span>
+              <h3>A fact describes the world. An instruction tries to change what your agent does.</h3>
+              <p>Only facts are stored. Seven layers run together — pattern, normalised text, structural
+                position, statistical, classifier, semantic intent, and cross-reference against golden facts —
+                and any one of them firing holds the write. It catches hidden text, invisible characters,
+                metadata channels, encodings, homoglyphs, whitespace steganography, payloads split across
+                messages, multilingual evasion, instructions in code comments, and text baked into images.</p>
+            </article>
+
+            <article class="check" data-i="7">
+              <span class="gate-num">Check 08 / 10 — Policy rules</span>
+              <h3>Write the rule in English. See what it would have done, then turn it on.</h3>
+              <p>Nineteen rule types and eight actions, authored in plain language, compiled to policy-as-code,
+                version controlled and exportable to git. Scope one globally or to a department, folder,
+                project, entity or agent. Then backtest it against the last 90 days and get the exact list of
+                what it would have held or blocked, an estimated false-positive rate, and how much reviewer
+                time it adds — before it affects anything.</p>
+            </article>
+
+            <article class="check" data-i="8">
+              <span class="gate-num">Check 09 / 10 — Reconciliation</span>
+              <h3>Contradictions resolve by authority, not by whichever arrived last.</h3>
+              <p>Golden beats everything. Then human-verified, then trusted channel, then higher organisational
+                authority, then specific over general, then corroborated over single-source — and only then does
+                newer beat older. Duplicates merge with their sources kept. The losing fact is never deleted,
+                only moved to history. An attempt to overwrite a golden fact is blocked, alerted, and its source
+                is flagged.</p>
+            </article>
+
+            <article class="check" data-i="9">
+              <span class="gate-num">Check 10 / 10 — Consent and lawful basis</span>
+              <h3>Is there a reason you're allowed to keep this about a person?</h3>
+              <p>Is this about an identifiable person, is there a recorded lawful basis, is it still valid, is
+                the purpose compatible, is this person under an active erasure request, is this a minor. No
+                recorded basis means hold and route to Privacy. Vault does not guess this one.</p>
+            </article>
+
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="wrap" style="padding-bottom:clamp(56px,9vh,110px)">
+      <p class="lead frost" style="max-width:48ch">If Vault can't reach its own checks, it queues the write and
+        drains the queue later, or it refuses the write. There is no configuration in which a write passes
+        through unchecked.</p>
+    </div>
+  </section>
+
+  <!-- MEMORY -->
+  <section class="scene-sec">
+    <div class="wrap">
+      <div class="col stack-md frost">
+        <span class="eyebrow">What survives</span>
+        <h2 class="d2">What's left is what the company actually&nbsp;knows.</h2>
+        <p class="lead">Folders create themselves as facts arrive — by department, then by project or account —
+          each with a named business owner and a named technical owner. A folder nobody owns is reported as a
+          finding. The same customer named in a sales call, a support ticket and a bug report resolves to one
+          entity.</p>
+        <p class="body">Every fact carries its provenance when it is read: signed by a person, verified by a
+          person, arrived over a trusted channel, or an unverified guess an AI made. So an agent can tell
+          company policy from something another AI invented. So can a person.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- LEDGER -->
+  <section class="scene-sec" id="proof">
+    <div class="wrap">
+      <div class="col stack-md frost">
+        <span class="eyebrow">The record</span>
+        <h2 class="d2">The record isn't ours to be trusted&nbsp;with.</h2>
+        <p class="lead">Every write, hold, block, read, rule change, review decision, key rotation, legal hold,
+          erasure and break-glass session lands in an append-only hash chain.</p>
+        <p class="body">The chain makes tampering evident — but <strong>you hold the signing keys</strong>, so
+          you can prove the record is intact without taking our word for it. Digests are anchored periodically
+          to independent external witnesses. And a standalone verifier, licensed separately and importing
+          nothing from our codebase, lets an auditor check the chain while trusting neither of us.</p>
+      </div>
+    </div>
+  </section>
+
+</div><!-- /#scene -->
+
+
+<!-- ══════════════════ PAGE ══════════════════ -->
+<div class="page">
+
+  <!-- PROOF DETAIL -->
+  <section class="sec">
+    <div class="wrap">
+      <ul class="cards rv">
+        <li>
+          <span class="tag">Trace</span>
+          <h3>Click any fact.</h3>
+          <p>Who said it, from where, which agent captured it, every check that ran and its verdict, whether a
+            human reviewed it and what they decided, its full version history, every agent that has read it
+            since, every fact built on top of it, and its exact position in the sealed chain.</p>
+        </li>
+        <li>
+          <span class="tag">Undo</span>
+          <h3>Roll it back.</h3>
+          <p>One fact, one agent's writes, one source, one folder, or the entire memory — returned to any point
+            in time. Nothing is destroyed. It moves to history, where it stays.</p>
+        </li>
+        <li>
+          <span class="tag">Contagion</span>
+          <h3>Who believed this?</h3>
+          <p>The origin, every agent that read it, every fact derived from it, and the blast radius — and one
+            click to reverse all of it.</p>
+        </li>
+        <li>
+          <span class="tag">Incident bundle</span>
+          <h3>One click, one file.</h3>
+          <p>The fact, its full trace, the raw source, every read, the chain proof, the timeline, and a
+            plain-language narrative — formatted for a regulator, an auditor, an insurer or opposing counsel.</p>
+        </li>
+      </ul>
+    </div>
+  </section>
+
+  <hr class="rule">
+
+  <!-- GOLDEN -->
+  <section class="sec">
+    <div class="wrap grid2 rv">
+      <div class="stack-md">
+        <span class="golden-mark"><i></i>Golden facts</span>
+        <h2 class="d2">Some facts should only ever come from a&nbsp;person.</h2>
+      </div>
+      <div class="stack-md">
+        <p class="lead">A golden fact is created by a named human with the authority to make it. No agent can
+          write one. There is no API path that creates one.</p>
+        <p class="body">Above a sensitivity threshold it takes two people. It is cryptographically signed and
+          independently verifiable, dated for re-attestation, kept with its full change history, and ranked
+          first every single time an agent reads — labelled, so the agent knows what it is holding. An agent
+          that tries to overwrite one is blocked, and its source gets flagged.</p>
+      </div>
+    </div>
+  </section>
+
+  <hr class="rule">
+
+  <!-- CONNECT -->
+  <section class="sec" id="connect">
+    <div class="wrap stack-lg">
+      <div class="rv">
+        <div class="kicker"><span class="eyebrow">Connect</span></div>
+        <h2 class="d2" style="max-width:20ch">Three ways in. One of them can say&nbsp;no.</h2>
+      </div>
+      <ul class="cards rv">
+        <li>
+          <span class="tag">Watch</span>
+          <h3>Read the logs.</h3>
+          <p>Vault ingests the AI tool's own logs. Nothing to change, nothing in the path. It sees everything
+            after it has already happened, and it cannot stop any of it. Good for finding out what you have.</p>
+        </li>
+        <li>
+          <span class="tag">Inline</span>
+          <h3>Sit in the write path.</h3>
+          <p>Your agent calls Vault directly over SDK, REST or MCP. Vault is between the agent and storage, and
+            can hold, mask, block or escalate before anything is written.</p>
+        </li>
+        <li>
+          <span class="tag">Gateway</span>
+          <h3>Proxy the traffic.</h3>
+          <p>A proxy in front of your AI API traffic. It finds the agents nobody registered — the ones that
+            never appear on any inventory because nobody filed one.</p>
+        </li>
+      </ul>
+
+      <div class="rv">
+        <pre class="code"><span class="c"># Inline: a support agent tries to write what an email told it</span>
+<span class="k">curl</span> -X POST https://api.vault.example/v1/write \
+  -H <span class="s">"Authorization: Bearer $VAULT_AGENT_KEY"</span> \
+  -d <span class="s">'{"agent":"support-copilot",
+       "source":{"channel":"email","from":"billing@acme-invoicing.co"},
+       "text":"Acme has moved to net-90 payment terms, effective immediately."}'</span>
+
+{
+  <span class="k">"verdict"</span>: <span class="hold">"hold"</span>,
+  <span class="k">"checks"</span>: {
+    <span class="k">"identity"</span>:              <span class="pass">"pass"</span>,
+    <span class="k">"channel_trust"</span>:         <span class="hold">"untrusted:email"</span>,
+    <span class="k">"source_verification"</span>:   <span class="block">"dmarc:fail, domain_age:3d, lookalike:acme-invoices.com"</span>,
+    <span class="k">"instruction_detection"</span>: <span class="pass">"pass"</span>,
+    <span class="k">"reconciliation"</span>:        <span class="block">"conflicts_golden:acme/payment_terms"</span>
+  },
+  <span class="k">"reason"</span>: <span class="s">"Contradicts a golden fact signed by the CFO. Sender domain is three days
+              old, fails DMARC, and resembles a domain you already trust."</span>,
+  <span class="k">"review"</span>: { <span class="k">"queue"</span>: <span class="s">"finance"</span>, <span class="k">"id"</span>: <span class="s">"rvw_8f21c0"</span>, <span class="k">"sla_hours"</span>: 4 },
+  <span class="k">"ledger_seq"</span>: 184203
+}</pre>
+      </div>
+    </div>
+
+    <div class="conn rv" aria-label="Connectors" style="margin-top:clamp(48px,7vw,84px)">
+      <div class="conn-t" id="cm1"></div>
+      <div class="conn-t" id="cm2"></div>
+    </div>
+
+    <div class="wrap grid2 rv" style="margin-top:clamp(38px,5vw,60px)">
+      <div>
+        <h3 class="d3">74 connectors, and an honest map of what they miss.</h3>
+      </div>
+      <div class="stack-md">
+        <p class="body">Voice and calling agents, chat and LLM platforms, coding agents, customer-facing bots,
+          internal Slack and Teams bots, orchestration frameworks, systems of record — and the memory layers you
+          already run. Vault can sit in front of Mem0, Zep, Letta, Cognee, Supermemory, LangMem, Pinecone,
+          Weaviate, Qdrant and Chroma, or import them and retire them. Generic paths cover webhook, REST, MCP,
+          Kafka, SFTP, OpenTelemetry and bulk import.</p>
+        <p class="body">For every integration Vault publishes a coverage map stating exactly what it can see,
+          what it cannot, and what it cannot reach at all — including an employee's personal AI account, which
+          it cannot reach and does not claim to.</p>
+      </div>
+    </div>
+  </section>
+
+  <hr class="rule">
+
+  <!-- ARCHIVE -->
+  <section class="sec">
+    <div class="wrap stack-lg">
+      <div class="grid2 rv">
+        <div class="stack-md">
+          <span class="eyebrow">The archive</span>
+          <h2 class="d2">Kept whole, not summarised.</h2>
+        </div>
+        <div class="stack-md">
+          <p class="lead">Every conversation is stored complete and verbatim: both sides of the transcript,
+            attachments as original bytes, every tool call with its arguments and its results, which model and
+            version answered, the system prompt in effect and its version, timestamps to the millisecond with
+            timezone, resolved participant identities, the channel it came over, and what it cost.</p>
+          <p class="body">Immutable — there is no code path that edits it. Hash-chained. Searchable by full text
+            and by metadata. A summary is a derived thing; the archive is the original, and it stays.</p>
+        </div>
+      </div>
+
+      <ul class="rows rv">
+        <li><h3>Regulated retention</h3><p>WORM storage in compliance and governance modes. Per-record
+          retention and schedules by data class, jurisdiction, label or folder — with conflicting obligations
+          surfaced rather than silently resolved for you.</p></li>
+        <li><h3>Supervision</h3><p>Review queues, lexicon, regex and semantic risk scanning, a reviewer
+          workflow with four-eyes on high-risk items, and journaling completeness reporting.</p></li>
+        <li><h3>eDiscovery</h3><p>EDRM XML and Concordance DAT/OPT export with native, text and metadata,
+          Bates numbering, and production sets that freeze a scope and prove it wasn't altered afterwards.</p></li>
+        <li><h3>Privilege</h3><p>Privilege tagging and withholding, an auto-generated privilege log, and a
+          clawback workflow.</p></li>
+        <li><h3>Mapped to</h3><p>SEC Rule 17a-4(b)(4) and (f), FINRA Rules 4511 and 3110, FINRA Regulatory
+          Notices 24-09 and 25-07, MiFID II Article 16(7), FCA SYSC 10A, and CFTC 1.31.</p></li>
+      </ul>
+
+      <p class="small rv" style="max-width:74ch">FINRA's Notice 24-09 is technology-neutral: existing
+        recordkeeping and supervision obligations already reach generative and agentic AI. Notice 25-07 asks the
+        follow-on question directly — whether AI-generated chat and transcripts are records "as such" under
+        Exchange Act Rule 17a-4(b)(4).</p>
+    </div>
+  </section>
+
+  <hr class="rule">
+
+  <!-- MODULES -->
+  <section class="sec">
+    <div class="wrap stack-lg">
+      <div class="grid2 rv">
+        <div class="stack-md">
+          <span class="eyebrow">Modules</span>
+          <h2 class="d2">You already own half of&nbsp;this. Keep it.</h2>
+        </div>
+        <div class="stack-md">
+          <p class="lead">Every module ships as a working engine and can be switched to the tool you already
+            run. Built-in, connected, or both at once. Switching is reversible and loses no data, and if the
+            connected tool goes down, Vault's own engine resumes on its own.</p>
+        </div>
+      </div>
+
+      <ul class="mods rv">
+        <li class="mod"><h3>Archive</h3>
+          <p>Smarsh, Global Relay, Theta Lake, Proofpoint, Microsoft Purview, Veritas, Jatheon, Mimecast,
+             Shield — or a generic SFTP, S3 or webhook target.</p>
+          <span class="state">Built-in · Connected · Both</span></li>
+        <li class="mod"><h3>Search</h3>
+          <p>Vault's hybrid search — semantic, lexical, entity and graph, permissions checked at query time,
+             citations on every result, golden-first ranking — or Glean, Guru, Elastic, Coveo, Dust, Onyx.</p>
+          <span class="state">Built-in · Connected · Both</span></li>
+        <li class="mod"><h3>Observability</h3>
+          <p>Session tracing that shows which facts were read, withheld and blocked inline with the agent's
+             reasoning, eleven scorers, an A/B harness for memory on versus off — or Langfuse, Braintrust,
+             Arize, LangSmith, Datadog.</p>
+          <span class="state">Built-in · Connected · Both</span></li>
+        <li class="mod"><h3>Compliance</h3>
+          <p>AI system register and control libraries mapped to SOC 2, ISO 27001, ISO 42001, NIST AI RMF, the
+             EU AI Act and the OWASP Agentic, LLM and MCP Top 10s, with evidence collected from the ledger
+             itself — or IBM watsonx.governance, Credo AI, OneTrust, ServiceNow.</p>
+          <span class="state">Built-in · Connected · Both</span></li>
+        <li class="mod"><h3>Agent registry</h3>
+          <p>Inventory and full lifecycle, behavioural baselines with deviation alerting, unowned-agent
+             findings — or Microsoft Entra Agent ID, Okta, CyberArk.</p>
+          <span class="state">Built-in · Connected · Both</span></li>
+        <li class="mod"><h3>Insurance evidence</h3>
+          <p>A complete AI tool and agent inventory, an incident register drawn from real gate events,
+             human-oversight evidence, kill-switch specifications, and a pre-filled carrier AI questionnaire.</p>
+          <span class="state">Built-in only</span></li>
+        <li class="mod fixed"><h3>The gate</h3>
+          <p>Runs in every configuration, whatever every other module is set to. It is the one thing on this
+             list with no setting.</p>
+          <span class="state">No toggle</span></li>
+      </ul>
+    </div>
+  </section>
+
+  <hr class="rule">
+
+  <!-- PEOPLE -->
+  <section class="sec">
+    <div class="wrap grid2 rv">
+      <div class="stack-md">
+        <span class="eyebrow">People</span>
+        <h2 class="d2">Watch the agents without watching the&nbsp;staff.</h2>
+      </div>
+      <div class="stack-md">
+        <p class="lead">Employee privacy mode is one switch, with jurisdiction presets for the UK, Germany,
+          Austria, the Netherlands, Sweden, France, the EU baseline, India, Canada and strict US states.</p>
+        <p class="body">With it on, no screen anywhere shows one named employee's AI activity. That is
+          architecturally absent, not permission-gated. Analytics are aggregate only, with a k-anonymity floor,
+          pseudonymised by default. There is no sentiment, mood, stress, engagement or productivity scoring —
+          those code paths do not exist. Personal accounts and personal email, union and works-council
+          communications, health and banking portals, and hours outside work are all excluded. There is no
+          covert monitoring mode. Any employee can open a portal and see and export what Vault holds about
+          them.</p>
+        <p class="body">Germany ships with a pre-drafted works-council agreement. The UK ships with DPIA
+          generation in ICO format. Austria, the Netherlands, Sweden, France and India ship with their own
+          statutory mapping.</p>
+      </div>
+    </div>
+  </section>
+
+  <hr class="rule">
+
+  <!-- LAW -->
+  <section class="sec">
+    <div class="wrap stack-lg">
+      <div class="grid2 rv">
+        <div class="stack-md">
+          <span class="eyebrow">Law</span>
+          <h2 class="d2">Privacy law says delete it. Records law says keep&nbsp;it.</h2>
+        </div>
+        <div class="stack-md">
+          <p class="lead">Vault does not pretend that conflict away. Material under a legal hold is locked but
+            minimised to the least the hold actually requires, with a written record of which obligation applied
+            and who decided — and it deletes itself the moment the hold lifts.</p>
+          <p class="body">Erasure reaches the actual transcripts, not just the summaries: facts, derived facts,
+            rolling summaries, read-log entries, backups and archive-tier objects. The methods are named
+            honestly — hard delete, index purge, cache invalidation, crypto-shredding for backups,
+            tombstone-plus-key-destruction for cold storage, read-log pseudonymisation, derived-fact
+            regeneration — and you get a signed deletion receipt you can verify yourself.</p>
+          <p class="body">Legal hold scopes by person, account, entity, project, folder, date range, matter or
+            channel, and overrides retention expiry, hygiene decay and storage tiering. No administrator,
+            including the account owner, can delete held material.</p>
+        </div>
+      </div>
+
+      <dl class="spec rv">
+        <div><dt>India · DPDP</dt><dd>Consent tracked per fact with a lawful basis, withdrawal triggering an
+          actual purge, and Consent Manager integration ahead of the 13 November 2026 framework date and full
+          compliance on 13 May 2027.</dd></div>
+        <div><dt>EU · AI Act</dt><dd>Article 50 transparency duties apply from 2 August 2026. The high-risk
+          obligations moved to 2 December 2027 for Annex III systems under the Digital Omnibus. Vault's
+          compliance module tracks both.</dd></div>
+        <div><dt>Subject access</dt><dd>Full discovery across facts, transcripts and derived material, output
+          both readable and machine-readable, with deadline tracking.</dd></div>
+        <div><dt>Residency</dt><dd>Region pinning per namespace, with cross-border reads blocked at read time
+          rather than flagged afterwards.</dd></div>
+      </dl>
+    </div>
+  </section>
+
+  <hr class="rule">
+
+  <!-- RUN IT / LEAVE -->
+  <section class="sec" id="run">
+    <div class="wrap stack-lg">
+      <div class="grid2 rv">
+        <div class="stack-md">
+          <span class="eyebrow">Run it</span>
+          <h2 class="d2">Nine ways to run it, including ones where we never see your&nbsp;data.</h2>
+        </div>
+        <div class="stack-md">
+          <p class="lead">Vault cloud, your own bucket, your VPC, on-premise, air-gapped, hybrid, hash-only —
+            where content never leaves you — and sovereign in-country deployment.</p>
+          <p class="body">TLS 1.3 in transit and AES-256-GCM at rest, per-object keys under per-scope key
+            encryption keys, field-level encryption on named attributes, blind-index searchable encryption that
+            matches exactly without decrypting server-side, and a genuine client-side zero-knowledge tier.
+            Bring your own keys through AWS, Azure or GCP KMS, or hold them yourself in your own HSM where they
+            never leave. Destroy the key and the data is provably gone, backups included.</p>
+          <p class="body">SAML 2.0 with Okta, Entra and Google Workspace presets. OIDC with PKCE. SCIM 2.0
+            where deactivating someone in your identity provider kills their live session immediately rather
+            than at the next token refresh. TOTP and WebAuthn passkeys, device binding, IP allowlisting,
+            fail-closed geo-fencing, and privileged access approval with session recording.</p>
+        </div>
+      </div>
+
+      <div class="grid2 rv" style="padding-top:clamp(20px,3vw,36px)">
+        <div class="stack-md">
+          <span class="eyebrow">Leave</span>
+          <h2 class="d2">Leaving should be boring.</h2>
+        </div>
+        <div class="stack-md">
+          <p class="lead">Every fact, transcript, ledger entry and rule mirrors continuously to storage you
+            own. If Vault disappeared overnight, your memory would be intact in the morning.</p>
+          <p class="body">The schema is open and documented and round-trips into a fresh instance. There is a
+            self-host build you can run without us, and source code in third-party escrow with defined release
+            triggers. Export is free, unlimited and unthrottled. Migration tooling runs in both directions
+            against Mem0, Zep, Letta, Glean and Smarsh.</p>
+          <p class="body">The contract already says it: no training on your data by default, with flow-down to
+            upstream model providers; sub-processor disclosure with notice; model-deprecation notice; audit
+            rights; a defined deletion timeline with written proof; a named portability window at no charge; and
+            a kill-switch SLA with a named administrator.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <hr class="rule">
+
+  <!-- EMERGENCY -->
+  <section class="sec">
+    <div class="wrap grid2 rv">
+      <div class="stack-md">
+        <span class="eyebrow">When it goes wrong</span>
+        <h2 class="d2">A dial, not a&nbsp;switch.</h2>
+      </div>
+      <div class="stack-md">
+        <p class="lead">Warn, review-all, read-only, scoped freeze, read-block, full freeze — with a named
+          administrator, in-flight writes queued rather than lost, and state that survives a restart.</p>
+        <p class="body">Fourteen detectors watch for the attacks a single-write check cannot see: the same
+          false claim arriving in fragments across sessions, a threshold value trending upward over weeks,
+          coordinated sources, sleeper facts, volume anomalies, cross-wall probing, confidence laundering, and
+          per-agent behavioural drift. Break-glass access takes two named approvers, a recorded reason, a
+          time-boxed session, and notification to you — not just a line in a log.</p>
+      </div>
+    </div>
+  </section>
+
+  <hr class="rule">
+
+  <!-- ADOPTION -->
+  <section class="sec">
+    <div class="wrap stack-lg">
+      <div class="rv" style="max-width:56ch">
+        <div class="kicker"><span class="eyebrow">Where to start</span></div>
+        <h2 class="d2">Start where the answer is already&nbsp;useful.</h2>
+        <p class="lead" style="margin-top:20px">Each stage stands on its own. Most companies start by finding
+          out what they actually have.</p>
+      </div>
+
+      <ol class="stages rv">
+        <li class="stage"><b>01</b><h3>Discover</h3><p>A read-only inventory of every AI tool and every place
+          memory gets written, with owners, retention and risk scoring — plus the evidence pack for your
+          insurer.</p></li>
+        <li class="stage"><b>02</b><h3>Unify</h3><p>One memory across tools: folders, entities, connectors,
+          search, hygiene, continuity, and reporting on what it changed.</p></li>
+        <li class="stage"><b>03</b><h3>Govern</h3><p>The full gate, the review queue, backtested rules, walls,
+          labels, private-information scanning, behavioural detectors.</p></li>
+        <li class="stage"><b>04</b><h3>Prove</h3><p>The sealed ledger on your keys, trace, undo, WORM archive
+          with eDiscovery, legal holds, receipted erasure, consent.</p></li>
+        <li class="stage"><b>05</b><h3>Sovereign</h3><p>On-premise, air-gapped, hash-only, BYOK and HYOK,
+          residency, escrow, self-host.</p></li>
+      </ol>
+
+      <div class="grid2 rv">
+        <div class="stack-md">
+          <h3 class="d3">Priced per agent, not per&nbsp;seat.</h3>
+        </div>
+        <div class="stack-md">
+          <p class="body">Per connected agent, plus governed fact volume, plus storage consumed. Headcount is
+            not what grows in an agent estate — the number of agents is, and that is what Vault is sized
+            against.</p>
+          <p class="body">Vault reports back what it changed: token spend, redundant retrievals eliminated,
+            re-explaining time saved when a new tool joins a project that other tools already learned, an A-to-F
+            memory health grade, weekly held and blocked write counts, untrusted-source attempts, credentials
+            caught, golden-fact overwrite attempts refused, shadow agents found, review SLA compliance, and cost
+            attributed per agent, department and project.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- DEMO CTA -->
+  <section class="sec" id="demo" style="background:var(--paper-2);border-top:1px solid var(--rule)">
+    <div class="wrap grid2">
+      <div class="stack-md rv">
+        <h2 class="d2">Bring one agent. Watch what it&nbsp;writes.</h2>
+        <p class="lead">A demo runs traffic — yours or ours — through the gate and shows you the holds, the
+          blocks and the reasons, with the ledger entry behind each one.</p>
+        <p class="small">Vault is early. If something on this page matters to you and isn't ready for the way
+          you'd need to run it, we would rather tell you that on the call than after a pilot.</p>
+      </div>
+
+      <div class="rv">
+        <form class="form" id="demoForm" novalidate>
+          <div class="two">
+            <div><label for="d-name">Name</label><input id="d-name" name="name" autocomplete="name" required></div>
+            <div><label for="d-co">Company</label><input id="d-co" name="company" autocomplete="organization"></div>
+          </div>
+          <div><label for="d-mail">Work email</label>
+            <input id="d-mail" name="email" type="email" autocomplete="email" required></div>
+          <div><label for="d-msg">What are your agents writing to right now?</label>
+            <textarea id="d-msg" name="message" rows="4"></textarea></div>
+          <div style="display:flex;flex-wrap:wrap;gap:12px;align-items:center;margin-top:4px">
+            <button class="btn btn-p btn-lg" type="submit">Book a demo <span class="arrow">→</span></button>
+            <span class="form-note">Goes to aadijindal258@gmail.com.</span>
+          </div>
+          <div class="sent" id="d-sent"></div>
+        </form>
+      </div>
+    </div>
+  </section>
+
+</div><!-- /.page -->
+</main>
+
+<footer>
+  <div class="wrap foot">
+    <div>
+      <a class="brand" href="#top" style="text-decoration:none"><i></i>Vault</a>
+      <p class="body" style="margin-top:16px;max-width:44ch">The company's shared AI memory, with a gate at the
+        door and a record you can prove without us.</p>
+      <div class="foot-links">
+        <a href="#gate">The gate</a>
+        <a href="#proof">Proof</a>
+        <a href="#connect">Connect</a>
+        <a href="#run">Run it</a>
+        <a href="#demo">Book a demo</a>
+      </div>
+    </div>
+
+    <div>
+      <span class="eyebrow">Investors &amp; partnerships</span>
+      <form class="form" id="invForm" novalidate style="margin-top:16px">
+        <div class="two">
+          <div><label for="i-name">Name</label><input id="i-name" name="name" required></div>
+          <div><label for="i-mail">Email</label><input id="i-mail" name="email" type="email" required></div>
+        </div>
+        <div><label for="i-msg">Message</label><textarea id="i-msg" name="message" rows="3"></textarea></div>
+        <div style="display:flex;flex-wrap:wrap;gap:12px;align-items:center;margin-top:4px">
+          <button class="btn btn-s" type="submit">Send</button>
+          <span class="form-note">Goes to aadijindal258@gmail.com.</span>
+        </div>
+        <div class="sent" id="i-sent"></div>
+      </form>
+    </div>
+  </div>
+
+  <div class="wrap">
+    <div class="colophon">
+      <span>© <span id="yr">2026</span> Vault</span>
+      <span>Every claim on this page describes something Vault does today.</span>
+    </div>
+  </div>
+</footer>
+
+<script>
+(function(){
+"use strict";
+
+/* ════════════════════════════════════════════════════════════════════
+   FORMS
+   Both forms deliver to aadijindal258@gmail.com.
+
+   FORM_ENDPOINT is the one line to change before launch. Leave it
+   empty and the forms compose a pre-filled message to that address in
+   the visitor's mail client (works today, no backend, no third party).
+   Set it to a form-relay POST URL — Formspree, Web3Forms, Basin, or
+   your own handler — and the same forms POST there instead. The relay
+   account itself must be configured to forward to the address below;
+   that is the only wiring this page cannot do for you.
+   ════════════════════════════════════════════════════════════════════ */
+var FORM_TO       = "aadijindal258@gmail.com";
+var FORM_ENDPOINT = "";   // e.g. "https://formspree.io/f/xxxxxxxx"
+
+function esc(s){return String(s==null?"":s).trim();}
+
+function wire(formId, sentId, subject){
+  var f = document.getElementById(formId), out = document.getElementById(sentId);
+  if(!f) return;
+  f.addEventListener("submit", function(e){
+    e.preventDefault();
+    var d = {}, ok = true;
+    Array.prototype.forEach.call(f.elements, function(el){
+      if(!el.name) return;
+      d[el.name] = esc(el.value);
+      if(el.required && !d[el.name]){ ok = false; el.style.borderColor = "var(--block)"; }
+      else if(el.name){ el.style.borderColor = ""; }
+    });
+    if(!ok){ out.className = "sent on"; out.innerHTML = "Please fill in the required fields."; return; }
+
+    if(FORM_ENDPOINT){
+      /* Native POST, not fetch — it survives strict CSPs. The relay account
+         behind FORM_ENDPOINT is what routes to FORM_TO. */
+      f.action = FORM_ENDPOINT; f.method = "POST";
+      f.submit();
+      return;
+    }
+
+    var body = Object.keys(d).map(function(k){
+      return k.charAt(0).toUpperCase()+k.slice(1)+": "+d[k];
+    }).join("\n");
+    var href = "mailto:"+FORM_TO+"?subject="+encodeURIComponent(subject)
+             + "&body="+encodeURIComponent(body);
+
+    out.className = "sent on";
+    out.innerHTML = "Addressed to <code>"+FORM_TO+"</code> — "
+      + "<a id='ml-"+formId+"' href='"+href.replace(/'/g,"&#39;")+"'>open it in your mail app</a>, "
+      + "or <button type='button' class='linkbtn' id='cp-"+formId+"'>copy the message</button> and send it there.";
+    window.location.href = href;   /* try to open it directly too */
+    var cp = document.getElementById("cp-"+formId);
+    if(cp) cp.addEventListener("click", function(){
+      var txt = subject+"\n\n"+body;
+      function fallback(){
+        var ta = document.createElement("textarea");
+        ta.value = txt; ta.setAttribute("readonly","");
+        ta.style.cssText = "position:fixed;top:-1000px;opacity:0";
+        document.body.appendChild(ta); ta.select(); ta.setSelectionRange(0, txt.length);
+        var ok = false;
+        try{ ok = document.execCommand("copy"); }catch(err){}
+        document.body.removeChild(ta);
+        cp.textContent = ok ? "copied" : "press Ctrl/Cmd+C";
+      }
+      if(navigator.clipboard && navigator.clipboard.writeText){
+        navigator.clipboard.writeText(txt).then(
+          function(){ cp.textContent = "copied"; },
+          fallback           /* permission denied, insecure context, etc. */
+        );
+      } else fallback();
+    });
+  });
+}
+wire("demoForm","d-sent","Vault — demo request");
+wire("invForm","i-sent","Vault — investor / partnership enquiry");
+
+document.getElementById("yr").textContent = new Date().getFullYear();
+
+/* ════════════════════════════════════════════════════════════════════
+   CONNECTOR MARQUEE
+   ════════════════════════════════════════════════════════════════════ */
+var CONN = ["Vapi","Bland","Retell","Twilio","ElevenLabs","Synthflow","Air.ai","Custom SIP",
+"ChatGPT Enterprise","Claude Enterprise","Gemini Enterprise","Microsoft Copilot","Perplexity Enterprise",
+"Mistral","Cohere","Claude Code","Cursor","GitHub Copilot Agent","Devin","Windsurf","Codex","Aider","Cline",
+"Continue","JetBrains AI","Emergent","Intercom Fin","Zendesk AI","Drift","Agentforce","Ada","Forethought",
+"Slack","Teams","Discord","LangGraph","LangChain","CrewAI","AutoGen","Letta","Semantic Kernel","Pydantic AI",
+"OpenAI Agents SDK","DSPy","n8n","Zapier","Make","Mem0","Zep","Graphiti","Cognee","Supermemory","LangMem",
+"Pinecone","Weaviate","Qdrant","Chroma","Salesforce","HubSpot","Zendesk","Jira","Linear","ServiceNow",
+"Workday","SAP","NetSuite","Notion","Confluence","SharePoint","Google Workspace","MCP server","Kafka",
+"OpenTelemetry","SFTP"];
+function marquee(el, list){
+  if(!el) return;
+  var html = list.map(function(n){ return "<span>"+n+"</span>"; }).join("");
+  el.innerHTML = html + html;  // duplicated for a seamless -50% loop
+}
+var half = Math.ceil(CONN.length/2);
+marquee(document.getElementById("cm1"), CONN.slice(0,half));
+marquee(document.getElementById("cm2"), CONN.slice(half));
+
+/* ════════════════════════════════════════════════════════════════════
+   HEADER / REVEAL
+   ════════════════════════════════════════════════════════════════════ */
+var hdr = document.getElementById("hdr");
+addEventListener("scroll", function(){
+  hdr.classList.toggle("stuck", scrollY > 24);
+}, {passive:true});
+
+if("IntersectionObserver" in window){
+  var io = new IntersectionObserver(function(es){
+    es.forEach(function(en){ if(en.isIntersecting){ en.target.classList.add("in"); io.unobserve(en.target); } });
+  }, {rootMargin:"0px 0px -8% 0px", threshold:0.06});
+  document.querySelectorAll(".rv").forEach(function(n){ io.observe(n); });
+} else {
+  document.querySelectorAll(".rv").forEach(function(n){ n.classList.add("in"); });
+}
+
+/* ════════════════════════════════════════════════════════════════════
+   THE SCENE — hand-written WebGL2. No libraries, no CDN.
+
+   Concept: the scroll IS the write path. A cohort of facts travels
+   with the camera down a corridor of ten gate rings. At each ring
+   some of them are held (amber, pushed aside) or blocked (red, they
+   fall). What survives settles into the memory lattice, and the
+   lattice folds into the ledger chain.
+
+   Everything is a pure function of (instanceId, scrollProgress) in
+   the vertex shader, so scrubbing backwards is exact and the CPU
+   does no per-particle work.
+   ════════════════════════════════════════════════════════════════════ */
+var reduce = matchMedia("(prefers-reduced-motion: reduce)").matches;
+var scene  = document.getElementById("scene");
+var canvas = document.getElementById("gl");
+var checks = Array.prototype.slice.call(document.querySelectorAll(".check"));
+var rail   = document.getElementById("rail");
+var prog   = document.getElementById("prog");
+
+for(var r=0;r<10;r++) rail.appendChild(document.createElement("b"));
+var railBars = Array.prototype.slice.call(rail.children);
+
+var GATE_A = 0.145, GATE_B = 0.760;   // scene-progress window of the gate walkthrough
+var TRAVEL = 64.0;
+
+function camZ(p){
+  var gp = Math.min(1, Math.max(0, (p - GATE_A) / (GATE_B - GATE_A)));
+  var z  = 6.0 - gp * TRAVEL;
+  z += smoothstep(0.76, 1.0, p) * 11.0;      // pull back over the finale
+  return z;
+}
+function smoothstep(a,b,x){ var t = Math.min(1, Math.max(0, (x-a)/(b-a))); return t*t*(3-2*t); }
+
+/* ── progress plumbing ─────────────────────────────────────────── */
+var P = 0, visible = false;
+function readScroll(){
+  var rect = scene.getBoundingClientRect();
+  var span = scene.offsetHeight - innerHeight;
+  P = span > 0 ? Math.min(1, Math.max(0, -rect.top / span)) : 0;
+  visible = rect.top < innerHeight && rect.bottom > 0;
+
+  var gp = (P - GATE_A) / (GATE_B - GATE_A);
+  var inGate = gp >= -0.02 && gp <= 1.02;
+  prog.classList.toggle("on", inGate);
+  prog.style.width = (Math.min(1, Math.max(0, gp)) * 100) + "%";
+
+  if(!reduce){
+    var idx = Math.min(9, Math.max(0, Math.floor(Math.min(0.999, Math.max(0, gp)) * 10)));
+    if(idx !== readScroll.last){
+      readScroll.last = idx;
+      checks.forEach(function(c,i){ c.classList.toggle("on", i === idx); });
+      railBars.forEach(function(b,i){
+        b.classList.toggle("on", i === idx);
+        b.classList.toggle("done", i < idx);
+      });
+    }
+  }
+}
+readScroll.last = -1;
+addEventListener("scroll", readScroll, {passive:true});
+addEventListener("resize", readScroll);
+readScroll();
+
+if(reduce){ canvas.style.display = "none"; }
+
+/* ── GL ────────────────────────────────────────────────────────── */
+var gl = reduce ? null : (canvas.getContext("webgl2", {alpha:true, antialias:true, premultipliedAlpha:false}) || null);
+if(!gl){ canvas.style.display = "none"; }
+else {
+
+var COMMON = [
+"#version 300 es",
+"precision highp float;",
+"uniform mat4 uProj,uView;",
+"uniform float uProg,uTime,uCamZ;",
+"const float TRAVEL=64.0;",
+"vec3 hash3(float n){",
+"  vec3 p=fract(vec3(n)*vec3(0.1031,0.1030,0.0973));",
+"  p+=dot(p,p.yzx+33.33);",
+"  return fract((p.xxy+p.yzz)*p.zyx);",
+"}",
+"float ss(float a,float b,float x){float t=clamp((x-a)/(b-a),0.0,1.0);return t*t*(3.0-2.0*t);}",
+""].join("\n");
+
+function sh(type, src){
+  var s = gl.createShader(type);
+  gl.shaderSource(s, src); gl.compileShader(s);
+  if(!gl.getShaderParameter(s, gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(s));
+  return s;
+}
+function prg(vs, fs){
+  var p = gl.createProgram();
+  gl.attachShader(p, sh(gl.VERTEX_SHADER, vs));
+  gl.attachShader(p, sh(gl.FRAGMENT_SHADER, fs));
+  gl.linkProgram(p);
+  if(!gl.getProgramParameter(p, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(p));
+  return p;
+}
+
+/* ── particles: instanced billboard cards ── */
+var pV = COMMON + [
+"layout(location=0) in vec2 aC;",
+"out vec4 vCol; out vec2 vUv;",
+"void main(){",
+"  float id=float(gl_InstanceID);",
+"  vec3 a=hash3(id+1.7), b=hash3(id+137.3);",
+"  float gp=clamp((uProg-0.145)/(0.760-0.145),0.0,1.0);",
+
+"  float phase=a.x;",                                  // depth inside the cohort
+"  float ang=a.y*6.2831853;",
+"  float rad=0.55+pow(a.z,0.55)*2.18;",                // hollow core, stays inside the rings
+"  float k=floor(b.x*10.0);",                          // which gate judges it
+"  float vr=b.y;",
+"  float verdict = vr<0.70 ? 0.0 : (vr<0.875 ? 1.0 : 2.0);",
+
+"  float lead = 9.0 + phase*15.0;",
+"  vec3 pos = vec3(cos(ang)*rad, sin(ang)*rad, uCamZ - lead);",
+"  pos.x += sin(uTime*0.5 + id*0.41)*0.055;",
+"  pos.y += cos(uTime*0.44 + id*0.29)*0.055;",
+
+"  float crossGp = (k+0.5)/10.0 - lead/TRAVEL;",
+"  float dt = max(0.0, gp - crossGp);",
+"  float judged = step(0.00001, dt);",
+
+"  vec3 col = vec3(0.055,0.055,0.06);",
+"  float al = 1.0;",
+"  float survive = 1.0;",
+
+"  if(verdict > 0.5 && judged > 0.5){",
+"    survive = 0.0;",
+"    if(verdict < 1.5){",                              // held — pushed aside, waits, fades
+"      pos.z += dt*TRAVEL*0.93;",
+"      pos.xy *= 1.0 + dt*1.7;",
+"      col = vec3(0.635,0.372,0.0);",
+"      al = 1.0 - ss(0.045,0.185,dt);",
+"    } else {",                                        // blocked — falls out of the stream
+"      pos.z += dt*TRAVEL*0.97;",
+"      pos.y -= dt*dt*340.0;",
+"      pos.xy += vec2(cos(ang),sin(ang))*dt*2.2;",
+"      col = vec3(0.702,0.165,0.118);",
+"      al = 1.0 - ss(0.008,0.075,dt);",
+"    }",
+"  } else if(verdict > 0.5) {",
+"    survive = 0.0;",                                  // not judged yet, but doomed
+"  }",
+
+/* the memory lattice, then the ledger chain — survivors only */
+"  float tl = ss(0.770,0.865,uProg)*survive;",
+"  float tc = ss(0.880,0.962,uProg)*survive;",
+/* The memory lattice. Jittered by a hair, otherwise the regular grid moirés
+   against the pixel grid in perspective and reads as an artefact. */
+"  float ci=mod(id,26.0), ri=mod(floor(id/26.0),20.0), li=floor(id/520.0);",
+"  vec3 lat = vec3((ci-13.0)*0.32 + 2.3,(ri-9.5)*0.33, uCamZ-15.0 - li*0.40);",
+"  lat += (hash3(id+7.3)-0.5)*0.10;",
+/* The chain runs across the view, not into it — a row of sealed blocks
+   receding slightly, so it reads as a chain rather than a cloud seen end-on. */
+"  float bi=floor(id/265.0);",
+"  vec3 j=(hash3(id+61.0)-0.5)*vec3(0.30,0.30,0.26);",
+"  vec3 chn= vec3((bi-4.0)*1.25 + 0.8 + j.x, j.y + 0.5, uCamZ-15.0 - bi*0.5 + j.z);",
+"  pos = mix(mix(pos,lat,tl), chn, tc);",
+"  col = mix(col, vec3(0.055,0.055,0.06), max(tl,tc));",
+
+"  vec4 mv = uView*vec4(pos,1.0);",
+"  float dist = -mv.z;",
+"  float fade = ss(2.6,7.0,dist) * (1.0 - ss(32.0,50.0,dist));",
+"  float sz = 0.058*(0.85+phase*0.35)*(1.0+tl*0.3+tc*0.45);",
+"  mv.xy += aC*sz;",
+"  gl_Position = uProj*mv;",
+"  vUv = aC;",
+"  vCol = vec4(col, al*fade*0.9);",
+"}"].join("\n");
+
+var pF = ["#version 300 es","precision highp float;",
+"in vec4 vCol; in vec2 vUv; out vec4 o;",
+"void main(){",
+"  vec2 q=abs(vUv)-0.30;",
+"  float d=length(max(q,0.0))-0.15;",
+"  float m=1.0-smoothstep(-0.02,0.045,d);",
+"  if(m<=0.003) discard;",
+"  o=vec4(vCol.rgb, vCol.a*m);",
+"}"].join("\n");
+
+/* ── rings: ten instanced line loops ── */
+var rV = COMMON + [
+"layout(location=0) in float aT;",
+"out float vA;",
+"void main(){",
+"  float k=float(gl_InstanceID);",
+"  float z = 6.0 - ((k+0.5)/10.0)*TRAVEL;",
+"  float ang = aT*6.2831853;",
+"  float pulse = 1.0 + 0.02*sin(uTime*1.3 + k);",
+"  float rr = 3.15*pulse;",
+"  vec3 pos = vec3(cos(ang)*rr, sin(ang)*rr, z);",
+"  vec4 mv = uView*vec4(pos,1.0);",
+"  float dist=-mv.z;",
+"  float near = 1.0 - ss(-1.2,3.0,dist);",           // fade as we pass through it
+"  vA = (1.0 - ss(26.0,46.0,dist)) * (1.0-near) * (1.0 - ss(0.775,0.90,uProg));",
+"  gl_Position = uProj*mv;",
+"}"].join("\n");
+
+var rF = ["#version 300 es","precision highp float;","in float vA; out vec4 o;",
+"void main(){ if(vA<=0.004) discard; o=vec4(0.043,0.043,0.047, vA*0.42); }"].join("\n");
+
+/* ── floor grid ── */
+var gV = COMMON + [
+"layout(location=0) in float aE;",
+"out float vA;",
+"void main(){",
+"  float i=float(gl_InstanceID);",
+"  vec3 pos;",
+"  if(i<25.0){",                                       // lines running along Z
+"    float x=(i-12.0)*0.82;",
+"    pos=vec3(x,-2.75, uCamZ + 4.0 - aE*52.0);",
+"  } else {",                                          // lines running along X
+"    float j=i-25.0;",
+"    float base=floor((uCamZ-52.0)/2.4)*2.4;",
+"    pos=vec3((aE-0.5)*19.0, -2.75, base + j*2.4);",
+"  }",
+"  vec4 mv=uView*vec4(pos,1.0);",
+"  float dist=-mv.z;",
+"  vA=(1.0-ss(11.0,38.0,dist))*ss(1.2,5.0,dist)*(1.0-ss(0.80,0.94,uProg));",
+"  gl_Position=uProj*mv;",
+"}"].join("\n");
+
+var gF = ["#version 300 es","precision highp float;","in float vA; out vec4 o;",
+"void main(){ if(vA<=0.004) discard; o=vec4(0.043,0.043,0.047, vA*0.13); }"].join("\n");
+
+/* ── the chain link between ledger blocks ── */
+var cV = COMMON + [
+"layout(location=0) in float aE;",
+"out float vA;",
+"void main(){",
+"  float i=float(gl_InstanceID);",
+"  float x0=(i-4.0)*1.25+0.8, x1=(i-3.0)*1.25+0.8;",
+"  float z0=uCamZ-15.0 - i*0.5, z1=z0-0.5;",
+"  vec3 pos=vec3(mix(x0,x1,aE), 0.5, mix(z0,z1,aE));",
+"  vec4 mv=uView*vec4(pos,1.0);",
+"  float dist=-mv.z;",
+"  vA=ss(0.885,0.955,uProg)*(1.0-ss(30.0,58.0,dist));",
+"  gl_Position=uProj*mv;",
+"}"].join("\n");
+
+var PART = prg(pV,pF), RING = prg(rV,rF), GRID = prg(gV,gF), CHAIN = prg(cV,gF);
+
+function buf(data){
+  var b = gl.createBuffer();
+  gl.bindBuffer(gl.ARRAY_BUFFER, b);
+  gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(data), gl.STATIC_DRAW);
+  return b;
+}
+var quad = buf([-0.5,-0.5, 0.5,-0.5, -0.5,0.5, 0.5,0.5]);
+var ringT = []; for(var i=0;i<80;i++) ringT.push(i/80);
+var ringB = buf(ringT);
+var edgeB = buf([0,1]);
+
+var vaoP = gl.createVertexArray();
+gl.bindVertexArray(vaoP);
+gl.bindBuffer(gl.ARRAY_BUFFER, quad);
+gl.enableVertexAttribArray(0); gl.vertexAttribPointer(0,2,gl.FLOAT,false,0,0);
+
+var vaoR = gl.createVertexArray();
+gl.bindVertexArray(vaoR);
+gl.bindBuffer(gl.ARRAY_BUFFER, ringB);
+gl.enableVertexAttribArray(0); gl.vertexAttribPointer(0,1,gl.FLOAT,false,0,0);
+
+var vaoE = gl.createVertexArray();
+gl.bindVertexArray(vaoE);
+gl.bindBuffer(gl.ARRAY_BUFFER, edgeB);
+gl.enableVertexAttribArray(0); gl.vertexAttribPointer(0,1,gl.FLOAT,false,0,0);
+gl.bindVertexArray(null);
+
+/* ── matrices ── */
+/* An off-centre frustum. `shift` slides the vanishing point sideways in NDC
+   without moving the camera off the corridor axis — so we still fly straight
+   through the rings, but the whole scene renders in the right-hand column and
+   the left column stays clean for type. */
+function perspective(fovy, asp, n, f, shift){
+  var t = 1/Math.tan(fovy/2);
+  return new Float32Array([t/asp,0,0,0, 0,t,0,0, -shift,0,(f+n)/(n-f),-1, 0,0,2*f*n/(n-f),0]);
+}
+function frustumShift(){
+  return innerWidth >= 1180 ? 0.44 : (innerWidth >= 900 ? 0.26 : 0.0);
+}
+function lookAt(e, c, u){
+  var zx=e[0]-c[0], zy=e[1]-c[1], zz=e[2]-c[2];
+  var zl=Math.hypot(zx,zy,zz)||1; zx/=zl; zy/=zl; zz/=zl;
+  var xx=u[1]*zz-u[2]*zy, xy=u[2]*zx-u[0]*zz, xz=u[0]*zy-u[1]*zx;
+  var xl=Math.hypot(xx,xy,xz)||1; xx/=xl; xy/=xl; xz/=xl;
+  var yx=zy*xz-zz*xy, yy=zz*xx-zx*xz, yz=zx*xy-zy*xx;
+  return new Float32Array([
+    xx,yx,zx,0, xy,yy,zy,0, xz,yz,zz,0,
+    -(xx*e[0]+xy*e[1]+xz*e[2]), -(yx*e[0]+yy*e[1]+yz*e[2]), -(zx*e[0]+zy*e[1]+zz*e[2]), 1]);
+}
+
+var DPR = Math.min(devicePixelRatio||1, 1.9);
+var W=0,H=0;
+function resize(){
+  var w = Math.round(innerWidth*DPR), h = Math.round(innerHeight*DPR);
+  if(w===W && h===H) return;
+  W=w; H=h; canvas.width=w; canvas.height=h;
+}
+addEventListener("resize", resize);
+resize();
+
+var COUNT = innerWidth < 760 ? 700 : (innerWidth < 1200 ? 1700 : 2400);
+
+var U = {};
+[["P",PART],["R",RING],["G",GRID],["C",CHAIN]].forEach(function(pair){
+  var key = pair[0], p = pair[1];
+  U[key] = {
+    p:p,
+    proj: gl.getUniformLocation(p,"uProj"),
+    view: gl.getUniformLocation(p,"uView"),
+    prog: gl.getUniformLocation(p,"uProg"),
+    time: gl.getUniformLocation(p,"uTime"),
+    camz: gl.getUniformLocation(p,"uCamZ")
+  };
+});
+
+gl.enable(gl.BLEND);
+gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+gl.disable(gl.DEPTH_TEST);
+
+var t0 = performance.now(), smooth = 0, raf = 0;
+
+function frame(now){
+  raf = requestAnimationFrame(frame);
+  if(!visible){ return; }
+
+  var t = (now - t0)/1000;
+  smooth += (P - smooth) * 0.115;               // scroll easing
+  var p = smooth;
+
+  var cz = camZ(p);
+  var fin = smoothstep(0.775, 1.0, p);
+  var eye = [Math.sin(p*5.4)*0.42, 0.16 + fin*1.25, cz];
+  var tgt = [Math.sin(p*5.4)*0.10, fin*0.85,       cz - 13.0];
+
+  var proj = perspective(52*Math.PI/180, W/H, 0.1, 220, frustumShift());
+  var view = lookAt(eye, tgt, [0,1,0]);
+
+  gl.viewport(0,0,W,H);
+  gl.clearColor(0,0,0,0);
+  gl.clear(gl.COLOR_BUFFER_BIT);
+
+  function bind(k){
+    var u = U[k];
+    gl.useProgram(u.p);
+    gl.uniformMatrix4fv(u.proj,false,proj);
+    gl.uniformMatrix4fv(u.view,false,view);
+    gl.uniform1f(u.prog,p); gl.uniform1f(u.time,t); gl.uniform1f(u.camz,cz);
+  }
+
+  bind("G"); gl.bindVertexArray(vaoE); gl.drawArraysInstanced(gl.LINES,0,2,65);
+  bind("R"); gl.bindVertexArray(vaoR); gl.drawArraysInstanced(gl.LINE_LOOP,0,80,10);
+  bind("C"); gl.bindVertexArray(vaoE); gl.drawArraysInstanced(gl.LINES,0,2,8);
+  bind("P"); gl.bindVertexArray(vaoP); gl.drawArraysInstanced(gl.TRIANGLE_STRIP,0,4,COUNT);
+
+  gl.bindVertexArray(null);
+}
+raf = requestAnimationFrame(frame);
+
+document.addEventListener("visibilitychange", function(){
+  if(document.hidden){ cancelAnimationFrame(raf); }
+  else { t0 = performance.now() - 1000; raf = requestAnimationFrame(frame); }
+});
+
+} /* /gl */
+})();
+</script>
+</body>
+</html>
