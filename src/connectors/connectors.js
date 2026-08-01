@@ -371,6 +371,52 @@ export class ConnectorManager {
     return { rows: rows.sort((a, b) => b.costUsd - a.costUsd), total: Math.round(rows.reduce((a, r) => a + r.costUsd, 0) * 100) / 100 };
   }
 
+  /**
+   * The whole catalog, with each entry's live connection state folded in.
+   *
+   * The screen that browses connectors and the screen that manages them are the
+   * same screen, so they need one payload: every connector Vault ships, what it
+   * can and cannot pull, and — for the ones already connected — the instance,
+   * its mode, health and owners.
+   */
+  catalogView() {
+    const byCatalogId = new Map();
+    for (const c of this.all()) {
+      if (!byCatalogId.has(c.catalogId)) byCatalogId.set(c.catalogId, []);
+      byCatalogId.get(c.catalogId).push(c);
+    }
+    const health = new Map(this.health().map((h) => [h.id, h]));
+
+    const entries = CONNECTORS.map((e) => {
+      const instances = (byCatalogId.get(e.id) ?? []).map((c) => ({
+        id: c.id, mode: c.mode, status: c.killed ? 'killed' : c.status,
+        owner: c.owner, technicalOwner: c.technicalOwner,
+        eventsIngested: c.eventsIngested, lastEventAt: c.lastEventAt,
+        killed: c.killed, costUsd: c.costUsd,
+        credentialRotatedAt: c.credentialRotatedAt,
+        openGaps: (c.gapReports ?? []).length,
+        health: health.get(c.id) ?? null
+      }));
+      return {
+        ...e,
+        modesSupported: e.modes.map((m) => MODES[m]),
+        connected: instances.length > 0,
+        instances
+      };
+    });
+
+    const categories = [...new Set(entries.map((e) => e.category))].sort();
+    return {
+      total: entries.length,
+      connected: entries.filter((e) => e.connected).length,
+      categories,
+      entries,
+      modes: MODES,
+      note: 'Watch finds things. Inline stops things. Gateway finds things you did not know existed. '
+        + 'A connector in Watch mode is observable but NOT preventable — the gate cannot block what it only reads about afterwards.'
+    };
+  }
+
   /** The seven things every connector ships with (§4.2). */
   describe(catalogId) {
     const e = catalogEntry(catalogId);

@@ -43,6 +43,9 @@ import { ModuleRegistry } from './modules/modules.js';
 import { ReviewQueue } from './review/review.js';
 import { SearchEngine } from './search/search.js';
 import { ReadPath } from './read/read.js';
+import { ModelProvider } from './ai/provider.js';
+import { ask } from './ai/ask.js';
+import { refilePass } from './ai/refile.js';
 import { HygieneEngine } from './hygiene/hygiene.js';
 import { TraceEngine } from './trace/trace.js';
 import { VaultTrace } from './observability/vaulttrace.js';
@@ -345,6 +348,12 @@ export class Vault {
       alerts: this.alerts, instructions: this.instructions, consent: this.consent,
       privacy: this.privacy
     });
+
+    // ---- the model layer, optional by construction -------------------------
+    // Absent by default. Filing and answers both run without it and say which
+    // path produced their result, so an air-gapped deployment loses wording,
+    // never correctness.
+    this.model = new ModelProvider(options.model ?? {});
 
     // ---- review queue -----------------------------------------------------
     this.review = new ReviewQueue({
@@ -786,6 +795,42 @@ export class Vault {
   /** The labelled block an agent actually receives. */
   ask(query, ctx = {}) {
     return this.readPath.render(this.read(query, ctx));
+  }
+
+  /**
+   * A question in, an answer grounded in facts this asker is cleared to see.
+   *
+   * Retrieval goes through the ordinary gated search — permissions checked at
+   * query time, withheld facts counted, provenance attached. A model, if one is
+   * configured, only turns those retrieved facts into a sentence, and any
+   * answer citing a fact that was not retrieved is discarded whole. With no
+   * model the deterministic answer is returned and labelled as such.
+   */
+  answer(question, ctx = {}) {
+    const searchResult = this.search.search(question, {
+      actor: ctx.actor ?? { id: ctx.agentId ?? 'unknown', kind: 'human' },
+      clearance: ctx.clearance ?? 'internal',
+      canRead: ctx.canRead ?? (() => true),
+      folder: ctx.folder ?? null,
+      entity: ctx.entity ?? null,
+      limit: ctx.limit ?? 12,
+      purpose: ctx.purpose ?? 'ask',
+      naturalLanguage: true
+    });
+    return ask({ question, searchResult, provider: this.model });
+  }
+
+  /**
+   * Let a model refine where already-filed facts live.
+   *
+   * Runs off the write path on purpose: the gate has a latency budget and a
+   * model call would blow it, and a model outage must never become a write
+   * outage. Every fact this touches is already filed and already behind
+   * whatever wall its folder has. See src/ai/refile.js for what a re-file may
+   * and may never do.
+   */
+  refileWithModel(opts = {}) {
+    return refilePass({ vault: this, ...opts });
   }
 
   // =========================================================================

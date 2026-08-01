@@ -127,12 +127,19 @@ export class ApiServer {
     this.route('GET', '/api/connectors', R('platform', 'admin', 'security'), () => ({
       catalog: v.connectors.all(), health: v.connectors.health(), cost: v.connectors.costReport()
     }));
+    this.route('GET', '/api/connectors/catalog', R('platform', 'admin', 'security'), () => v.connectors.catalogView());
     this.route('GET', '/api/connectors/:id/describe', ALL, ({ params }) => v.connectors.describe(params.id));
     this.route('POST', '/api/connectors', R('platform', 'admin'), ({ body, principal }) =>
       v.connectors.connect({ ...body, actor: principal.name }));
     this.route('POST', '/api/connectors/:id/events', ALL, ({ params, body }) => v.connectors.receive(params.id, body));
     this.route('POST', '/api/connectors/:id/kill', R('platform', 'admin', 'security'), ({ params, body, principal }) =>
       v.connectors.kill(params.id, { actor: principal.name, reason: body.reason }));
+    this.route('POST', '/api/connectors/:id/revive', R('platform', 'admin', 'security'), ({ params, body, principal }) =>
+      v.connectors.revive(params.id, { actor: principal.name, reason: body.reason }));
+    this.route('POST', '/api/connectors/:id/disconnect', R('platform', 'admin'), ({ params, body, principal }) =>
+      v.connectors.disconnect(params.id, { actor: principal.name, reason: body.reason }));
+    this.route('POST', '/api/connectors/:id/rotate', R('platform', 'admin'), ({ params, body, principal }) =>
+      v.connectors.rotateCredential(params.id, { credential: body.credential, actor: principal.name, reason: body.reason }));
     this.route('GET', '/api/connectors/gaps', R('platform', 'admin', 'security'), () => v.connectors.detectGaps());
 
     // ---- 🧠 MEMORY --------------------------------------------------------
@@ -183,6 +190,19 @@ export class ApiServer {
         canRead: (f) => v.folders.check('read', principalActor(principal), f.folder || 'company/'),
         ...body
       }));
+
+    this.route('POST', '/api/ask', ALL, ({ body, principal }) =>
+      v.answer(body.question, {
+        actor: { id: principal.name, kind: 'human', groups: principal.groups || [] },
+        clearance: principal.clearance ?? 'internal',
+        canRead: (f) => v.folders.check('read', principalActor(principal), f.folder || 'company/'),
+        folder: body.folder ?? null,
+        entity: body.entity ?? null,
+        limit: body.limit ?? 12
+      }));
+    this.route('GET', '/api/model', R('platform', 'admin', 'security'), () => v.model.status());
+    this.route('POST', '/api/model/refile', R('platform', 'admin'), ({ body, principal }) =>
+      v.refileWithModel({ limit: body?.limit ?? 50, actor: principal.name }));
 
     // ---- ⏳ NEEDS REVIEW ---------------------------------------------------
     this.route('GET', '/api/review', ALL, ({ query, principal }) =>

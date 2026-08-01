@@ -69,6 +69,7 @@
   // ---- screens -----------------------------------------------------------
   const SCREENS = [
     { id: 'map', icon: '🗺️', name: 'Map', roles: ['platform', 'security', 'admin', 'department_head', 'risk'] },
+    { id: 'connectors', icon: '🔌', name: 'Connectors', roles: ['platform', 'admin', 'security'] },
     { id: 'memory', icon: '🧠', name: 'Memory', roles: null },
     { id: 'review', icon: '⏳', name: 'Needs Review', roles: null },
     { id: 'rules', icon: '📜', name: 'Rules', roles: null },
@@ -140,9 +141,254 @@
     }
   };
 
+  // 🔌 CONNECTORS — browse the catalog, connect one, manage what is connected
+  let connectorFilter = { category: 'all', q: '' };
+  RENDER.connectors = async (v) => {
+    const cat = await api('/api/connectors/catalog');
+
+    v.append(cards([
+      ['In catalog', cat.total],
+      ['Connected', cat.connected, cat.connected ? 'good' : 'warn'],
+      ['Inline (can block)', cat.entries.filter((e) => e.instances.some((i) => i.mode === 'inline')).length, 'good'],
+      ['Watch only', cat.entries.filter((e) => e.connected && e.instances.every((i) => i.mode === 'watch')).length, 'warn']
+    ]));
+
+    const modeNote = el('div', 'card');
+    modeNote.innerHTML = `<h3>Before you pick a mode</h3><p class="muted tiny">${esc(cat.note)}</p>`;
+    v.append(modeNote);
+
+    const controls = el('div', 'card');
+    controls.innerHTML = `<h3>Find a connector</h3>
+      <div class="row">
+        <input id="connQ" placeholder="search by name or vendor…" style="flex:1" aria-label="Search connectors">
+        <select id="connCat" aria-label="Filter by category">
+          <option value="all">All categories</option>
+          ${cat.categories.map((c) => `<option value="${esc(c)}">${esc(c)}</option>`).join('')}
+        </select>
+      </div>`;
+    v.append(controls);
+
+    const listWrap = el('div');
+    v.append(listWrap);
+
+    const draw = () => {
+      const q = connectorFilter.q.toLowerCase();
+      const shown = cat.entries.filter((e) =>
+        (connectorFilter.category === 'all' || e.category === connectorFilter.category)
+        && (!q || e.name.toLowerCase().includes(q) || String(e.vendor).toLowerCase().includes(q)));
+
+      listWrap.innerHTML = '';
+      if (!shown.length) { listWrap.append(el('div', 'empty', 'No connector matches that search.')); return; }
+
+      // Connected first — this screen is for managing as much as for browsing.
+      shown.sort((a, b) => (b.connected ? 1 : 0) - (a.connected ? 1 : 0) || a.name.localeCompare(b.name));
+
+      const grid = el('div', 'grid g2');
+      for (const e of shown) {
+        const c = el('div', 'card connector');
+        const live = e.instances.filter((i) => i.status === 'connected');
+        const killed = e.instances.filter((i) => i.killed);
+        c.innerHTML = `
+          <div class="row">
+            <strong>${esc(e.name)}</strong>
+            <span class="pill">${esc(e.category)}</span>
+            ${e.connected
+    ? `<span class="pill ${killed.length ? 'r' : 'g'}">${killed.length ? 'killed' : `connected ×${live.length}`}</span>`
+    : '<span class="pill">not connected</span>'}
+            <span class="spacer"></span>
+            <span class="tiny dimmer">${esc(e.vendor)}</span>
+          </div>
+          <div class="tiny muted" style="margin-top:8px">${esc(e.auth)} · ${e.setupMinutes ?? '?'} min setup · ${esc(e.rateLimit)}</div>
+          <div class="tiny" style="margin-top:8px"><span class="dimmer">pulls:</span> ${esc((e.pulls || []).join(', ') || '—')}</div>
+          <div class="tiny warn" style="margin-top:4px"><span class="dimmer">cannot pull:</span> ${esc((e.cannotPull || []).join(', ') || '—')}</div>
+          <div class="row" style="margin-top:12px">
+            ${e.modes.map((m) => `<span class="pill ${m === 'inline' ? 'g' : m === 'gateway' ? 'b' : 'a'}">${esc(m)}</span>`).join('')}
+            <span class="spacer"></span>
+            <button class="ghost" data-open="${esc(e.id)}" type="button">${e.connected ? 'Manage' : 'Connect'}</button>
+          </div>
+          ${e.instances.length ? `<div class="sep"></div>${e.instances.map((i) => `
+            <div class="row tiny" style="margin-bottom:6px">
+              <span class="mono dimmer">${esc(i.id)}</span>
+              <span class="pill ${i.mode === 'inline' ? 'g' : i.mode === 'gateway' ? 'b' : 'a'}">${esc(i.mode)}</span>
+              <span class="${i.killed ? 'bad' : i.status === 'connected' ? 'good' : 'dimmer'}">${esc(i.killed ? 'killed' : i.status)}</span>
+              <span class="dimmer">${fmt(i.eventsIngested)} events</span>
+              ${i.openGaps ? `<span class="bad">${i.openGaps} gap(s)</span>` : ''}
+              <span class="spacer"></span>
+              <span class="dimmer">${esc(i.owner || 'unowned')}</span>
+            </div>`).join('')}` : ''}`;
+        grid.append(c);
+      }
+      listWrap.append(grid);
+      listWrap.querySelectorAll('[data-open]').forEach((n) =>
+        n.addEventListener('click', () => openConnector(cat.entries.find((x) => x.id === n.dataset.open))));
+    };
+
+    const qEl = controls.querySelector('#connQ');
+    const catEl = controls.querySelector('#connCat');
+    qEl.value = connectorFilter.q;
+    catEl.value = connectorFilter.category;
+    qEl.addEventListener('input', () => { connectorFilter.q = qEl.value; draw(); });
+    catEl.addEventListener('change', () => { connectorFilter.category = catEl.value; draw(); });
+    draw();
+  };
+
+  /** Connect a new instance, or manage the ones already connected. */
+  function openConnector(entry) {
+    if (!entry) return;
+    const body = el('div');
+    body.innerHTML = `
+      <p class="muted tiny">${esc(entry.vendor)} · ${esc(entry.auth)} · scopes requested: ${esc((entry.scopes || []).join(', ') || 'none')}</p>
+      <div class="warn tiny" style="margin:10px 0">Cannot pull: ${esc((entry.cannotPull || []).join(', ') || '—')}</div>`;
+
+    for (const m of entry.modesSupported || []) {
+      body.append(el('div', 'item', `<strong class="tiny">${esc(m.name)}</strong>
+        <div class="tiny muted" style="margin-top:4px">${esc(m.how)}</div>
+        <div class="tiny dimmer" style="margin-top:4px">${esc(m.power)}</div>`));
+    }
+
+    if (entry.instances.length) {
+      const mgmt = el('div');
+      mgmt.innerHTML = '<h4>Connected instances</h4>';
+      for (const i of entry.instances) {
+        const row = el('div', 'item');
+        row.innerHTML = `
+          <div class="row">
+            <span class="mono tiny">${esc(i.id)}</span>
+            <span class="pill ${i.mode === 'inline' ? 'g' : i.mode === 'gateway' ? 'b' : 'a'}">${esc(i.mode)}</span>
+            <span class="tiny ${i.killed ? 'bad' : 'good'}">${esc(i.killed ? 'killed' : i.status)}</span>
+            <span class="spacer"></span>
+            <span class="tiny dimmer">${esc(i.owner || 'unowned')} / ${esc(i.technicalOwner || 'unowned')}</span>
+          </div>
+          <div class="tiny dimmer" style="margin-top:6px">${fmt(i.eventsIngested)} events · $${(i.costUsd ?? 0).toFixed(4)}${i.openGaps ? ` · <span class="bad">${i.openGaps} open gap(s)</span>` : ''}</div>
+          <div class="row" style="margin-top:10px">
+            ${i.killed
+    ? `<button class="ghost" data-act="revive" data-id="${esc(i.id)}" type="button">Revive</button>`
+    : `<button class="ghost" data-act="kill" data-id="${esc(i.id)}" type="button">Kill switch</button>`}
+            <button class="ghost" data-act="disconnect" data-id="${esc(i.id)}" type="button">Disconnect</button>
+          </div>`;
+        mgmt.append(row);
+      }
+      mgmt.querySelectorAll('[data-act]').forEach((btn) => btn.addEventListener('click', async () => {
+        const act = btn.dataset.act;
+        const reason = prompt(`Reason for ${act}? (recorded in the ledger against your name)`);
+        if (!reason) return;
+        try {
+          await api(`/api/connectors/${encodeURIComponent(btn.dataset.id)}/${act}`, { method: 'POST', body: { reason } });
+          toast(`${act} recorded`);
+          closeSheet();
+          go('connectors');
+        } catch (e) { toast(e.message, true); }
+      }));
+      body.append(mgmt);
+    }
+
+    const form = el('form', 'item');
+    form.innerHTML = `
+      <h4>${entry.connected ? 'Connect another instance' : 'Connect'}</h4>
+      <label>Mode</label>
+      <select name="mode">${entry.modes.map((m) => `<option value="${esc(m)}">${esc(m)}</option>`).join('')}</select>
+      <label>Business owner</label>
+      <input name="owner" placeholder="who answers for this connector existing" required>
+      <label>Technical owner</label>
+      <input name="technicalOwner" placeholder="who gets paged when it breaks" required>
+      <p class="tiny dimmer">Both are required. The same person may hold both roles — what is not allowed is neither being anybody.</p>
+      <button type="submit">Connect</button>`;
+    form.addEventListener('submit', async (ev) => {
+      ev.preventDefault();
+      const f = new FormData(form);
+      try {
+        await api('/api/connectors', {
+          method: 'POST',
+          body: {
+            catalogId: entry.id, mode: f.get('mode'),
+            owner: f.get('owner'), technicalOwner: f.get('technicalOwner')
+          }
+        });
+        toast(`${entry.name} connected in ${f.get('mode')} mode`);
+        closeSheet();
+        go('connectors');
+      } catch (e) { toast(e.message, true); }
+    });
+    body.append(form);
+
+    openSheet(entry.name, body);
+  }
+
   // 🧠 MEMORY
   RENDER.memory = async (v) => {
-    const tabs = tabbar(['Facts', 'Golden facts', 'Folders', 'Entities', 'Search'], async (i, body) => {
+    const tabs = tabbar(['Ask', 'Facts', 'Golden facts', 'Folders', 'Entities', 'Search'], async (i, body) => {
+      body.innerHTML = '';
+      if (i === 0) { body.append(askPanel()); return; }
+      i -= 1;                                   // 'Ask' is new; the rest shift
+      return renderMemoryTab(i, body);
+    });
+    v.append(tabs);
+  };
+
+  /**
+   * Ask a question of the memory.
+   *
+   * Retrieval is the ordinary gated search, so answers are already scoped to
+   * this person's clearance. The panel deliberately shows the withheld count
+   * and every citation next to the prose: an answer nobody can check is the
+   * thing this product exists not to produce.
+   */
+  function askPanel() {
+    const c = el('div', 'card');
+    c.innerHTML = `<h3>Ask the memory — answers cite the facts they came from</h3>
+      <div class="row">
+        <input id="askQ" placeholder="what did we promise this customer…" style="flex:1" aria-label="Your question">
+        <button id="askGo" style="margin:0" type="button">Ask</button>
+      </div>
+      <p class="tiny dimmer" style="margin-top:8px">Only facts you are cleared to read are used. Anything withheld is counted, never silently dropped.</p>
+      <div id="askOut" style="margin-top:16px" aria-live="polite"></div>`;
+
+    const run = async () => {
+      const q = c.querySelector('#askQ').value.trim();
+      if (!q) return;
+      const out = c.querySelector('#askOut');
+      out.innerHTML = '<div class="loading">thinking…</div>';
+      try {
+        const r = await api('/api/ask', { method: 'POST', body: { question: q } });
+        out.innerHTML = '';
+
+        const head = el('div', 'row tiny dimmer');
+        head.innerHTML = `<span>${r.retrieved} fact(s) used</span>
+          ${r.withheld ? `<span class="warn">${r.withheld} withheld — exists, but not for your clearance</span>` : ''}
+          <span class="spacer"></span>
+          <span class="pill ${r.source === 'model' ? 'b' : ''}">${esc(r.source)}</span>`;
+        out.append(head);
+
+        const ans = el('div', 'item');
+        ans.innerHTML = `<div class="claim">${esc(r.answer)}</div>
+          ${r.caveat ? `<div class="warn tiny" style="margin-top:8px">⚠️ ${esc(r.caveat)}</div>` : ''}
+          ${r.note ? `<div class="tiny dimmer" style="margin-top:6px">${esc(r.note)}</div>` : ''}`;
+        out.append(ans);
+
+        if (r.citations?.length) {
+          out.append(card('Facts this answer was built from', table(
+            ['Fact', 'Type', 'Sensitivity'],
+            r.citations.map((x) => [
+              `<span class="clickable" data-fact="${esc(x.id)}">${esc(x.claim)}</span><div class="tiny dimmer mono">${esc(x.id)}</div>`,
+              `<span class="tiny">${esc(x.badge ?? '')}</span>`,
+              `<span class="pill">${esc(x.sensitivity ?? '')}</span>`
+            ])
+          )));
+          out.querySelectorAll('[data-fact]').forEach((n) =>
+            n.addEventListener('click', () => openFact(n.dataset.fact)));
+        }
+      } catch (e) {
+        out.innerHTML = '';
+        out.append(el('div', 'empty bad', esc(e.message)));
+      }
+    };
+    c.querySelector('#askGo').addEventListener('click', run);
+    c.querySelector('#askQ').addEventListener('keydown', (ev) => { if (ev.key === 'Enter') run(); });
+    return c;
+  }
+
+  async function renderMemoryTab(i, body) {
+    {
       body.innerHTML = '';
       if (i === 0) {
         const facts = await api('/api/facts?limit=200');
@@ -185,9 +431,8 @@
       } else {
         body.append(searchPanel());
       }
-    });
-    v.append(tabs);
-  };
+    }
+  }
 
   function searchPanel() {
     const c = el('div', 'card');
@@ -744,6 +989,41 @@ ${Object.entries(p.method).map(([k, v2]) => `  ${k.padEnd(24)}${esc(v2)}`).join(
   };
 
   // ---- helpers -----------------------------------------------------------
+
+  /**
+   * A slide-over panel for detail and forms.
+   *
+   * A real <dialog> rather than a positioned div: the browser gives us the
+   * focus trap, Escape to close, and inert background for free, and every one
+   * of those hand-rolled is a bug waiting to happen for keyboard users.
+   */
+  let sheetEl = null;
+  function openSheet(title, content) {
+    closeSheet();
+    sheetEl = el('dialog', 'sheet');
+    sheetEl.setAttribute('aria-label', title);
+    const head = el('div', 'sheet-head');
+    head.innerHTML = `<h2>${esc(title)}</h2>`;
+    const close = el('button', 'ghost', 'Close');
+    close.type = 'button';
+    close.addEventListener('click', closeSheet);
+    head.append(close);
+    const bodyWrap = el('div', 'sheet-body');
+    bodyWrap.append(content);
+    sheetEl.append(head, bodyWrap);
+    document.body.append(sheetEl);
+    sheetEl.showModal();
+    // Escape fires `cancel`, and the element has to come out of the DOM or the
+    // next open stacks a second dialog behind the first.
+    sheetEl.addEventListener('close', () => { sheetEl?.remove(); sheetEl = null; });
+  }
+  function closeSheet() {
+    if (!sheetEl) return;
+    sheetEl.close();
+    sheetEl.remove();
+    sheetEl = null;
+  }
+
   let cardSeq = 0;
   function card(title, html) {
     const c = el('div', 'card');
