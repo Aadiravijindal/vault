@@ -22,22 +22,40 @@ import { receiveWebhook } from '../connectors/inbound.js';
 const HERE = dirname(fileURLToPath(import.meta.url));
 const UI_DIR = join(HERE, '..', 'ui');
 
-/** §24 — who sees what. Enforced, not documented. */
+/**
+ * §24 — who sees what. Enforced, not documented.
+ *
+ * Three capabilities are tracked separately here rather than inferred from
+ * seniority, because they protect different things and the people who need them
+ * are not the same people:
+ *
+ *   privilegeCleared  may read attorney-client material
+ *   administrator     may read administrator-only folders
+ *   canAsk            may put natural-language questions to the whole memory
+ *
+ * `canAsk` is narrower than "may read facts" on purpose. An ordinary read
+ * returns the handful of facts somebody is cleared for; an ask ranges over
+ * everything at once and hands back prose, which is both a larger disclosure
+ * and a much easier one to paste somewhere it should not go.
+ */
 export const ROLES = {
   end_user: { sees: ['my-data'], content: 'own only' },
   folder_owner: { sees: ['memory', 'review', 'value', 'my-data'], content: 'own folders' },
   department_head: { sees: ['memory', 'review', 'value', 'map', 'my-data'], content: 'own department', noIndividualViews: true },
   platform: { sees: ['map', 'admin', 'observability', 'value'], content: 'none' },
-  security: { sees: ['map', 'rules', 'security', 'trace', 'review', 'admin'], content: 'break-glass only' },
-  legal: { sees: ['cases', 'archive', 'trace', 'memory', 'comply'], content: 'full', privilegeCleared: true },
-  compliance: { sees: ['comply', 'archive', 'review', 'trace'], content: 'supervision samples' },
+  security: { sees: ['map', 'rules', 'security', 'trace', 'review', 'admin'], content: 'break-glass only', canAsk: true },
+  legal: { sees: ['cases', 'archive', 'trace', 'memory', 'comply'], content: 'full', privilegeCleared: true, canAsk: true },
+  compliance: { sees: ['comply', 'archive', 'review', 'trace'], content: 'supervision samples', canAsk: true },
   finance: { sees: ['value'], content: 'none' },
   risk: { sees: ['insure', 'security', 'map'], content: 'none' },
   works_council: { sees: ['privacy'], content: 'none', noIndividualViews: true },
-  admin: { sees: ['admin', 'map', 'modules'], content: 'break-glass only' },
+  admin: { sees: ['admin', 'map', 'modules'], content: 'break-glass only', administrator: true, canAsk: true },
   auditor: { sees: ['comply', 'trace', 'archive'], content: 'read-only scoped', readOnly: true },
   agent: { sees: [], content: 'read path only' }
 };
+
+/** Roles the identity layer grants natural-language questioning to. */
+export const ASK_ROLES = Object.entries(ROLES).filter(([, r]) => r.canAsk).map(([name]) => name);
 
 export class ApiServer {
   /**
@@ -200,19 +218,77 @@ export class ApiServer {
         ...body
       }));
 
-    this.route('POST', '/api/ask', ALL, ({ body, principal }) =>
+    // Ask is role-gated at the router AND allowlist-gated in the vault. The two
+    // are not redundant: the router decides which kind of principal may reach
+    // the handler at all, and vault.mayAsk decides which named people may ask
+    // regardless of how they got there — including over MCP and the CLI, which
+    // never touch this router.
+    this.route('POST', '/api/ask', R(...ASK_ROLES), ({ body, principal }) =>
       v.answer(body.question, {
-        actor: { id: principal.name, kind: 'human', groups: principal.groups || [] },
+        actor: { ...principalActor(principal), groups: principal.groups || [] },
         clearance: principal.clearance ?? 'internal',
         canRead: (f) => v.folders.check('read', principalActor(principal), f.folder || 'company/'),
         folder: body.folder ?? null,
         entity: body.entity ?? null,
         limit: body.limit ?? 12
       }));
+    this.route('GET', '/api/ask/permitted', ALL, ({ principal }) => ({
+      ...v.mayAsk(principalActor(principal)),
+      role: principal.role,
+      allowlist: v.administrators.includes(principal.name) ? [...v.askAllowlist] : undefined
+    }));
     this.route('GET', '/api/model', R('platform', 'admin', 'security'), () => v.model.status());
     this.route('POST', '/api/model/refile', R('platform', 'admin'), ({ body, principal }) =>
       v.refileWithModel({ limit: body?.limit ?? 50, actor: principal.name }));
     this.route('GET', '/api/redteam', R('platform', 'admin', 'security', 'auditor', 'compliance'), () => v.redteam.status());
+
+    // ---- 🗂️ THE LIBRARIAN --------------------------------------------------
+    this.route('GET', '/api/librarian', R('platform', 'admin', 'security', 'compliance'), ({ principal }) =>
+      v.librarian.status({ actor: principalActor(principal) }));
+    this.route('POST', '/api/librarian/organize', R('platform', 'admin'), ({ body, principal }) =>
+      v.organize({ limit: body?.limit ?? 50, actor: principal.name }));
+    this.route('GET', '/api/librarian/proposals', R('platform', 'admin', 'compliance'), () =>
+      ({ proposals: v.librarian.openProposals() }));
+    this.route('POST', '/api/librarian/proposals/:id/approve', R('admin'), ({ params, body, principal }) =>
+      v.librarian.approveProposal(params.id, { actor: principal.name, ...body }));
+    this.route('POST', '/api/librarian/proposals/:id/reject', R('admin'), ({ params, body, principal }) =>
+      v.librarian.rejectProposal(params.id, { actor: principal.name, reason: body?.reason }));
+    this.route('GET', '/api/librarian/notices', R('platform', 'admin', 'security', 'compliance', 'legal'), ({ principal }) =>
+      v.librarian.inbox({ actor: principalActor(principal) }));
+    this.route('POST', '/api/librarian/notices/:id/dismiss', R('platform', 'admin', 'security'), ({ params, body, principal }) =>
+      v.librarian.dismissNotice(params.id, { actor: principal.name, reason: body?.reason }));
+    this.route('POST', '/api/facts/:id/tag', ALL, ({ params, body, principal }) =>
+      v.librarian.tag(params.id, body?.tags ?? [], { actor: principal.name, reason: body?.reason ?? 'tagged from the console' }));
+    this.route('POST', '/api/facts/:id/lock', R('admin', 'platform'), ({ params, body, principal }) =>
+      v.librarian.lock(params.id, { actor: principal.name, reason: body?.reason }));
+    this.route('POST', '/api/facts/:id/unlock', R('admin', 'platform'), ({ params, body, principal }) =>
+      v.librarian.unlock(params.id, { actor: principal.name, reason: body?.reason }));
+
+    // ---- 📓 THE JOURNAL ----------------------------------------------------
+    // Wider than most routes on purpose. The complete record of who did what is
+    // the thing every one of these roles is separately accountable for, and an
+    // audit trail only auditors can see is one nobody checks.
+    this.route('GET', '/api/journal', R('admin', 'platform', 'security', 'compliance', 'auditor', 'legal'), ({ query }) =>
+      ({
+        entries: v.journal.entries({
+          action: query.action || null, actor: query.actor || null, subject: query.subject || null,
+          folder: query.folder || null, refusalsOnly: query.refusals === '1',
+          limit: Math.min(Number(query.limit) || 200, 1000)
+        }),
+        stats: v.journal.stats()
+      }));
+    this.route('GET', '/api/journal/refusals', R('admin', 'platform', 'security', 'compliance', 'auditor'), () =>
+      ({ refusals: v.journal.refusals(), note: 'Everything somebody asked for and did not get. These are the entries an investigation turns on.' }));
+    this.route('GET', '/api/journal/:subject', R('admin', 'platform', 'security', 'compliance', 'auditor', 'legal'), ({ params }) =>
+      v.journal.dossier(params.subject, { facts: v.facts, ledger: v.ledger }));
+    this.route('POST', '/api/journal/export', R('admin', 'compliance', 'auditor', 'legal'), ({ body, principal }) =>
+      v.journal.export({ ...body, exportedBy: principal.name, reason: body?.reason }));
+
+    // ---- 🧠 THE AI MEMORY FILE ---------------------------------------------
+    this.route('GET', '/api/memory', R('platform', 'admin', 'security', 'compliance', 'auditor'), () => v.memory.status());
+    this.route('POST', '/api/memory/save', R('platform', 'admin'), ({ principal, body }) =>
+      v.memory.save({ actor: principal.name, reason: body?.reason ?? 'saved from the console' }));
+    this.route('POST', '/api/memory/compact', R('platform', 'admin'), () => v.memory.compact());
 
     // ---- ⏳ NEEDS REVIEW ---------------------------------------------------
     this.route('GET', '/api/review', ALL, ({ query, principal }) =>
@@ -1027,13 +1103,20 @@ function roleFromGroups(scim, groups = []) {
 }
 
 function principalActor(principal) {
+  const role = ROLES[principal.role] ?? {};
   return {
     id: principal.name,
     kind: 'human',
     department: principal.department,
     approved: true,
     projects: principal.projects,
-    privilegeCleared: ROLES[principal.role]?.privilegeCleared,
+    privilegeCleared: role.privilegeCleared,
+    // Three separate capabilities, deliberately not one "is important" flag.
+    // `administrator` opens administrator-only folders; `canAsk` allows natural
+    // language questions over the whole memory. A lawyer needs the second and
+    // must not get the first, and collapsing them is exactly how that happens.
+    administrator: Boolean(role.administrator),
+    canAsk: Boolean(role.canAsk),
     breakGlass: principal.breakGlass
   };
 }

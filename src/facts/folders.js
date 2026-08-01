@@ -34,6 +34,15 @@ export const DEFAULT_TREE = {
   'legal/': { read: ['legal'], write: ['legal'], hardWall: true, privileged: true },
   'hr/': { read: ['hr'], write: ['hr'], hardWall: true, noBreakGlassWithoutSeparateChain: true },
   'security/': { read: ['security'], write: ['security'], hardWall: true },
+  // The "only a few people see this" drawer. Agents and the librarian may FILE
+  // into it — that is how something sensitive ends up somewhere safe without a
+  // human in the loop — but only a named administrator reads it back out, and
+  // nothing automated ever moves a fact out of it.
+  'admin/': {
+    read: ['admin'], write: ['approved-humans', 'system', 'admin'],
+    hardWall: true, adminOnly: true, sensitivity: 'secret',
+    description: 'administrator-only: readable by named administrators, or by break-glass with two humans'
+  },
   '_quarantine/': { read: [], write: ['system'], hardWall: true, noAgentRead: true, description: 'no agent may read' }
 };
 
@@ -43,13 +52,28 @@ export class FolderTree {
    * @param {import('../storage/db.js').Collection} opts.collection
    * @param {import('../ledger/ledger.js').Ledger} opts.ledger
    * @param {(e:object)=>void} [opts.onAlert]
+   * @param {string[]} [opts.administrators] who may read an administrator-only folder
    */
-  constructor({ collection, ledger, onAlert = () => {} }) {
+  constructor({ collection, ledger, onAlert = () => {}, administrators = [] }) {
     this.col = collection;
     this.ledger = ledger;
     this.onAlert = onAlert;
+    this.administrators = new Set(administrators);
     this.col.index('byParent', (f) => f.parent);
     if (!this.col.size) this._seed();
+  }
+
+  /**
+   * Is this actor a named administrator?
+   *
+   * A list of names, not a role claimed in the request. `actor.administrator`
+   * is honoured only because the identity layer sets it from the provider —
+   * anything a caller can assert about itself is not an authorisation.
+   */
+  isAdministrator(actor) {
+    if (!actor) return false;
+    if (actor.administrator === true) return true;
+    return this.administrators.has(actor.id);
   }
 
   _seed() {
@@ -95,6 +119,9 @@ export class FolderTree {
       read: effectiveRead.length ? effectiveRead : (parent ? parent.read : ['*']),
       write,
       hardWall: spec.hardWall ?? parent?.hardWall ?? false,
+      // Inherited downwards and never cleared by a child: a subfolder of an
+      // administrator-only folder cannot opt itself out of the restriction.
+      adminOnly: spec.adminOnly || parent?.adminOnly || false,
       privileged: spec.privileged ?? parent?.privileged ?? false,
       noAgentRead: spec.noAgentRead ?? parent?.noAgentRead ?? false,
       noBreakGlassWithoutSeparateChain: spec.noBreakGlassWithoutSeparateChain ?? parent?.noBreakGlassWithoutSeparateChain ?? false,
@@ -162,6 +189,30 @@ export class FolderTree {
 
     if (folder.noAgentRead && actor.kind === 'agent' && mode === 'read') {
       return { allowed: false, reason: `${folder.path} is a quarantine namespace — no agent may read it`, folder };
+    }
+
+    // Administrator-only namespaces (§8.6, the "only a few people see this"
+    // case). This REPLACES the read list rather than adding to it: a folder
+    // that is administrator-only is not also readable by whoever happens to be
+    // in the right department, or the restriction would be decorative. Writes
+    // are unaffected — filing INTO one of these is ordinary, and it is getting
+    // things out again that is controlled.
+    if (folder.adminOnly && mode === 'read' && !this.isAdministrator(actor)) {
+      if (actor.kind === 'agent') {
+        return { allowed: false, reason: `${folder.path} is administrator-only — no agent reads one, with or without break-glass`, folder };
+      }
+      if (actor.breakGlass?.active) {
+        if (folder.noBreakGlassWithoutSeparateChain && !actor.breakGlass.separateChain) {
+          return { allowed: false, reason: `${folder.path} requires a separate break-glass approval chain`, folder };
+        }
+        return { allowed: true, reason: 'break-glass into an administrator-only folder', folder, breakGlass: true };
+      }
+      return {
+        allowed: false,
+        reason: `${folder.path} is administrator-only — ${actor.id ?? 'this actor'} is not a named administrator`,
+        folder,
+        requiresBreakGlass: true
+      };
     }
 
     const allowedList = mode === 'read' ? folder.read : folder.write;
@@ -375,7 +426,7 @@ export class FolderTree {
     const lines = [];
     for (const f of this.all().filter((x) => !x.archived)) {
       const depth = f.path.split('/').filter(Boolean).length - 1;
-      const mark = f.hardWall ? ' 🧱' : '';
+      const mark = (f.adminOnly ? ' 🔒' : '') + (f.hardWall ? ' 🧱' : '');
       const owner = f.businessOwner ? ` — ${f.businessOwner}` : ' — ⚠️ unowned';
       lines.push(`${'  '.repeat(depth)}${f.path.split('/').filter(Boolean).pop()}/${mark}${owner}`);
     }

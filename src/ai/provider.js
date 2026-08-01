@@ -32,13 +32,27 @@
  *
  * The model is an optimisation over regex, and is treated as an untrusted
  * component that happens to be useful — not as an authority.
+ *
+ * ── WHERE THE MODEL RUNS ────────────────────────────────────────────────────
+ *
+ * Three providers, and the local one is the default recommendation rather than
+ * the fallback. Sending a payroll line or a privileged legal note to a hosted
+ * API to be classified is a disclosure, and in a regulated estate somebody has
+ * to sign it off. `ollama` keeps the weights and the text on the customer's own
+ * hardware, needs no API key, and costs nothing per token — so the honest
+ * default for this product is local, with hosted models available for anyone
+ * who has already made that call.
  */
 import { VaultError } from '../util/errors.js';
 
 /** Providers speak different shapes; the differences are confined to here. */
 export const PROVIDERS = {
   anthropic: {
-    url: 'https://api.anthropic.com/v1/messages',
+    base: 'https://api.anthropic.com',
+    path: '/v1/messages',
+    local: false,
+    keyless: false,
+    timeoutMs: 8000,
     headers: (key) => ({ 'x-api-key': key, 'anthropic-version': '2023-06-01', 'content-type': 'application/json' }),
     body: ({ model, system, user, maxTokens }) => ({
       model, max_tokens: maxTokens, system,
@@ -47,17 +61,76 @@ export const PROVIDERS = {
     text: (json) => (json?.content ?? []).filter((c) => c.type === 'text').map((c) => c.text).join('')
   },
   openai: {
-    url: 'https://api.openai.com/v1/chat/completions',
+    base: 'https://api.openai.com',
+    path: '/v1/chat/completions',
+    local: false,
+    keyless: false,
+    timeoutMs: 8000,
     headers: (key) => ({ Authorization: `Bearer ${key}`, 'content-type': 'application/json' }),
     body: ({ model, system, user, maxTokens }) => ({
       model, max_completion_tokens: maxTokens,
       messages: [{ role: 'system', content: system }, { role: 'user', content: user }]
     }),
     text: (json) => json?.choices?.[0]?.message?.content ?? ''
+  },
+  /**
+   * A model on the customer's own hardware, via Ollama.
+   *
+   * This is the provider that matters most for the deployments this product is
+   * built for. The other two send every claim being classified to a third party,
+   * which for a payroll fact or a privileged legal note is not a latency
+   * question, it is a disclosure — and in a regulated estate it is one somebody
+   * has to have signed off. Ollama removes that conversation: the weights and
+   * the text never leave the building.
+   *
+   * Two consequences are baked in here rather than left to the operator:
+   *
+   *   · NO API KEY. `keyless` exists because requiring one for a loopback
+   *     address would make the honest configuration look broken.
+   *   · A LONG TIMEOUT. A 7B model on CPU is seconds, not milliseconds, and the
+   *     8s that suits a hosted API would report a working local model as a
+   *     failure. Nothing waits on this call — filing already happened — so the
+   *     patience is free. See src/ai/refile.js for why that is true.
+   */
+  ollama: {
+    base: 'http://127.0.0.1:11434',
+    path: '/api/chat',
+    local: true,
+    keyless: true,
+    timeoutMs: 120000,
+    headers: () => ({ 'content-type': 'application/json' }),
+    body: ({ model, system, user, maxTokens }) => ({
+      model,
+      stream: false,
+      // Temperature 0: classification is not a creative task, and a filing
+      // decision that changes between two identical runs is not auditable.
+      options: { temperature: 0, num_predict: maxTokens },
+      messages: [{ role: 'system', content: system }, { role: 'user', content: user }]
+    }),
+    text: (json) => json?.message?.content ?? ''
   }
 };
 
-const DEFAULT_MODEL = { anthropic: 'claude-sonnet-4-5', openai: 'gpt-4o-mini' };
+const DEFAULT_MODEL = {
+  anthropic: 'claude-sonnet-4-5',
+  openai: 'gpt-4o-mini',
+  // 7B instruct at 4-bit: ~4GB of RAM, no GPU required, good enough to route a
+  // sentence into one of a dozen folders. Bigger models file better; this one
+  // files well enough on a laptop, which is what gets it switched on at all.
+  ollama: 'mistral:7b-instruct'
+};
+
+/** What an operator has to do to make each one work. Printed by bin/vault-model.js. */
+export const SETUP = {
+  ollama: [
+    'curl -fsSL https://ollama.com/install.sh | sh   # or: brew install ollama',
+    'ollama serve                                     # leave running',
+    'ollama pull mistral:7b-instruct                  # ~4GB, one time',
+    'export VAULT_MODEL_PROVIDER=ollama               # no API key needed'
+  ],
+  anthropic: ['export VAULT_MODEL_PROVIDER=anthropic', 'export VAULT_MODEL_API_KEY=sk-ant-…'],
+  openai: ['export VAULT_MODEL_PROVIDER=openai', 'export VAULT_MODEL_API_KEY=sk-…']
+};
 
 /**
  * A model client, or a working stand-in for the absence of one.
@@ -79,33 +152,56 @@ export class ModelProvider {
     provider = process.env.VAULT_MODEL_PROVIDER || null,
     apiKey = process.env.VAULT_MODEL_API_KEY || null,
     model = process.env.VAULT_MODEL || null,
-    timeoutMs = 8000,
+    baseUrl = process.env.VAULT_MODEL_URL || null,
+    timeoutMs = null,
     fetchImpl = globalThis.fetch,
     onCall = null
   } = {}) {
     this.provider = provider && PROVIDERS[provider] ? provider : null;
+    const spec = this.provider ? PROVIDERS[this.provider] : null;
     this.apiKey = apiKey;
     this.model = model || (this.provider ? DEFAULT_MODEL[this.provider] : null);
-    this.timeoutMs = timeoutMs;
+    this.baseUrl = (baseUrl || spec?.base || '').replace(/\/+$/, '');
+    this.timeoutMs = timeoutMs ?? spec?.timeoutMs ?? 8000;
     this.fetchImpl = fetchImpl;
     this.onCall = onCall;
     this.calls = 0;
     this.failures = 0;
     this.lastError = null;
+    this.totalMs = 0;
+  }
+
+  /** True when this model runs on the customer's own hardware. */
+  get local() {
+    return Boolean(this.provider && PROVIDERS[this.provider].local);
+  }
+
+  /** The endpoint this provider will actually be called on. */
+  get url() {
+    if (!this.provider) return null;
+    return this.baseUrl + PROVIDERS[this.provider].path;
   }
 
   /** Is a model actually usable right now? */
   get available() {
-    return Boolean(this.provider && this.apiKey && this.model && this.fetchImpl);
+    if (!this.provider || !this.model || !this.fetchImpl) return false;
+    // A loopback model has nothing to authenticate to. Demanding a key here
+    // would make the correct local setup report itself as misconfigured.
+    return PROVIDERS[this.provider].keyless ? true : Boolean(this.apiKey);
   }
 
   /** Why not, in words an operator can act on. */
   get unavailableReason() {
     if (this.available) return null;
-    if (!this.provider) return 'no model provider configured (set VAULT_MODEL_PROVIDER to anthropic or openai)';
-    if (!this.apiKey) return 'no API key configured (set VAULT_MODEL_API_KEY)';
+    if (!this.provider) return `no model provider configured (set VAULT_MODEL_PROVIDER to one of: ${Object.keys(PROVIDERS).join(', ')})`;
+    if (!PROVIDERS[this.provider].keyless && !this.apiKey) return 'no API key configured (set VAULT_MODEL_API_KEY)';
     if (!this.model) return 'no model configured (set VAULT_MODEL)';
     return 'no fetch implementation available in this runtime';
+  }
+
+  /** Rough average latency, so an operator can see what local inference costs. */
+  get averageMs() {
+    return this.calls ? Math.round(this.totalMs / this.calls) : null;
   }
 
   status() {
@@ -113,13 +209,23 @@ export class ModelProvider {
       available: this.available,
       provider: this.provider,
       model: this.model,
+      local: this.local,
+      url: this.url,
+      timeoutMs: this.timeoutMs,
       reason: this.unavailableReason,
       calls: this.calls,
       failures: this.failures,
+      averageMs: this.averageMs,
       lastError: this.lastError,
-      note: this.available
-        ? 'A model is configured. Semantic filing and answers use it; both still fall back to the deterministic path on any failure.'
-        : 'No model is configured. Filing uses deterministic rules and answers are composed from retrieved facts only. Nothing is degraded into guessing.'
+      setup: this.available ? null : SETUP[this.provider ?? 'ollama'],
+      note: !this.available
+        ? 'No model is configured. Filing uses deterministic rules and answers are composed from retrieved facts only. Nothing is degraded into guessing.'
+        : this.local
+          ? `A model is running on this machine at ${this.url}. No claim leaves the building to be classified, and there is no per-token bill. `
+            + 'Filing and answers still fall back to the deterministic path on any failure.'
+          : `A hosted model at ${this.provider} is configured. Every claim it classifies is sent to a third party — for a `
+            + 'regulated estate that is a disclosure decision, not a latency one, and the ollama provider avoids it entirely. '
+            + 'Filing and answers still fall back to the deterministic path on any failure.'
     };
   }
 
@@ -137,9 +243,10 @@ export class ModelProvider {
     const p = PROVIDERS[this.provider];
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), this.timeoutMs);
+    const started = Date.now();
     this.calls++;
     try {
-      const res = await this.fetchImpl(p.url, {
+      const res = await this.fetchImpl(this.url, {
         method: 'POST',
         headers: p.headers(this.apiKey),
         body: JSON.stringify(p.body({ model: this.model, system, user, maxTokens })),
@@ -147,20 +254,62 @@ export class ModelProvider {
       });
       if (!res.ok) {
         this.failures++;
-        this.lastError = `${this.provider} returned ${res.status}`;
+        this.lastError = p.local
+          ? `${this.provider} at ${this.url} returned ${res.status} — is \`ollama serve\` running and has \`${this.model}\` been pulled?`
+          : `${this.provider} returned ${res.status}`;
+        this.onCall?.({ provider: this.provider, model: this.model, ok: false, error: this.lastError });
         return null;
       }
       const text = p.text(await res.json());
-      this.onCall?.({ provider: this.provider, model: this.model, ok: true });
+      this.totalMs += Date.now() - started;
+      this.onCall?.({ provider: this.provider, model: this.model, ok: true, ms: Date.now() - started });
       return typeof text === 'string' && text.length ? text : null;
     } catch (err) {
       this.failures++;
-      this.lastError = err.name === 'AbortError' ? `timed out after ${this.timeoutMs}ms` : err.message;
+      this.lastError = err.name === 'AbortError'
+        ? `timed out after ${this.timeoutMs}ms`
+        : (p.local ? `${err.message} — is \`ollama serve\` running at ${this.url}?` : err.message);
       this.onCall?.({ provider: this.provider, model: this.model, ok: false, error: this.lastError });
       return null;
     } finally {
       clearTimeout(timer);
     }
+  }
+
+  /**
+   * Is the model actually there, right now?
+   *
+   * `available` only says the configuration is complete. For a local model that
+   * is a much weaker claim than it sounds: `ollama serve` may not be running,
+   * or the weights may never have been pulled, and both look identical to a
+   * misconfiguration until someone tries. This tries.
+   */
+  async probe() {
+    if (!this.available) {
+      return { ok: false, reason: this.unavailableReason, setup: SETUP[this.provider ?? 'ollama'] };
+    }
+    const started = Date.now();
+    const text = await this.complete({
+      system: 'You are a health check. Reply with exactly one word: ready',
+      user: 'ready?',
+      maxTokens: 16
+    });
+    const ms = Date.now() - started;
+    if (text == null) {
+      return { ok: false, provider: this.provider, model: this.model, url: this.url, ms, reason: this.lastError, setup: SETUP[this.provider] };
+    }
+    return {
+      ok: true,
+      provider: this.provider,
+      model: this.model,
+      local: this.local,
+      url: this.url,
+      ms,
+      reply: text.trim().slice(0, 80),
+      note: this.local
+        ? `${ms}ms for a one-word reply on this machine. Filing runs off the write path, so this latency is never in front of a user or an agent.`
+        : `${ms}ms round trip to ${this.provider}.`
+    };
   }
 
   /**

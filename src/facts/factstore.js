@@ -16,6 +16,9 @@ import { truncate, cosine, contentTokens } from '../util/text.js';
 
 export const FACT_STATUS = ['live', 'held', 'rejected', 'superseded', 'expired', 'frozen', 'quarantined', 'erased'];
 
+/** Revision kinds a lock does not block — the lock itself, and a human decision. */
+const LOCK_EXEMPT_KINDS = new Set(['lock', 'human_revision', 'review', 'legal', 'erasure']);
+
 /** Default TTL per time-sensitivity class (§11.6 "expire"). */
 export const TTL = {
   permanent: null,
@@ -51,7 +54,12 @@ export class FactStore {
     // Content tokens, so the reconciler can retrieve candidates by what a claim
     // says rather than by scanning the store. See findRelated.
     this.col.index('byToken', (f) => [...new Set(contentTokens(f.claim || ''))]);
+    // Tags are an index, not a wall — so they get an index. A search by
+    // `client:acme` still resolves each hit through the folder wall; this only
+    // decides what is cheap to find, never what is allowed to be read.
+    this.col.index('byTag', (f) => f.tags || []);
     this.goldenCol.index('byFolder', (f) => f.folder);
+    this.goldenCol.index('byTag', (f) => f.tags || []);
   }
 
   // -- write ---------------------------------------------------------------
@@ -110,6 +118,16 @@ export class FactStore {
       gateVerdict: compactVerdict(verdict),
       reviewedBy: null,
       reviewedAt: null,
+      // Free-form index applied by the librarian and by humans. Never consulted
+      // for access — see the byTag index above.
+      tags: candidate.tags ?? [],
+      // An administrator saying "this one is right, leave it alone". Weaker
+      // than golden (no authority role, no four eyes) and weaker than a legal
+      // hold (no disclosure consequence), but it stops every automated pass.
+      locked: false,
+      lockedBy: null,
+      lockReason: null,
+      organisedAt: null,
       legalHold: null,
       privileged: Boolean(ctx.privileged),
       regulatoryRecord: ctx.regulatoryRecord ?? null,
@@ -185,6 +203,7 @@ export class FactStore {
     return [...this.col.by('byFolder', folder), ...this.goldenCol.by('byFolder', folder)];
   }
   byEntity(entityKey) { return this.col.by('byEntity', entityKey); }
+  byTag(tag) { return [...this.col.by('byTag', tag), ...this.goldenCol.by('byTag', tag)]; }
   byConversation(conversationId) { return this.col.by('byConversation', conversationId); }
   bySubject(subject) { return this.col.by('bySubject', subject); }
   held() { return this.col.find((f) => f.status === 'held'); }
@@ -254,6 +273,17 @@ export class FactStore {
     const prev = this.require(id);
     if (prev.golden) throw forbidden('golden facts are revised through the attestation workflow, not this path', { id });
     if (prev.legalHold) throw new VaultError('legal_hold', 'fact is frozen by a legal hold — hygiene and revision cannot touch it', { id, hold: prev.legalHold });
+    // A lock stops automated passes and nothing else. Humans still revise a
+    // locked fact deliberately — the lock says "don't let a model tidy this
+    // up", not "this is now unchangeable", which is what a legal hold says.
+    // Enforced here as well as in the librarian, because one check is one bug
+    // away from not being a check.
+    if (prev.locked && !LOCK_EXEMPT_KINDS.has(kind)) {
+      throw forbidden(
+        `fact is locked by ${prev.lockedBy ?? 'an administrator'} — no automated pass changes it (${prev.lockReason ?? 'no reason recorded'})`,
+        { id, code: 'fact_locked', lockedBy: prev.lockedBy }
+      );
+    }
     const next = {
       ...prev, ...patch,
       version: prev.version + 1,

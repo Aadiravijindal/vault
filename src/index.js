@@ -44,6 +44,9 @@ import { ReviewQueue } from './review/review.js';
 import { SearchEngine } from './search/search.js';
 import { ReadPath } from './read/read.js';
 import { ModelProvider } from './ai/provider.js';
+import { MemoryFile } from './ai/memory.js';
+import { Journal } from './audit/journal.js';
+import { Librarian } from './ai/orchestrate.js';
 import { ask } from './ai/ask.js';
 import { refilePass } from './ai/refile.js';
 import { RedTeamWatchdog } from './security/watchdog.js';
@@ -97,6 +100,7 @@ export class Vault {
 
     this.options = options;
     this.corporateDomains = corporateDomains;
+    this.administrators = [...administrators];
 
     // ---- L11 storage ----------------------------------------------------
     // A cloud KMS, if one is configured, wraps the key hierarchy rather than
@@ -250,7 +254,8 @@ export class Vault {
     this.folders = new FolderTree({
       collection: this.db.collection('folders'),
       ledger: this.ledger,
-      onAlert: (a) => this.alerts.raise(a)
+      onAlert: (a) => this.alerts.raise(a),
+      administrators
     });
     this.entities = new EntityResolver({
       collection: this._contentCollection('entities'),
@@ -353,8 +358,44 @@ export class Vault {
     // ---- the model layer, optional by construction -------------------------
     // Absent by default. Filing and answers both run without it and say which
     // path produced their result, so an air-gapped deployment loses wording,
-    // never correctness.
+    // never correctness. Configure `ollama` and it runs on the customer's own
+    // hardware, which is the only configuration where a payroll claim can be
+    // classified by a model without that being a disclosure.
     this.model = new ModelProvider(options.model ?? {});
+
+    // ---- what the filing has learned about THIS company ---------------------
+    // One small signed file. Consulted before any model call, which is why most
+    // facts get filed without one — see src/ai/memory.js. Deleting it costs
+    // speed and nothing else.
+    this.memory = new MemoryFile({
+      path: options.memoryPath ?? (dir ? join(dir, 'ai-memory.vmem') : null),
+      signingKey,
+      tenant: options.tenant ?? 'default'
+    });
+
+    // ---- the exhaustive record, beside the sealed one ----------------------
+    // The ledger is small, content-free and provable. This is complete, and
+    // holds what the ledger deliberately refuses so that "show me everything
+    // that ever happened to this record" has a single answer rather than a
+    // five-way join. See src/audit/journal.js.
+    this.journal = new Journal({
+      collection: this._contentCollection('journal'),
+      ledger: this.ledger,
+      signingKey
+    });
+
+    /**
+     * Who may ask questions of the memory in natural language.
+     *
+     * Deliberately a separate, narrower list than "who can read facts". The
+     * ordinary read path returns what you are cleared for and nothing else, and
+     * an agent hitting it retrieves the four facts it needs. Ask is a different
+     * shape of access: it ranges over everything at once, summarises, and hands
+     * back prose that is easy to paste somewhere it should not go. So it starts
+     * closed — administrators, plus anyone explicitly named — and every use is
+     * journalled whether it succeeded or not.
+     */
+    this.askAllowlist = new Set([...(options.askAllowlist ?? []), ...administrators]);
 
     // ---- review queue -----------------------------------------------------
     this.review = new ReviewQueue({
@@ -581,6 +622,26 @@ export class Vault {
     // ---- L2: SEAL FIRST, before extraction, before any check -------------
     const conversation = this.archive.seal(raw);
 
+    // The message itself, before anything was made of it. Recorded here rather
+    // than after extraction so that a message which produced no facts at all
+    // still leaves a trace — "nothing was captured from that call" is an answer
+    // an investigator needs, and silence cannot provide it.
+    this.journal.record('message.sealed', {
+      subject: conversation.id,
+      subjectKind: 'conversation',
+      actor: { id: raw.agentId ?? ctx.agentId ?? 'unknown', kind: raw.agentId || ctx.agentId ? 'agent' : 'human', onBehalfOf: ctx.onBehalfOf ?? null, sessionId: ctx.sessionId ?? null, ip: ctx.ip ?? null },
+      how: { channel: raw.channel, connector: raw.source?.connector ?? null, connectorMode: raw.connectorMode ?? null },
+      where: { region: raw.region ?? ctx.region ?? null },
+      purpose: ctx.purpose ?? 'memory_governance',
+      excerpt: conversation.transcriptText,
+      detail: {
+        sealHash: conversation.sealHash,
+        participants: conversation.participants,
+        attachments: (raw.attachments ?? []).length,
+        turns: conversation.turns?.length ?? null
+      }
+    });
+
     // ---- attachments: pixels and audio are text too (§5 Check 7) ---------
     //
     // Until this existed, an attachment was sealed into the archive and never
@@ -736,6 +797,7 @@ export class Vault {
     }
 
     const fact = this.facts.write(candidate, verdict, ctx);
+    this._journalWrite(fact, candidate, verdict, ctx, conversation);
 
     if (verdict.outcome === 'pass' || verdict.outcome === 'mask') {
       this.search.index(fact);
@@ -784,13 +846,101 @@ export class Vault {
     };
   }
 
+  /**
+   * Record a write in full, and teach the memory from it.
+   *
+   * Everything the gate decided is captured here while it is still in scope —
+   * every check that ran and its result, every rule that fired, the channel and
+   * its trust at the time, the PII findings, the reconciliation outcome. After
+   * this returns, reassembling that costs a join across four collections and
+   * loses the parts nobody persisted.
+   */
+  _journalWrite(fact, candidate, verdict, ctx, conversation) {
+    const action = {
+      pass: 'fact.written', mask: 'fact.masked', hold: 'fact.held', block: 'fact.blocked',
+      escalate: 'fact.held', quarantine: 'fact.quarantined', 'require-4-eyes': 'fact.held'
+    }[verdict.outcome] ?? 'fact.held';
+
+    this.journal.record(action, {
+      subject: fact.id,
+      actor: {
+        id: ctx.agentId ?? 'system',
+        kind: ctx.agentId ? 'agent' : 'system',
+        credentialId: ctx.credential?.id ?? null,
+        onBehalfOf: candidate.saidBy?.name ?? null
+      },
+      where: { folder: fact.folder, namespace: fact.namespace, region: fact.region },
+      why: (verdict.reasons ?? []).join('; ') || null,
+      purpose: ctx.purpose ?? 'memory_governance',
+      how: {
+        channel: fact.channel, channelTrust: fact.channelTrust,
+        connectorMode: fact.connectorMode, model: fact.model, modelVersion: fact.modelVersion
+      },
+      allowed: verdict.outcome !== 'block',
+      outcome: verdict.outcome,
+      excerpt: fact.claim,
+      after: { folder: fact.folder, sensitivity: fact.sensitivity, status: fact.status, version: 1 },
+      detail: {
+        conversationId: conversation?.id ?? null,
+        sealHash: conversation?.sealHash ?? null,
+        claimType: fact.claimType,
+        saidBy: fact.saidBy,
+        extractionConfidence: fact.extractionConfidence,
+        checks: (verdict.checks ?? []).map((c) => ({ check: c.check, name: c.name, result: c.result, reason: c.reason ?? null })),
+        rulesEvaluated: fact.rulesEvaluated,
+        instructionScore: fact.instructionScore,
+        piiFindings: (fact.piiFindings ?? []).map((p) => ({ kind: p.kind ?? p.type, action: p.action ?? null })),
+        anomalies: fact.anomalyFlags,
+        reconciliation: verdict.reconciliation ? { action: verdict.reconciliation.action, against: verdict.reconciliation.into ?? verdict.reconciliation.against ?? null } : null,
+        latencyMs: verdict.latencyMs,
+        fastPath: Boolean(verdict.fastPath),
+        contentHash: fact.contentHash,
+        ledgerPosition: fact.ledgerPosition
+      },
+      ledgerSeq: fact.ledgerPosition
+    });
+
+    // The rules just made a filing decision. That is a training signal, and it
+    // is free — no model call, no network. See src/ai/memory.js for why the
+    // deterministic path is weighted below a human's correction.
+    if (verdict.outcome === 'pass' || verdict.outcome === 'mask') {
+      try {
+        this.memory.learn({
+          factId: fact.id, folder: fact.folder, claim: fact.claim,
+          sensitivity: fact.sensitivity, by: 'rules', entities: fact.entities ?? []
+        });
+      } catch { /* learning must never break a write */ }
+    }
+  }
+
   // =========================================================================
   // THE READ PATH
   // =========================================================================
 
   /** @see ReadPath#read */
   read(query, ctx = {}) {
-    return this.readPath.read(query, ctx);
+    const result = this.readPath.read(query, ctx);
+    const actor = ctx.actor ?? { id: ctx.agentId ?? 'unknown', kind: ctx.agentId ? 'agent' : 'human' };
+    // Both halves are recorded: what came back, and what was held back. A read
+    // that returned three of eleven facts is a different event from one that
+    // returned three of three, and only one of them is worth investigating.
+    this.journal.record('fact.read', {
+      subject: result.facts?.length === 1 ? result.facts[0].id : (typeof query === 'string' ? 'search' : 'read'),
+      subjectKind: result.facts?.length === 1 ? 'fact' : 'query',
+      actor,
+      purpose: ctx.purpose ?? null,
+      why: ctx.reason ?? null,
+      how: { route: ctx.route ?? null, channel: ctx.channel ?? null },
+      excerpt: typeof query === 'string' ? query : (query?.text ?? null),
+      detail: {
+        returned: result.facts?.length ?? 0,
+        withheld: result.withheld ?? 0,
+        withheldReasons: result.withheldReasons ?? [],
+        factIds: (result.facts ?? []).map((f) => f.id).slice(0, 50),
+        folders: [...new Set((result.facts ?? []).map((f) => f.folder))]
+      }
+    });
+    return result;
   }
 
   /** The labelled block an agent actually receives. */
@@ -807,9 +957,20 @@ export class Vault {
    * answer citing a fact that was not retrieved is discarded whole. With no
    * model the deterministic answer is returned and labelled as such.
    */
-  answer(question, ctx = {}) {
+  async answer(question, ctx = {}) {
+    const actor = ctx.actor ?? { id: ctx.agentId ?? 'unknown', kind: 'human' };
+    const gate = this.mayAsk(actor);
+    if (!gate.allowed) {
+      this.journal.record('ask.refused', {
+        subject: 'memory', subjectKind: 'memory', actor, allowed: false,
+        why: gate.reason, purpose: ctx.purpose ?? 'ask', excerpt: question,
+        detail: { allowlist: [...this.askAllowlist] }
+      });
+      throw new VaultError('forbidden', gate.reason, { code: 'ask_not_permitted', asker: actor.id });
+    }
+
     const searchResult = this.search.search(question, {
-      actor: ctx.actor ?? { id: ctx.agentId ?? 'unknown', kind: 'human' },
+      actor,
       clearance: ctx.clearance ?? 'internal',
       canRead: ctx.canRead ?? (() => true),
       folder: ctx.folder ?? null,
@@ -818,7 +979,86 @@ export class Vault {
       purpose: ctx.purpose ?? 'ask',
       naturalLanguage: true
     });
-    return ask({ question, searchResult, provider: this.model });
+    const result = await ask({ question, searchResult, provider: this.model });
+
+    // The question, who asked it, what came back and what was held back. An ask
+    // that returns a summary of forty facts is a bigger disclosure than any
+    // single read, so it is recorded in more detail than one, not less.
+    this.journal.record('ask.performed', {
+      subject: 'memory', subjectKind: 'memory', actor,
+      purpose: ctx.purpose ?? 'ask',
+      excerpt: question,
+      how: { model: result.source === 'model' ? this.model.model : null, provider: result.source === 'model' ? this.model.provider : null, local: this.model.local },
+      detail: {
+        retrieved: result.retrieved,
+        withheld: result.withheld,
+        withheldReasons: result.withheldReasons,
+        answeredBy: result.source,
+        citedFactIds: result.citations?.map((c) => c.id) ?? [],
+        sufficient: result.sufficient
+      }
+    });
+    return { ...result, asker: actor.id, permittedBecause: gate.reason };
+  }
+
+  /**
+   * May this actor ask questions of the memory?
+   *
+   * Separate from "may they read facts" on purpose — see askAllowlist above.
+   * The refusal names the list rather than saying "forbidden", because the
+   * person hitting it needs to know who to go to, and hiding that only means
+   * they ask around until somebody runs it for them.
+   */
+  mayAsk(actor) {
+    const id = typeof actor === 'string' ? actor : actor?.id;
+    if (!id) return { allowed: false, reason: 'an ask must be attributed to a named person — anonymous questions of the whole memory are not permitted' };
+    // Set by the identity layer from the provider's own role mapping, not
+    // claimed by the caller. Kept separate from `administrator` because a
+    // lawyer needs to ask and must not thereby gain administrator-only folders.
+    if (actor?.canAsk === true) return { allowed: true, reason: `granted by the identity provider for this session` };
+    if (actor?.administrator === true) return { allowed: true, reason: 'named administrator' };
+    if (this.askAllowlist.has(id)) {
+      return { allowed: true, reason: this.administrators.includes(id) ? 'named administrator' : 'explicitly permitted to ask' };
+    }
+    return {
+      allowed: false,
+      reason: `${id} is not permitted to ask questions of the memory. Ask ranges over everything at once and returns prose, `
+        + `so it is limited to administrators and people named explicitly — currently ${this.askAllowlist.size} `
+        + `person(s). The ordinary read path is unaffected: ${id} can still retrieve the facts they are cleared for.`
+    };
+  }
+
+  /** Let a named administrator grant or revoke the right to ask. */
+  permitAsk(who, { actor, reason, revoke = false }) {
+    if (!this.administrators.includes(actor) && this.administrators.length) {
+      throw new VaultError('forbidden', `only a named administrator may change who can ask — ${actor} is not one`);
+    }
+    if (!reason) throw new VaultError('validation', 'granting or revoking the right to ask requires a reason');
+    if (revoke) this.askAllowlist.delete(who); else this.askAllowlist.add(who);
+    this.ledger.append('admin.action', { subject: who, actor, action: revoke ? 'ask.revoked' : 'ask.granted', reason });
+    this.journal.record('admin.action', {
+      subject: who, subjectKind: 'person', actor: { id: actor, kind: 'human' }, why: reason,
+      before: { canAsk: revoke }, after: { canAsk: !revoke }
+    });
+    return { who, canAsk: !revoke, allowlist: [...this.askAllowlist] };
+  }
+
+  /**
+   * The librarian: the model organising the file room.
+   *
+   * Lazy for the same reason `redteam` is — it is a whole subsystem and most
+   * callers never touch it. See src/ai/orchestrate.js for what it may and may
+   * never do; the short version is that it invents tags freely and cannot
+   * invent a folder, because a tag is an index and a folder is a wall.
+   */
+  get librarian() {
+    if (!this._librarian) this._librarian = new Librarian({ vault: this, administrators: this.administrators });
+    return this._librarian;
+  }
+
+  /** One organising pass. @see Librarian#organize */
+  organize(opts = {}) {
+    return this.librarian.organize(opts);
   }
 
   /**
