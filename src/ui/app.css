@@ -171,6 +171,46 @@ a{color:var(--accent)}
   .kv{grid-template-columns:1fr}
 }
 
+/* ---------- polish ----------
+   Depth, motion and hierarchy only. No colour value changes: every one in
+   :root is contrast-measured against its background and ui.test.js checks
+   them, so this layer is deliberately limited to what cannot break that. */
+
+:root{
+  --shadow-1:0 1px 2px rgba(0,0,0,.18);
+  --shadow-2:0 6px 20px -6px rgba(0,0,0,.42);
+  --ease:cubic-bezier(.32,.72,.28,1);
+}
+.card{box-shadow:var(--shadow-1)}
+/* Stat tiles are the first thing read on a screen; a little more weight and
+   tabular figures so columns of numbers line up instead of shimmering. */
+.stat{font-variant-numeric:tabular-nums;letter-spacing:-.01em}
+.grid.g4 .card{padding:15px 17px}
+
+/* Interactive surfaces respond. Kept to border and background — never to
+   layout — so nothing reflows under the pointer. */
+.card.connector,.item,.tab,button,.navbtn{transition:background-color .13s var(--ease),border-color .13s var(--ease),color .13s var(--ease),box-shadow .13s var(--ease)}
+.card.connector:hover{box-shadow:var(--shadow-2)}
+.item:hover{border-color:var(--line);background:var(--panel2)}
+.sheet{box-shadow:var(--shadow-2)}
+
+/* Tables: a hairline header, hover on rows, and numerals that align. */
+table{font-variant-numeric:tabular-nums}
+thead th{
+  position:sticky;top:0;background:var(--panel);z-index:1;
+  font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--dim);font-weight:600
+}
+tbody tr:hover{background:var(--panel2)}
+.clickable{cursor:pointer;text-decoration:underline;text-decoration-color:var(--line);text-underline-offset:3px}
+.clickable:hover{text-decoration-color:var(--accent)}
+
+/* An empty state should read as a resting state, not a broken one. */
+.empty{line-height:1.6}
+
+/* Long claims and ids should wrap rather than force the page to scroll
+   sideways — the body must never scroll horizontally. */
+.claim,.item{overflow-wrap:anywhere}
+
 /* ---------- accessibility ---------- */
 
 /* A visible focus ring on everything focusable. The default was the browser's,
@@ -235,6 +275,10 @@ nav li{min-height:36px}
     --ink:#111825;--dim:#4a5568;--dimmer:#5d6b80;
     --accent:#1a5fd0;--green:#127a4b;--amber:#8a6100;--red:#c02434;--purple:#6b39c9;
     --focus:#8a5a00;
+    /* Shadows have to be re-tuned per theme: the dark values are tuned for a
+       dark ground and read as smudges on a light one. */
+    --shadow-1:0 1px 2px rgba(16,32,64,.07);
+    --shadow-2:0 8px 24px -8px rgba(16,32,64,.16);
   }
 }
 
