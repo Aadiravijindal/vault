@@ -50,7 +50,12 @@ export const DETECTORS = [
 
   // ---- health (HIPAA / GDPR Art 9) --------------------------------------
   { id: 'mrn', category: 'health', label: 'medical record number', pattern: /\b(?:mrn|medical record(?: number)?|patient id)\b\D{0,10}([A-Z0-9-]{5,20})\b/gi, action: 'mask' },
-  { id: 'insurance_id', category: 'health', label: 'health insurance id', pattern: /\b(?:member id|policy(?: number)?|insurance id|nhs number)\b\D{0,10}([A-Z0-9- ]{6,20})\b/gi, action: 'mask' },
+  // "policy" on its own is one of the most common words in business English —
+  // refund policy, security policy, procurement policy. Matching it as an
+  // insurance identifier flagged ordinary sales notes as Article 9 health data
+  // and masked them. The keyword must now be insurance-specific, and the value
+  // must actually look like an identifier rather than a run of English words.
+  { id: 'insurance_id', category: 'health', label: 'health insurance id', pattern: /\b(?:member id|policy(?:\s*(?:number|no\.?|#))|insurance id|nhs number)\b\W{0,4}([A-Z0-9][A-Z0-9-]{5,19})\b/gi, validate: identifierShaped, action: 'mask' },
   { id: 'icd', category: 'health', label: 'ICD/SNOMED code', pattern: /\b(?:ICD-?10:?\s*)?[A-TV-Z]\d{2}(?:\.\d{1,4})?\b|\bSNOMED:?\s*\d{6,18}\b/g, validate: (m, ctx) => /\b(icd|snomed|diagnos|code)\b/i.test(ctx), action: 'mask' },
   { id: 'clinical', category: 'health', label: 'clinical language', pattern: /\b(diagnos(?:ed|is) with|prescribed|dosage|mg (?:daily|bd|tds)|treatment plan|admitted to hospital|oncolog|psychiatr|hiv[- ]positive)\b/gi, action: 'mask' },
 
@@ -283,6 +288,22 @@ function toGlobal(re) {
 }
 
 // -- validators -------------------------------------------------------------
+
+/**
+ * Does this look like an identifier rather than English?
+ *
+ * Real member and policy numbers carry digits and do not read as words. This
+ * rejects "has changed to net-60 payment", which is what the old pattern
+ * matched, while keeping "GB-4471-90822".
+ */
+export function identifierShaped(value) {
+  const v = String(value || '').trim();
+  if (!/\d/.test(v)) return false;              // an ID without a digit is prose
+  if (/\s/.test(v)) return false;               // real IDs do not contain spaces
+  const letters = (v.match(/[A-Za-z]/g) || []).length;
+  const digits = (v.match(/\d/g) || []).length;
+  return digits >= 3 || digits >= letters;      // digit-dominant, not word-dominant
+}
 
 export function luhn(value) {
   const digits = String(value).replace(/\D/g, '');

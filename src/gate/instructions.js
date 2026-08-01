@@ -27,15 +27,24 @@ export const DETERMINISTIC_PATTERNS = [
   { id: 'you_are_approved', re: /\byou(?:'re| are)\s+(?:now\s+)?(?:approved|authoris?ed|permitted|allowed|able)\s+to\b/i, weight: 1.0, label: '"you are approved to…"' },
   { id: 'note_future', re: /\bnote\s+for\s+(?:the\s+)?future\s+reference\b|\bfor future reference\b/i, weight: 1.0, label: '"note for future reference…"' },
   { id: 'pre_approved', re: /\b(?:is|are)\s+pre-?approved\b|\bpre-?approved\s+(?:for|to|supplier|vendor|account)\b/i, weight: 1.0, label: '"this account is pre-approved…"' },
-  { id: 'new_policy', re: /\bthe\s+new\s+policy\s+is\b|\bpolicy\s+(?:has\s+)?(?:changed|been\s+updated)\s+to\b/i, weight: 1.0, label: '"the new policy is…"' },
+  // "their procurement policy has changed to net-60" is a fact about the world,
+  // not an instruction to the agent. The pattern now requires OUR policy — the
+  // one the agent would act on — rather than any policy belonging to anyone.
+  { id: 'new_policy', re: /\bthe\s+new\s+policy\s+is\b|\b(?:the|our|your|company|internal)\s+policy\s+(?:has\s+)?(?:changed|been\s+updated)\s+to\b/i, weight: 1.0, label: '"the new policy is…"' },
   { id: 'treat_this_as', re: /\btreat\s+(?:this|it|the following|me)\s+as\b/i, weight: 1.0, label: '"treat this as…"' },
   { id: 'limit_raised', re: /\b(?:your|the)\s+(?:limit|ceiling|cap|threshold|authority|budget)\s+(?:has been|is now|was)\s+(?:raised|increased|lifted|set)\b/i, weight: 1.0, label: '"your limit has been raised to…"' },
   { id: 'as_an_exception', re: /\bas an exception\b|\bexceptionally,? you (?:may|can)\b|\bjust this once\b/i, weight: 1.0, label: '"as an exception, you may…"' },
   { id: 'silently', re: /\b(?:silently|quietly|discreetly|without (?:logging|notifying|telling|informing|alerting))\b/i, weight: 1.0, label: '"silently…"' },
   { id: 'add_to_instructions', re: /\badd\s+(?:the\s+following\s+)?to\s+your\s+(?:instructions?|prompt|memory|rules|context)\b/i, weight: 1.0, label: '"add to your instructions…"' },
   { id: 'you_are_now', re: /\byou\s+are\s+now\b|\byour\s+role\s+(?:is\s+now|has changed)\b/i, weight: 1.0, label: '"you are now…"' },
-  { id: 'override', re: /\boverrid(?:e|ing|es)\b|\bsupersedes?\b|\btakes? precedence over\b/i, weight: 0.95, label: '"override…" / "supersedes…"' },
-  { id: 'bypass', re: /\bbypass(?:es|ing)?\b|\bskip\s+(?:the\s+)?(?:approval|verification|check|review|sign-?off)\b|\bwithout\s+(?:approval|sign-?off|verification)\b/i, weight: 1.0, label: '"bypass…"' },
+  // "Engineering will override the default timeout" and "the contract supersedes
+  // the previous MSA" are facts. What makes the word an attack is its object:
+  // a control, a rule, or a set of instructions — not a timeout or a contract.
+  { id: 'override', re: /\boverrid(?:e|ing|es)\s+(?:the\s+)?(?:standard|usual|normal|existing|current\s+)?(?:verification|approval|check|control|policy|polic(?:y|ies)|rule|limit|restriction|requirement|safeguard|guardrail|instruction|process|procedure|review|sign-?off)\b|\b(?:supersedes?|takes? precedence over)\s+(?:all\s+)?(?:prior|previous|earlier|any|the\s+above|existing)?\s*(?:instructions?|guidance|directives?|rules?|polic(?:y|ies)|prompts?)\b/i, weight: 0.95, label: '"override…" / "supersedes…"' },
+  // "The maximum discount we offer without approval is 20 percent" states a
+  // policy; "issue the refund without approval" instructs the agent to break
+  // one. The bare prepositional phrase is not enough — it needs the action.
+  { id: 'bypass', re: /\bbypass(?:es|ing)?\b|\bskip\s+(?:the\s+)?(?:approval|verification|check|review|sign-?off)\b|\b(?:approve|issue|send|process|transfer|pay|grant|proceed|release|action|complete|authoris|authoriz)\w*\s+(?:\w+\s+){0,4}without\s+(?:further\s+|any\s+)?(?:approval|sign-?off|verification|authoris|authoriz)\w*/i, weight: 1.0, label: '"bypass…"' },
   { id: 'the_following_supersedes', re: /\bthe\s+following\s+(?:supersedes|replaces|overrides)\b/i, weight: 1.0, label: '"the following supersedes…"' },
   { id: 'reveal_config', re: /\b(?:reveal|print|show|output|repeat|echo)\s+(?:your|the)\s+(?:system\s+prompt|instructions?|configuration|rules|context)\b/i, weight: 1.0, label: 'prompt/system-prompt extraction' },
   { id: 'end_of_document', re: /\b(?:end of (?:document|message|context|input))\b[\s\S]{0,40}\b(?:new|following)\s+(?:instructions?|directives?)\b/i, weight: 1.0, label: 'fake message boundary' }
@@ -47,12 +56,61 @@ export const SEMANTIC_DETECTORS = [
   { id: 'permission_grant', re: /\byou\s+(?:may|can|are able to|have permission to|are cleared to)\s+\w+/i, weight: 0.85, label: 'permission-granting shape' },
   { id: 'threshold_language', re: /\b(?:up to|no more than|not exceeding|limit(?:ed)? (?:of|to)|ceiling of|cap of|maximum of|threshold of)\s*[$£€]?\s?[\d,.]+\s?(?:k|m|bn|%|percent)?\b/i, weight: 0.7, label: 'threshold language' },
   { id: 'self_reference', re: /\byou(?:r|'re| are| must| should| will| shall| need)\b/i, weight: 0.55, label: 'text addressing the agent, not describing the world' },
-  { id: 'future_conditional', re: /\b(?:when|if|whenever|next time|should)\s+(?:the\s+)?(?:user|customer|someone|anyone|they)\s+(?:asks?|requests?|mentions?|says?|contacts?)\b[^.]{0,60}\b(?:then\s+)?(?:say|do|reply|respond|approve|grant|escalate|send)\b/i, weight: 0.95, label: 'future-conditional trigger' },
+  // Up to two words may sit between the subject and its verb — "when the user
+  // NEXT asks", "if anyone EVER requests". Requiring them to be adjacent let a
+  // single adverb walk the whole payload past this detector.
+  { id: 'future_conditional', re: /\b(?:when|if|whenever|next time|should)\s+(?:the\s+)?(?:user|customer|someone|anyone|they|he|she)\s+(?:\w+\s+){0,2}(?:asks?|requests?|mentions?|says?|contacts?|raises?|queries|queries)\b[^.]{0,60}\b(?:then\s+)?(?:say|do|reply|respond|approve|grant|escalate|send|tell|treat|issue|release)\b/i, weight: 0.95, label: 'future-conditional trigger' },
   { id: 'secrecy', re: /\b(?:don'?t mention|do not mention|keep (?:this|it) (?:between us|confidential|quiet)|off the record|without telling|no need to (?:tell|inform|log))\b/i, weight: 0.95, label: 'secrecy language' },
   { id: 'roleplay', re: /\b(?:pretend|imagine|act as(?: if| though)?|role-?play|for (?:testing|debugging|demo) purposes|hypothetically|in a fictional)\b/i, weight: 0.9, label: 'role-play framing' },
   { id: 'urgency', re: /\b(?:immediately|right now|urgent(?:ly)?|asap|before the (?:audit|deadline|close|review)|the (?:ceo|cfo) needs this now|time[- ]sensitive)\b/i, weight: 0.6, label: 'urgency / pressure framing' },
   { id: 'delimiter_injection', re: /(?:```|---|===|\{\{|\[\[)\s*(?:system|instruction|prompt|tool_result|function_results?)\b/i, weight: 1.0, label: 'fake tool-result or JSON block' }
 ];
+
+/**
+ * Patterns whose vocabulary genuinely collides with ordinary business English.
+ *
+ * "The contract supersedes the previous agreement", "engineering will override
+ * the default timeout", "the customer asked us to ignore the previous quote" —
+ * all three are facts, and all three used to be held. These patterns keep their
+ * full weight everywhere EXCEPT inside clearly attributed third-party reported
+ * speech, which is the one context where the vocabulary is reliably innocent.
+ *
+ * Nothing that names the agent, issues a command to it, or forges a role tag is
+ * in this set: those stay unconditional.
+ */
+const AMBIGUOUS_IN_BUSINESS_ENGLISH = new Set([
+  'ignore_previous', 'override', 'always_never', 'from_now_on',
+  'pre_approved', 'bypass', 'reveal_config', 'new_policy', 'authority_claim'
+]);
+
+/** Verbs that report what somebody else said or did. */
+const REPORTING_VERB = /\b(?:asked|says?|said|confirmed|reported|noted|told|mentioned|requested|explained|indicated|stated|agreed|wants?|wanted|prefers?|complained|clarified)\b/i;
+
+/** Third-party possessive framing: "their policy", "his budget". */
+const THIRD_PARTY_POSSESSIVE = /\b(?:their|his|her|its)\b/i;
+
+/**
+ * Is this text reporting on a third party rather than addressing the agent?
+ *
+ * An instruction has to reach the agent to work, so anything that addresses it
+ * in the second person, or commands it outright, can never qualify however it
+ * is phrased. What is left — third-person reported speech with no second-person
+ * address — is description, which is exactly what Vault exists to store.
+ *
+ * @param {string} text
+ * @returns {boolean}
+ */
+export function isThirdPartyReport(text) {
+  const s = String(text || '');
+  // Addressing the agent disqualifies immediately: that is the attack surface.
+  if (/\byou\b|\byour\b|\byou'?re\b/i.test(s)) return false;
+  // A forged role tag or fake boundary is never innocent reported speech.
+  if (/(?:^|\n)\s*(?:system|assistant|developer|tool)\s*:/i.test(s)) return false;
+  if (/\b(?:end of (?:document|message|context|input))\b/i.test(s)) return false;
+  // A bare command to the agent is not a report, whoever it is attributed to.
+  if (imperativeMood(s).imperative) return false;
+  return REPORTING_VERB.test(s) || THIRD_PARTY_POSSESSIVE.test(s);
+}
 
 /** Imperative mood: grammatical commands vs statements. */
 const IMPERATIVE_VERBS = new Set(('ignore disregard forget remember note treat assume add set update change override '
@@ -93,12 +151,24 @@ export class InstructionDetector {
     /** @type {object[]} */
     const layers = [];
 
+    // Reported third-party speech is a fact about the world. Computed once on
+    // the normalised surface so an obfuscated payload cannot claim it.
+    const reported = isThirdPartyReport(normalised) && isThirdPartyReport(original);
+
     // ---- Layer 1: deterministic -----------------------------------------
     const l1 = { layer: 1, name: 'deterministic', fired: false, hits: [] };
     for (const surface of surfaces) {
       for (const p of [...DETERMINISTIC_PATTERNS, ...this.extra]) {
         const m = p.re.exec(surface.text);
         if (m) {
+          // Suppressed only on the visible surfaces: text hidden from a human
+          // is never innocent, whatever mood it is written in.
+          if (reported && AMBIGUOUS_IN_BUSINESS_ENGLISH.has(p.id)
+              && (surface.name === 'original' || surface.name === 'normalised')) {
+            l1.suppressed = l1.suppressed || [];
+            l1.suppressed.push({ id: p.id, why: 'third-party reported speech, not an instruction to this agent' });
+            continue;
+          }
           l1.fired = true;
           l1.hits.push({ id: p.id, label: p.label, weight: p.weight, surface: surface.name, match: truncate(m[0], 80) });
         }
@@ -153,12 +223,17 @@ export class InstructionDetector {
 
     // ---- Layer 4: classifier --------------------------------------------
     const cls = classifyInstruction(normalised);
+    // Reported third-party speech is where this layer is least reliable: it is
+    // trained on short declaratives, so "their CEO needs the proposal by
+    // Thursday" scores as a command. It still gets a vote there, but it has to
+    // be much surer of itself before it can hold a write on its own.
+    const clsThreshold = reported ? 0.995 : 0.85;
     const l4 = {
       layer: 4, name: 'classifier',
       // The classifier fires only when it is confident. It is one of seven
       // layers and the deterministic and semantic layers carry the real load;
       // a trigger-happy layer 4 would fill the queue with acknowledgements.
-      fired: cls.label === 'instruction' && cls.instructionProbability >= 0.85,
+      fired: cls.label === 'instruction' && cls.instructionProbability >= clsThreshold,
       score: cls.instructionProbability,
       hits: cls.label === 'instruction'
         ? [{ id: 'nb_classifier', label: `classified as an instruction (p=${cls.instructionProbability})`, weight: cls.instructionProbability }]
@@ -171,7 +246,14 @@ export class InstructionDetector {
     for (const surface of surfaces) {
       for (const d of SEMANTIC_DETECTORS) {
         const m = d.re.exec(surface.text);
-        if (m) l5.hits.push({ id: d.id, label: d.label, weight: d.weight, surface: surface.name, match: truncate(m[0], 80) });
+        if (!m) continue;
+        if (reported && AMBIGUOUS_IN_BUSINESS_ENGLISH.has(d.id)
+            && (surface.name === 'original' || surface.name === 'normalised')) {
+          l5.suppressed = l5.suppressed || [];
+          l5.suppressed.push({ id: d.id, why: 'third-party reported speech, not an instruction to this agent' });
+          continue;
+        }
+        l5.hits.push({ id: d.id, label: d.label, weight: d.weight, surface: surface.name, match: truncate(m[0], 80) });
       }
     }
     const mood = imperativeMood(normalised);

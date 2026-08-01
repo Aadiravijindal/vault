@@ -160,9 +160,14 @@ export function decodeLayers(text, maxDepth = 2) {
     if (!found) break;
   }
   // ROT13 is cheap to test and shows up in real payloads.
+  //
+  // This used to fire only when the decode contained one of six hard-coded
+  // words, which meant any ROT13'd instruction that avoided that vocabulary
+  // went through untouched — "your authorisation limit has been raised" among
+  // them. Keyword lists are the wrong tool here: what identifies a ROT13
+  // payload is that the ciphertext is not language and the plaintext is.
   const rot = rot13(text);
-  if (/\b(ignore|instructions?|approved|system|override|password)\b/i.test(rot) &&
-      !/\b(ignore|instructions?|approved|system|override|password)\b/i.test(text)) {
+  if (englishness(rot) > englishness(text) + 0.15 && englishness(rot) >= 0.2) {
     decoded.push(rot);
     layers.push('rot13');
   }
@@ -199,6 +204,32 @@ export function rot13(s) {
     const base = c <= 'Z' ? 65 : 97;
     return String.fromCharCode(((c.charCodeAt(0) - base + 13) % 26) + base);
   });
+}
+
+/**
+ * The most common English function words. Any real sentence of more than a few
+ * words hits several; a substitution cipher of one hits almost none. That
+ * asymmetry is what makes this work as a cipher detector without needing to
+ * know what the payload says.
+ */
+const COMMON_WORDS = new Set(('the be to of and a in that have i it for not on with he as you do at this but his '
+  + 'by from they we say her she or an will my one all would there their what so up out if about who get which go '
+  + 'me when make can like time no just him know take people into year your good some could them see other than '
+  + 'then now look only come its over think also back after use two how our work first well way even new want '
+  + 'because any these give day most us is are was were has had been').split(' '));
+
+/**
+ * Fraction of tokens that are common English words: 0 for ciphertext or random
+ * bytes, typically 0.3–0.5 for ordinary prose.
+ * @param {string} s
+ * @returns {number}
+ */
+export function englishness(s) {
+  const words = String(s || '').toLowerCase().match(/[a-z']+/g) || [];
+  if (words.length < 4) return 0;   // too short to judge; do not guess
+  let hits = 0;
+  for (const w of words) if (COMMON_WORDS.has(w)) hits++;
+  return hits / words.length;
 }
 
 function isPrintable(s) {
