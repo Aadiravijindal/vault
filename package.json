@@ -21,7 +21,9 @@
     "verify": "node bin/vault.js ledger verify",
     "doctor": "node bin/vault.js doctor",
     "redteam": "node bin/vault-redteam.js",
-    "conformance": "node bin/vault-conformance.js"
+    "conformance": "node bin/vault-conformance.js",
+    "contract": "node bin/vault-contract.js",
+    "readiness": "node bin/vault-readiness.js"
   },
   "files": [
     "bin",

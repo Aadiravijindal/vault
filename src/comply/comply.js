@@ -14,27 +14,27 @@ import { VaultError, notFound, forbidden } from '../util/errors.js';
 export const CONTROLS = [
   {
     id: 'VLT-1', name: 'Every write is checked before it becomes durable memory',
-    frameworks: { 'NIST AI RMF': 'MANAGE 2.2', 'ISO 42001': 'A.6.2.4', 'EU AI Act': 'Art 15', 'OWASP LLM': 'LLM01 Prompt Injection', 'OWASP Agentic': 'AAI-2', 'SOC 2': 'CC6.1' },
+    frameworks: { 'NIST AI RMF': 'MANAGE 2.2', 'ISO 42001': 'A.6.2.4', 'EU AI Act': 'Art 15', 'OWASP LLM': 'LLM01 Prompt Injection', 'SOC 2': 'CC6.1', 'OWASP Agentic': 'ASI01 Agent Goal Hijack' },
     evidence: 'gate.outcomes'
   },
   {
     id: 'VLT-2', name: 'Untrusted sources cannot create authoritative facts',
-    frameworks: { 'NIST AI RMF': 'MAP 3.4', 'ISO 42001': 'A.7.3', 'OWASP LLM': 'LLM03 Training Data Poisoning', 'CSA AICM': 'DSP-04' },
+    frameworks: { 'NIST AI RMF': 'MAP 3.4', 'ISO 42001': 'A.7.3', 'OWASP LLM': 'LLM03 Training Data Poisoning', 'CSA AICM': 'DSP-04', 'OWASP Agentic': 'ASI06 Context Management and Retrieval Manipulation' },
     evidence: 'gate.channel_trust'
   },
   {
     id: 'VLT-3', name: 'Human oversight of held and escalated writes',
-    frameworks: { 'EU AI Act': 'Art 14', 'NIST AI RMF': 'GOVERN 3.2', 'ISO 42001': 'A.9.3', 'SOC 2': 'CC2.1' },
+    frameworks: { 'EU AI Act': 'Art 14', 'NIST AI RMF': 'GOVERN 3.2', 'ISO 42001': 'A.9.3', 'SOC 2': 'CC2.1', 'OWASP Agentic': 'ASI09 Human-Agent Trust Exploitation' },
     evidence: 'review.decisions'
   },
   {
     id: 'VLT-4', name: 'Automatic logging of every event, tamper-evident',
-    frameworks: { 'EU AI Act': 'Art 12', 'ISO 27001': 'A.8.15', 'SOC 2': 'CC7.2', 'FINRA': '4511', 'SEC': '17a-4(f)' },
+    frameworks: { 'EU AI Act': 'Art 12', 'ISO 27001': 'A.8.15', 'SOC 2': 'CC7.2', 'FINRA': '4511', 'SEC': '17a-4(f)', 'OWASP Agentic': 'ASI08 Cascading Failures' },
     evidence: 'ledger.integrity'
   },
   {
     id: 'VLT-5', name: 'AI system inventory with named owners',
-    frameworks: { 'EU AI Act': 'Art 26', 'NIST AI RMF': 'GOVERN 1.6', 'ISO 42001': 'A.4.2', 'NAIC': 'AI Systems inventory' },
+    frameworks: { 'EU AI Act': 'Art 26', 'NIST AI RMF': 'GOVERN 1.6', 'ISO 42001': 'A.4.2', 'NAIC': 'AI Systems inventory', 'OWASP Agentic': 'ASI10 Rogue Agents' },
     evidence: 'registry.inventory'
   },
   {
@@ -44,7 +44,7 @@ export const CONTROLS = [
   },
   {
     id: 'VLT-7', name: 'Access control between departments and projects',
-    frameworks: { 'ISO 27001': 'A.5.15', 'SOC 2': 'CC6.3', 'NIST AI RMF': 'MANAGE 2.3' },
+    frameworks: { 'ISO 27001': 'A.5.15', 'SOC 2': 'CC6.3', 'NIST AI RMF': 'MANAGE 2.3', 'OWASP Agentic': 'ASI03 Identity and Privilege Abuse' },
     evidence: 'walls.enforcement'
   },
   {
@@ -59,7 +59,7 @@ export const CONTROLS = [
   },
   {
     id: 'VLT-10', name: 'Emergency stop with a named administrator and tested activation',
-    frameworks: { 'EU AI Act': 'Art 14(4)(e)', 'NIST AI RMF': 'MANAGE 4.1', 'ISO 42001': 'A.9.4', Insurance: 'AI Security Rider' },
+    frameworks: { 'EU AI Act': 'Art 14(4)(e)', 'NIST AI RMF': 'MANAGE 4.1', 'ISO 42001': 'A.9.4', Insurance: 'AI Security Rider', 'OWASP Agentic': 'ASI08 Cascading Failures' },
     evidence: 'killswitch.spec'
   },
   {
@@ -69,12 +69,12 @@ export const CONTROLS = [
   },
   {
     id: 'VLT-12', name: 'Adversarial testing of the control itself',
-    frameworks: { 'NIST AI RMF': 'MEASURE 2.7', 'ISO 42001': 'A.6.2.5', 'MITRE ATLAS': 'Red teaming', 'OWASP MCP': 'MCP-7' },
+    frameworks: { 'NIST AI RMF': 'MEASURE 2.7', 'ISO 42001': 'A.6.2.5', 'MITRE ATLAS': 'Red teaming', 'OWASP MCP': 'MCP-7', 'OWASP Agentic': 'ASI01 Agent Goal Hijack' },
     evidence: 'security.redteam'
   },
   {
     id: 'VLT-13', name: 'Third-party AI vendor register with attestations',
-    frameworks: { 'NAIC': 'Third-party model registry', 'ISO 42001': 'A.10', 'SOC 2': 'CC9.2', 'EU AI Act': 'Art 25' },
+    frameworks: { 'NAIC': 'Third-party model registry', 'ISO 42001': 'A.10', 'SOC 2': 'CC9.2', 'EU AI Act': 'Art 25', 'OWASP Agentic': 'ASI04 Agentic Supply Chain Vulnerabilities' },
     evidence: 'comply.vendors'
   },
   {
@@ -89,7 +89,7 @@ export const CONTROLS = [
   },
   {
     id: 'VLT-16', name: 'Tool and MCP server allowlisting with provenance',
-    frameworks: { 'OWASP MCP': 'MCP-1, MCP-3', 'CoSAI': 'MCP threat model', 'ISO 27001': 'A.8.31' },
+    frameworks: { 'OWASP MCP': 'MCP-1, MCP-3', 'CoSAI': 'MCP threat model', 'ISO 27001': 'A.8.31', 'OWASP Agentic': 'ASI02 Tool Misuse and Exploitation' },
     evidence: 'mcp.registry'
   }
 ];

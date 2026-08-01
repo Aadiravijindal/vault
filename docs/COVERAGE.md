@@ -43,7 +43,7 @@ Personal ChatGPT        ✗        ✗        ✗     —             NOT REACHA
 modes supported, what it pulls, **what it cannot pull**, setup time, scopes required,
 and rate-limit profile.
 
-## Two different meanings of "verified"
+## Three different meanings of "verified"
 
 ```bash
 vault conformance          # or: node bin/vault-conformance.js
@@ -54,6 +54,23 @@ vendor and is checked on what it actually sent: the credential is attached under
 header that vendor reads, every `{placeholder}` is substituted, the URL is absolute
 and HTTPS, a token-exchange scheme knows where to exchange the token, and a signed
 webhook rejects a forged signature.
+
+**3 of 74 are checked against the vendor's own published OpenAPI document.**
+
+```bash
+vault contract             # or: node bin/vault-contract.js
+```
+
+GitHub, Slack and Twilio publish machine-readable API descriptions. Every endpoint
+Vault calls on those three is confirmed to exist in the vendor's own spec, with an
+allowed method, at a host the vendor declares. That is the provider-driven contract
+test the industry uses for third-party integrations, and it needs no credential —
+only the spec, which is public. It catches the invented path and the renamed
+endpoint, which conformance cannot.
+
+Only three, because the rest publish no machine-readable description or publish one
+only as YAML, and Vault ships no YAML parser. Those are listed as unverifiable-here
+rather than quietly dropped.
 
 **4 of 74 have been run against the vendor's real API.** That number has not moved.
 Conformance rules out a malformed request; only a credential rules out a vendor whose
