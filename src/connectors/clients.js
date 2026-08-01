@@ -288,7 +288,13 @@ export const CLIENTS = Object.fromEntries([
     credential: 'an Anthropic Admin API key (sk-ant-admin…) for the Organizations endpoints'
   }),
   D('gemini-enterprise', {
+    // The assertion had nowhere to go: jwt_bearer without a tokenUrl cannot
+    // complete a token exchange, so every authenticated call would have failed
+    // on first contact. The "live" status came from the JWKS endpoint, which
+    // needs no credential — which is precisely the kind of overclaim the
+    // coverage map exists to prevent. Conformance now fails the build for it.
     baseUrl: 'https://www.googleapis.com', auth: 'jwt_bearer', status: 'live',
+    tokenUrl: 'https://oauth2.googleapis.com/token',
     endpoints: { jwks: '/oauth2/v3/certs', vault: '/apps/vault/v1/matters', activity: '/admin/reports/v1/activity/users/all/applications/gemini_in_workspace_apps' },
     scopes: ['https://www.googleapis.com/auth/ediscovery', 'https://www.googleapis.com/auth/admin.reports.audit.readonly'],
     credential: 'a Google Cloud service account key with domain-wide delegation authorised for the Vault and Admin Reports scopes'
@@ -601,7 +607,15 @@ export class VendorClient {
     const filled = (s) => String(s).replace(/\{(\w+)\}/g, (m, k) => {
       const v = this.vars[k] ?? this.credentials[k];
       if (v === undefined) throw new VaultError('config', `${this.def.id} needs "${k}" to build its URL`, { variable: k });
-      return encodeURIComponent(v);
+      const str = String(v);
+      // Percent-encoding is right for an identifier dropped into a path segment
+      // and catastrophic for a placeholder that IS the origin or the path.
+      // Salesforce learns its instanceUrl from its own token exchange, so
+      // encoding it turned every request into https%3A%2F%2F… and the connector
+      // could not have worked against a real tenant. An absolute URL or a
+      // rooted path is never a single segment, so it goes in verbatim.
+      if (/^https?:\/\//i.test(str) || str.startsWith('/')) return str.replace(/\/$/, '');
+      return encodeURIComponent(str);
     });
     return filled(base) + (path ? filled(path) : '');
   }

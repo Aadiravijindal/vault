@@ -43,6 +43,35 @@ Personal ChatGPT        ✗        ✗        ✗     —             NOT REACHA
 modes supported, what it pulls, **what it cannot pull**, setup time, scopes required,
 and rate-limit profile.
 
+## Two different meanings of "verified"
+
+```bash
+vault conformance          # or: node bin/vault-conformance.js
+```
+
+**74 of 74 pass conformance.** Each one builds a real request against a synthetic
+vendor and is checked on what it actually sent: the credential is attached under the
+header that vendor reads, every `{placeholder}` is substituted, the URL is absolute
+and HTTPS, a token-exchange scheme knows where to exchange the token, and a signed
+webhook rejects a forged signature.
+
+**4 of 74 have been run against the vendor's real API.** That number has not moved.
+Conformance rules out a malformed request; only a credential rules out a vendor whose
+API differs from its own documentation, an undocumented required header, or a response
+shape nobody published. Passing conformance does not earn `status: 'live'`.
+
+Conformance is worth running because it found real defects that a live run would have
+hit on its first request:
+
+- Every URL placeholder was percent-encoded, including the ones holding a whole
+  origin. Salesforce learns its `instanceUrl` from its own token exchange, so every
+  request became `https%3A%2F%2Facme.my.salesforce.com/…`. That connector could not
+  have worked against a real tenant.
+- `gemini-enterprise` used the JWT bearer flow with no token endpoint defined, so the
+  signed assertion had nowhere to go. It was marked `live` on the strength of its
+  JWKS endpoint, which needs no credential — exactly the overclaim this map exists to
+  prevent.
+
 ## The three honest sentences
 
 1. **Watch finds things. Inline stops things. Gateway finds things you didn't know

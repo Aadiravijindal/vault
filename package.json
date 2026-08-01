@@ -1,7 +1,7 @@
 {
   "name": "vault",
   "version": "2.0.0",
-  "description": "Vault — the company's shared AI memory, with a gate at the door, a recorder that never stops, and a complete built-in stack you can swap for your own.",
+  "description": "Vault \u2014 the company's shared AI memory, with a gate at the door, a recorder that never stops, and a complete built-in stack you can swap for your own.",
   "type": "module",
   "license": "SEE LICENSE IN LICENSE",
   "engines": {
@@ -19,7 +19,9 @@
     "test": "node --test --test-concurrency=1 'test/**/*.test.js'",
     "test:watch": "node --test --watch 'test/**/*.test.js'",
     "verify": "node bin/vault.js ledger verify",
-    "doctor": "node bin/vault.js doctor"
+    "doctor": "node bin/vault.js doctor",
+    "redteam": "node bin/vault-redteam.js",
+    "conformance": "node bin/vault-conformance.js"
   },
   "files": [
     "bin",
