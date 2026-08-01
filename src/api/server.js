@@ -17,6 +17,7 @@ import { now, iso } from '../util/time.js';
 import { VaultError } from '../util/errors.js';
 import { timingReport, recommendedFirstConnectors } from '../onboarding/onboarding.js';
 import { renderPlan } from '../iac/iac.js';
+import { receiveWebhook } from '../connectors/inbound.js';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const UI_DIR = join(HERE, '..', 'ui');
@@ -141,6 +142,14 @@ export class ApiServer {
     this.route('POST', '/api/connectors/:id/rotate', R('platform', 'admin'), ({ params, body, principal }) =>
       v.connectors.rotateCredential(params.id, { credential: body.credential, actor: principal.name, reason: body.reason }));
     this.route('GET', '/api/connectors/gaps', R('platform', 'admin', 'security'), () => v.connectors.detectGaps());
+    // A vendor pushing an event has no bearer token and never will — the HMAC
+    // over the raw body IS the authentication, checked before the payload is
+    // parsed. `rawBody`, not `body`: the signature is over the bytes sent, and
+    // a re-serialised object fails verification even when it is genuine.
+    this.route('POST', '/api/connectors/:id/webhook', 'signed', ({ params, rawBody, headers }) => {
+      const r = receiveWebhook({ connectors: v.connectors, connectorId: params.id, rawBody, headers });
+      return new HttpResponse({ status: r.status, json: r.body });
+    });
 
     // ---- 🧠 MEMORY --------------------------------------------------------
     this.route('GET', '/api/facts', ALL, ({ query, principal }) => {
@@ -203,6 +212,7 @@ export class ApiServer {
     this.route('GET', '/api/model', R('platform', 'admin', 'security'), () => v.model.status());
     this.route('POST', '/api/model/refile', R('platform', 'admin'), ({ body, principal }) =>
       v.refileWithModel({ limit: body?.limit ?? 50, actor: principal.name }));
+    this.route('GET', '/api/redteam', R('platform', 'admin', 'security', 'auditor', 'compliance'), () => v.redteam.status());
 
     // ---- ⏳ NEEDS REVIEW ---------------------------------------------------
     this.route('GET', '/api/review', ALL, ({ query, principal }) =>

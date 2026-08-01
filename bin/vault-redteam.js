@@ -3,8 +3,14 @@
  * Attack the gate and print what got through.
  *
  *   node bin/vault-redteam.js [--json] [--channel <name>]
+ *   node bin/vault-redteam.js --watch [--interval-ms 21600000]
  *
  * Exit code 0 = met the thresholds below, 1 = did not.
+ *
+ * --watch keeps running on a schedule instead of once, alerting when either
+ * published number is breached AND when either moves materially against the
+ * previous run, because a fall from 100% to 98.2% passes and is still the most
+ * important thing that happened that week.
  *
  * The agent is registered with a write budget above the corpus size and scope
  * over every folder on purpose. This run measures the DETECTORS: if the agent
@@ -15,11 +21,14 @@
 import { Vault } from '../src/index.js';
 import { Ledger } from '../src/ledger/ledger.js';
 import { runRedTeam, renderRedTeam, buildCorpus, recordRedTeamRun } from '../src/security/redteam.js';
+import { RedTeamWatchdog, runOnce } from '../src/security/watchdog.js';
 
 const args = process.argv.slice(2);
 const json = args.includes('--json');
 const chIdx = args.indexOf('--channel');
 const channel = chIdx >= 0 ? args[chIdx + 1] : 'phone_call_authenticated';
+const watch = args.includes('--watch');
+const ivIdx = args.indexOf('--interval-ms');
 
 /** Published thresholds. Falling below either fails the run. */
 export const THRESHOLDS = { catchRate: 0.98, falsePositiveRate: 0.10 };
@@ -44,6 +53,31 @@ vault.registerAgent({
 });
 
 const credential = vault.issueCredential('redteam-agent', {}).credential;
+
+// --watch turns the suite from a command somebody has to remember into a
+// control with a run history, which is what "when did this last pass" needs.
+if (watch) {
+  const intervalMs = ivIdx >= 0 ? Number(args[ivIdx + 1]) : 6 * 60 * 60 * 1000;
+  const watchdog = new RedTeamWatchdog({
+    vault,
+    intervalMs,
+    run: () => runOnce({ channel }),
+    onReport: (entry) => {
+      if (json) { console.log(JSON.stringify(entry, null, 2)); return; }
+      const stamp = new Date(entry.at).toISOString();
+      console.log(`${stamp}  ${entry.ok ? 'PASS' : 'FAIL'}  ${entry.summary ?? entry.error}`);
+      for (const f of entry.failures ?? []) console.log(`            ! ${f}`);
+      for (const d of entry.drifts ?? []) console.log(`            ~ regression: ${d}`);
+    }
+  });
+  console.log(`watching — the adversarial suite runs now and every ${intervalMs}ms. Ctrl-C to stop.\n`);
+  watchdog.start();
+  process.on('SIGINT', () => { watchdog.stop(); process.exit(0); });
+} else {
+  runSingle();
+}
+
+function runSingle() {
 const report = runRedTeam({ vault, credential, agentId: 'redteam-agent', channel });
 
 // File it against the compliance record, so the insurance pack stops reporting
@@ -72,4 +106,5 @@ if (failures.length) {
     for (const f of failures) console.log(`  · ${f}`);
   }
   process.exit(1);
+}
 }

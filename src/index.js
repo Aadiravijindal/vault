@@ -46,6 +46,7 @@ import { ReadPath } from './read/read.js';
 import { ModelProvider } from './ai/provider.js';
 import { ask } from './ai/ask.js';
 import { refilePass } from './ai/refile.js';
+import { RedTeamWatchdog } from './security/watchdog.js';
 import { HygieneEngine } from './hygiene/hygiene.js';
 import { TraceEngine } from './trace/trace.js';
 import { VaultTrace } from './observability/vaulttrace.js';
@@ -831,6 +832,19 @@ export class Vault {
    */
   refileWithModel(opts = {}) {
     return refilePass({ vault: this, ...opts });
+  }
+
+  /**
+   * The adversarial suite as a scheduled control rather than a command.
+   *
+   * Created on first use, not in the constructor: starting it eagerly would
+   * fire the whole corpus on every instantiation, including every test. Each
+   * run happens in a throwaway vault built from the same code, so the real
+   * archive never accumulates attack payloads — see src/security/watchdog.js.
+   */
+  get redteam() {
+    if (!this._redteam) this._redteam = new RedTeamWatchdog({ vault: this });
+    return this._redteam;
   }
 
   // =========================================================================
