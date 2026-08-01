@@ -421,6 +421,6 @@ if (isMain) {
     console.log(dim('\n  Least privilege applies to the product itself — an admin cannot silently read content.\n'));
     process.on('SIGINT', () => server.close().then(() => process.exit(0)));
   } else {
-    console.log(dim('\n  Run with --serve to open the 14-screen UI.\n'));
+    console.log(dim('\n  Run with --serve to open the 16-screen UI.\n'));
   }
 }

@@ -112,3 +112,66 @@ survives. WORM collections reject `update` and `delete` **at the code level** �
 is no path. Erasure physically rewrites the segment, so a deleted transcript is gone
 from the bytes, not merely from an index. Records can be envelope-encrypted per key
 scope, which is what lets crypto-shredding reach backups.
+
+---
+
+## `vault.journal.v1` — the audit bundle
+
+The complete record of who did what, exported for a regulator or an investigator. See
+[JOURNAL.md](JOURNAL.md) for what it is and why it is separate from the ledger.
+
+```json
+{
+  "format": "vault.journal.v1",
+  "exportedAt": "…", "exportedBy": "ciso", "reason": "FCA request 2026-114",
+  "filters":      { "subject": null, "actor": null, "folder": null, "from": null, "to": null, "action": "fact.written" },
+  "completeness": { "entriesInBundle": 3, "entriesInJournal": 9, "excluded": 6, "full": false, "statement": "This is a FILTERED extract: …" },
+  "chain":        { "head": "…", "verified": { "ok": true, "checked": 9, "problems": [] } },
+  "entries":      [ … ],
+  "bundleHash": "…", "signature": "…", "publicKeyPem": "…"
+}
+```
+
+Two properties make it evidence rather than a dump. **It states its own completeness** —
+a selective export presented as a complete one is the oldest way to mislead an auditor
+using nothing but true statements. And it is **signed over its own content hash**, so the
+recipient can prove it is the bundle that was handed over.
+
+Each entry carries `who / what / when / where / why / how`, a field-by-field `changed`
+list, `allowed`, and the sealed-ledger `ledgerSeq` it corresponds to — so the chain and
+the detail can be checked against each other.
+
+---
+
+## `VMEM v1` — the AI memory file
+
+`data/ai-memory.vmem`. What the *filing* has learned about this company, as distinct from
+the facts themselves. Gzipped JSON with a `VMEM` magic header; a mature file over a busy
+estate is tens of kilobytes.
+
+```json
+{
+  "magic": "VMEM", "format": 1, "tenant": "default", "writtenAt": …,
+  "head": "…",
+  "revisions": [ { "seq": 1, "at": …, "actor": "…", "reason": "…", "stateHash": "…", "prevHash": "GENESIS", "hash": "…" } ],
+  "tokens":   { "invoice":   { "n": 12, "folders": { "finance/": 12 }, "sens": { "confidential": 12 }, "seen": … } },
+  "clients":  { "acme-corp": { "n": 12, "type": "organisation", "folders": { "finance/": 12 }, … } },
+  "corrections": [ { "at": …, "factId": "f-1", "from": "sales/", "to": "legal/", "by": "human", "terms": [ … ] } ],
+  "uncertain":   [ … ],
+  "counters":    { "learned": 40, "recalls": 12, "human": 3, "model": 9, "rules": 28 },
+  "signature": "…", "publicKeyPem": "…"
+}
+```
+
+**No claim text, ever.** Only vocabulary, ids and counts — and tokens carrying three or
+more consecutive digits are dropped on the way in, so a salary or an account number
+cannot survive as vocabulary. The file is built to be boring enough that it is not worth
+stealing.
+
+Revisions are hash-chained and the head is signed, so an edit that retrains the filing
+breaks the chain and `verify()` names the revision that broke. Usage counters sit
+*outside* the sealed hash, exactly as read counts sit outside a fact's content hash —
+reading the memory must never make it look tampered with.
+
+A wrong magic, a non-gzip payload or a future format version is **refused as such**
+rather than parsed into nonsense. Deleting the file costs speed and nothing else.

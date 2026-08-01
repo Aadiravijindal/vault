@@ -25,7 +25,10 @@
     "contract": "node bin/vault-contract.js",
     "readiness": "node bin/vault-readiness.js",
     "sync": "node bin/vault-sync.js",
-    "add-connector": "node bin/vault-add-connector.js"
+    "add-connector": "node bin/vault-add-connector.js",
+    "model": "node bin/vault-model.js",
+    "journal": "node bin/vault-journal.js",
+    "organize": "node bin/vault-organize.js"
   },
   "files": [
     "bin",

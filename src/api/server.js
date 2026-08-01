@@ -1128,6 +1128,7 @@ function summariseFact(f, principal) {
     confidence: f.confidence, saidBy: f.saidBy?.name, channel: f.channel,
     channelTrust: f.channelTrust, createdAt: iso(f.createdAt), version: f.version,
     readCount: f.readCount, instructionScore: f.instructionScore,
+    tags: f.tags ?? [], locked: Boolean(f.locked), lockedBy: f.lockedBy ?? null,
     sourceRef: f.source?.conversationId ?? null, ledgerPosition: f.ledgerPosition
   };
 }

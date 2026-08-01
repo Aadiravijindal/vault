@@ -16,9 +16,9 @@ Node 22+. No dependencies, no build step, no `npm install`.
 
 ```bash
 node demo/seed.js            # the whole product, narrated, in ~10 seconds
-node demo/seed.js --serve    # same, then opens the 14-screen UI
+node demo/seed.js --serve    # same, then opens the 16-screen UI
 node bin/vault.js serve      # empty vault, UI + API on :8080
-npm test                     # 165 tests
+npm test                     # 860 tests
 ```
 
 `demo/seed.js` seeds a fictional company, runs normal traffic through it, then runs
@@ -43,6 +43,21 @@ node bin/vault-verify.js ./out     # standalone verifier — imports nothing fro
 
 `vault help` lists the rest.
 
+### Optional: a model, on your own hardware
+
+```bash
+ollama pull mistral:7b-instruct     # ~4GB, no GPU required
+export VAULT_MODEL_PROVIDER=ollama  # no API key — nothing leaves the building
+
+npm run model -- --probe            # configured, and actually reachable?
+npm run organize -- --watch         # keep the file room tidy, no button pressing
+npm run journal -- --subject f-123  # everything that ever happened to one record
+```
+
+With no model configured, filing uses deterministic rules and answers are composed from
+retrieved facts. Both say which path produced their result. An air-gapped install loses
+wording, never correctness — see [docs/AI.md](docs/AI.md).
+
 ---
 
 ## The one principle
@@ -57,6 +72,17 @@ compliance, registry, identity, SIEM, KMS, storage, DLP, memory, insurance.
 
 Switching never loses data, degrades gracefully when their tool is down, and works in
 both directions. **The gate runs in every configuration.** That one is not a setting.
+
+The same principle governs the model, in one line:
+
+> **A folder is a wall. A tag is an index.**
+>
+> The model invents tags freely — client names, projects, risk markers — because a tag
+> decides what is easy to *find*, and every read through one is still resolved against
+> the folder wall underneath. It cannot invent a folder, because a folder decides who
+> can *read*. It proposes one instead, and a named administrator approves it. "Who
+> approved this category, and when" is the question an auditor asks, and *"the model
+> decided"* is not an answer.
 
 ---
 
@@ -129,6 +155,8 @@ evaluating a competitor" and one that says "there's an unconfirmed signal."
 | [docs/CONTINUITY.md](docs/CONTINUITY.md) | Proof your memory survives even if we don't |
 | [docs/FORMATS.md](docs/FORMATS.md) | The export schema and the standalone verifier |
 | [docs/OPERATIONS.md](docs/OPERATIONS.md) | Deploy, storage, keys, backup, kill switch, doctor |
+| [docs/AI.md](docs/AI.md) | The model layer — local models, the memory file, what it may never do |
+| [docs/JOURNAL.md](docs/JOURNAL.md) | The complete audit record, and why it is separate from the ledger |
 
 ---
 
@@ -171,7 +199,10 @@ A CISO trusts the fence more than the promise.
 
 ```
 src/
-  api/        HTTP API + the 14-screen UI server        ui/       the UI itself
+  api/        HTTP API + the 16-screen UI server        ui/       the UI itself
+  ai/         optional model layer — local or hosted provider, semantic filing,
+              the librarian (tags, folder proposals, notices), the .vmem memory file
+  audit/      the journal — the complete record of who did what, beside the ledger
   archive/    L2 sealed raw archive (WORM)              connectors/  74-tool catalog
   extract/    L3 conversation → candidate facts
   gate/       L4 the 10 checks — gate, instructions, pii, rules, reconcile, classifier
@@ -187,8 +218,9 @@ src/
   insure/     the carrier evidence pack                 value/     cost, health, patterns
   continuity/ mirror, escrow, self-host                 search/    L7 Vault Search
 bin/          vault.js (CLI) · vault-verify.js (standalone verifier)
+              vault-model.js · vault-organize.js · vault-journal.js · vault-redteam.js
 demo/         seed.js — the whole product, narrated
-test/         165 tests
+test/         860 tests
 ```
 
 Zero dependencies is a deliberate constraint, not a flex: the product has to run

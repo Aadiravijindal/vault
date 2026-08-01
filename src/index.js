@@ -76,6 +76,16 @@ import { coverageMap } from './connectors/catalog.js';
 import { now, iso } from './util/time.js';
 import { VaultError } from './util/errors.js';
 
+/**
+ * How many individually-attributed read entries one query may write.
+ *
+ * A bulk read of ten thousand facts should not write ten thousand journal
+ * entries — but it must not silently write none either, and it must say which
+ * of the two happened. Above this the query entry still names every id it
+ * returned, and a marker records that per-fact attribution was truncated.
+ */
+const JOURNAL_READ_CAP = 100;
+
 export class Vault {
   /**
    * @param {object} [options]
@@ -920,26 +930,76 @@ export class Vault {
   /** @see ReadPath#read */
   read(query, ctx = {}) {
     const result = this.readPath.read(query, ctx);
-    const actor = ctx.actor ?? { id: ctx.agentId ?? 'unknown', kind: ctx.agentId ? 'agent' : 'human' };
-    // Both halves are recorded: what came back, and what was held back. A read
-    // that returned three of eleven facts is a different event from one that
-    // returned three of three, and only one of them is worth investigating.
-    this.journal.record('fact.read', {
-      subject: result.facts?.length === 1 ? result.facts[0].id : (typeof query === 'string' ? 'search' : 'read'),
-      subjectKind: result.facts?.length === 1 ? 'fact' : 'query',
+    // Derived the same way the read path derives it, so the journal records the
+    // actor the wall actually saw rather than a plausible-looking reconstruction
+    // of it. The two drifting apart is how an audit record starts describing a
+    // system that isn't the one running.
+    const actor = ctx.agentId
+      ? {
+        id: ctx.agentId, kind: 'agent',
+        department: this.registry.get(ctx.agentId)?.department ?? null,
+        credentialId: ctx.credential?.id ?? null
+      }
+      : {
+        id: typeof ctx.actor === 'string' ? ctx.actor : (ctx.actor?.id ?? 'unknown'),
+        kind: 'human',
+        department: ctx.department ?? ctx.actor?.department ?? null,
+        clearance: ctx.clearance ?? null,
+        sessionId: ctx.sessionId ?? null,
+        ip: ctx.ip ?? null
+      };
+    const facts = result.facts ?? [];
+    const how = { route: ctx.route ?? null, channel: ctx.channel ?? null };
+
+    // The query as an event. Both halves are recorded — what came back and what
+    // was held back — because a read that returned three of eleven facts is a
+    // different event from one that returned three of three, and only one of
+    // them is worth investigating.
+    this.journal.record('search.performed', {
+      subject: typeof query === 'string' ? 'search' : 'read',
+      subjectKind: 'query',
       actor,
       purpose: ctx.purpose ?? null,
       why: ctx.reason ?? null,
-      how: { route: ctx.route ?? null, channel: ctx.channel ?? null },
+      how,
       excerpt: typeof query === 'string' ? query : (query?.text ?? null),
       detail: {
-        returned: result.facts?.length ?? 0,
+        returned: facts.length,
         withheld: result.withheld ?? 0,
         withheldReasons: result.withheldReasons ?? [],
-        factIds: (result.facts ?? []).map((f) => f.id).slice(0, 50),
-        folders: [...new Set((result.facts ?? []).map((f) => f.folder))]
+        heldInReview: result.heldInReview ?? 0,
+        factIds: facts.map((f) => f.id).slice(0, JOURNAL_READ_CAP),
+        folders: [...new Set(facts.map((f) => f.folder))]
       }
     });
+
+    // And one entry per record actually disclosed, so that "who has read this
+    // fact" is answerable FROM THE FACT rather than by scanning every query
+    // anyone ever ran and checking whether this id was in the result set. That
+    // is the question a subject access request asks, and a query-level record
+    // alone cannot answer it.
+    for (const f of facts.slice(0, JOURNAL_READ_CAP)) {
+      this.journal.record('fact.read', {
+        subject: f.id,
+        actor,
+        purpose: ctx.purpose ?? null,
+        why: ctx.reason ?? null,
+        where: { folder: f.folder },
+        how,
+        detail: {
+          viaQuery: typeof query === 'string' ? query.slice(0, 120) : null,
+          redactedFields: f.redactedFields ?? [],
+          sensitivity: f.sensitivity ?? null
+        }
+      });
+    }
+    if (facts.length > JOURNAL_READ_CAP) {
+      this.journal.record('search.performed', {
+        subject: 'search', subjectKind: 'query', actor,
+        why: `${facts.length - JOURNAL_READ_CAP} further fact(s) were disclosed by this query and are named in the query entry above rather than individually`,
+        detail: { truncated: true, returned: facts.length, recorded: JOURNAL_READ_CAP }
+      });
+    }
     return result;
   }
 

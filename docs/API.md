@@ -33,6 +33,21 @@ everything is the objection that kills the deal.
 | `admin` | configuration. **Not content** — that needs break-glass with two approvers. |
 | `auditor` | read-only, scoped, time-boxed, verification tools, its own access log |
 
+Three capabilities are tracked **separately** from the role's screen list, because they
+protect different things and the people who need them are not the same people:
+
+| Capability | Grants | Held by |
+|---|---|---|
+| `privilegeCleared` | attorney-client material | `legal` |
+| `administrator` | administrator-only folders (`admin/`) | `admin` |
+| `canAsk` | natural-language questions over the **whole** memory | `admin` `legal` `compliance` `security` |
+
+`canAsk` is narrower than "may read facts" on purpose. An ordinary read returns the
+handful of facts somebody is cleared for; an ask ranges over everything at once and
+returns prose — a larger disclosure and a much easier one to paste somewhere it should
+not go. A lawyer needs `canAsk` and must not get `administrator`; collapsing them into one
+seniority flag is exactly how a lawyer ends up reading the board folder.
+
 ## Route groups
 
 | Prefix | Screen | Notable |
@@ -50,10 +65,20 @@ everything is the objection that kills the deal.
 | `/api/insure` | 🏛️ Insure | pack, gaps, questionnaire, renewals |
 | `/api/value` | 📈 Value | health, patterns, chargeback, kill candidates, knowledge map |
 | `/api/my-data` | 👤 My Data | the employee portal — export and object |
+| `/api/librarian` `/api/facts/:id/tag` `/lock` | 🗂️ Librarian | `POST /librarian/organize`, folder **proposals** (approve/reject), notices |
+| `/api/journal` `/api/memory` | 📓 Journal | `/journal/:subject` dossier, `/journal/refusals`, signed `/journal/export` |
 | `/api/admin` `/api/killswitch` `/api/ledger` | ⚙️ Admin | modules, keys, storage, privacy, continuity, works council |
 
 Writes go through `POST /api/ingest`; reads through `POST /api/read` and
-`POST /api/search`.
+`POST /api/search`. `POST /api/ask` is gated twice — by role at the router, and by
+`vault.mayAsk()` in the vault, which also covers MCP and the CLI. `GET /api/ask/permitted`
+tells a caller whether it may ask before it tries.
+
+`POST /api/librarian/proposals/:id/approve` is `admin` only, whatever else a role can
+see: reading the audit record does not imply deciding what the folders are. The wall
+comes from the request (`read`, `write`, `adminOnly`) and never from the model's
+suggestion. `POST /api/journal/export` attributes the export to the **session**, never to
+an `exportedBy` in the body.
 
 ### Routing rule
 
@@ -127,6 +152,21 @@ vault hygiene [--dry-run]
 vault insure | comply | value
 vault export <dir>
 ```
+
+Standalone tools, each with `--json`:
+
+```
+node bin/vault-model.js    [--probe]                       is a model configured, and actually there?
+node bin/vault-organize.js [--watch] [--proposals] [--notices] [--memory]
+                           [--approve <id> --by <who> --reason "…" [--read a,b] [--admin-only]]
+                           [--reject  <id> --by <who> --reason "…"]
+node bin/vault-journal.js  [--subject <id>] [--actor <who>] [--refusals] [--verify]
+                           [--export <file> --by <who> --reason "…"]
+node bin/vault-redteam.js  [--watch] [--interval-ms …]     576 attacks, on a schedule
+node bin/vault-sync.js     [--watch]                       poll the connectors that cannot push
+```
+
+`npm run model` / `organize` / `journal` / `redteam` / `sync` are the same commands.
 
 `--data` selects the data directory (default `./data`). The ledger signing key is
 generated into `<data>/signing-key.json` on first run, mode `0600`, **before** the

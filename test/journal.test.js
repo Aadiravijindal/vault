@@ -62,12 +62,22 @@ describe('every action against a record is recorded, with all of it', () => {
   test('a read records what came back AND what was held back', () => {
     const v = vault();
     ingested(v);
-    v.read('renewal', { actor: { id: 'dana', kind: 'human', department: 'sales' }, clearance: 'internal', purpose: 'support' });
-    const reads = v.journal.entries({ action: 'fact.read' });
-    assert.equal(reads.length, 1);
+    v.read('renewal', { actor: 'dana', department: 'sales', clearance: 'internal', purpose: 'support' });
+    const queries = v.journal.entries({ action: 'search.performed' });
+    assert.equal(queries.length, 1);
+    assert.equal(queries[0].actor.id, 'dana');
+    assert.equal(queries[0].purpose, 'support');
+    assert.ok('withheld' in queries[0].detail, 'a read returning 3 of 11 is a different event from 3 of 3');
+  });
+
+  test('every disclosed record is attributed to the record itself', () => {
+    const v = vault();
+    const factId = ingested(v).facts[0].factId;
+    v.read('renewal', { actor: 'dana', department: 'sales', clearance: 'internal', purpose: 'support' });
+    const reads = v.journal.forSubject(factId).filter((e) => e.action === 'fact.read');
+    assert.equal(reads.length, 1, '"who has read this fact" must be answerable from the fact, not by scanning every query ever run');
     assert.equal(reads[0].actor.id, 'dana');
-    assert.equal(reads[0].purpose, 'support');
-    assert.ok('withheld' in reads[0].detail, 'a read returning 3 of 11 is a different event from 3 of 3');
+    assert.equal(reads[0].where.folder, v.facts.get(factId).folder);
   });
 
   test('a change records the fields that changed, not two blobs to diff by eye', () => {
@@ -119,7 +129,7 @@ describe('the dossier answers the question a regulator asks', () => {
   test('it reads as a narrative first and structure underneath', () => {
     const v = vault();
     const factId = ingested(v).facts[0].factId;
-    v.read('renewal', { actor: { id: 'dana', kind: 'human', department: 'sales' }, clearance: 'internal' });
+    v.read('renewal', { actor: 'dana', department: 'sales', clearance: 'internal' });
     const d = v.journal.dossier(factId, { facts: v.facts, ledger: v.ledger });
     assert.ok(d.narrative.length > 80, 'an auditor should be able to read the first screen and understand what happened');
     assert.match(d.narrative, /hash-linked/);
@@ -245,5 +255,76 @@ describe('it is separate from the ledger and cross-referenced to it', () => {
     assert.ok(j.excerpt, 'the journal keeps an excerpt so the record is readable');
     assert.equal(l.claim, undefined, 'the ledger never stores content — that is why it can be handed over unreviewed');
     assert.ok(l.claimHash, 'it keeps a hash instead');
+  });
+});
+
+describe('the API boundaries on the new surfaces', () => {
+  test('who can read the record, approve a folder, and ask', async () => {
+    const { ApiServer } = await import('../src/api/server.js');
+    const v = vault();
+    ingested(v);
+    const p = v.librarian.propose({ path: 'sales/renewals/', because: 'distinct workflow' });
+    const server = new ApiServer({ vault: v, port: 0 });
+    const tok = (role, name = role) => server.issueToken({ name, role, clearance: 'secret', department: role });
+    const admin = tok('admin', 'ciso');
+    const auditor = tok('auditor');
+    const finance = tok('finance');
+    const legal = tok('legal');
+    await server.listen();
+    const port = server.server.address().port;
+    const call = (path, token, opts = {}) => fetch(`http://127.0.0.1:${port}${path}`, {
+      method: opts.method ?? 'GET',
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: opts.body ? JSON.stringify(opts.body) : undefined
+    });
+
+    try {
+      // The audit record is not an auditors-only screen. A trail only one role
+      // can see is one nobody checks.
+      assert.equal((await call('/api/journal', auditor)).status, 200);
+      assert.equal((await call('/api/journal', legal)).status, 200);
+      assert.equal((await call('/api/journal', finance)).status, 403, 'but it is not open to everyone either');
+
+      // Creating an access boundary is administrators only, whatever else a
+      // role can see.
+      const byAuditor = await call(`/api/librarian/proposals/${p.id}/approve`, auditor, { method: 'POST', body: { reason: 'x' } });
+      assert.equal(byAuditor.status, 403, 'reading the record does not imply deciding what the folders are');
+      const byAdmin = await call(`/api/librarian/proposals/${p.id}/approve`, admin, {
+        method: 'POST', body: { reason: 'renewals really are separate', read: ['sales'] }
+      });
+      assert.equal(byAdmin.status, 200);
+      assert.ok(v.folders.get('sales/renewals/'), 'and only then does the folder exist');
+
+      // Ask: granted by role, and separate from administrator.
+      assert.equal((await call('/api/ask/permitted', legal)).status, 200);
+      assert.equal((await (await call('/api/ask/permitted', legal)).json()).allowed, true);
+      assert.equal((await (await call('/api/ask/permitted', finance)).json()).allowed, false);
+      assert.equal((await call('/api/ask', finance, { method: 'POST', body: { question: 'what do we know?' } })).status, 403);
+
+      // A lawyer may ask without thereby gaining administrator-only folders.
+      const lawyerActor = { id: 'legal', kind: 'human', department: 'legal', canAsk: true };
+      assert.equal(v.mayAsk(lawyerActor).allowed, true);
+      assert.equal(v.folders.check('read', lawyerActor, 'admin/').allowed, false,
+        'collapsing "may ask" into "is an administrator" is exactly how a lawyer ends up reading the board folder');
+    } finally { await server.close(); }
+  });
+
+  test('an export over the API is attributed to the principal, not to whatever the body claims', async () => {
+    const { ApiServer } = await import('../src/api/server.js');
+    const v = vault();
+    ingested(v);
+    const server = new ApiServer({ vault: v, port: 0 });
+    const t = server.issueToken({ name: 'real-auditor', role: 'auditor', clearance: 'secret' });
+    await server.listen();
+    const port = server.server.address().port;
+    try {
+      const res = await fetch(`http://127.0.0.1:${port}/api/journal/export`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${t}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ reason: 'regulator request', exportedBy: 'someone-else-entirely' })
+      });
+      const b = await res.json();
+      assert.equal(b.exportedBy, 'real-auditor', 'who took a copy of the audit record is decided by the session, never by the request body');
+    } finally { await server.close(); }
   });
 });

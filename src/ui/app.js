@@ -71,6 +71,8 @@
     { id: 'map', icon: '🗺️', name: 'Map', roles: ['platform', 'security', 'admin', 'department_head', 'risk'] },
     { id: 'connectors', icon: '🔌', name: 'Connectors', roles: ['platform', 'admin', 'security'] },
     { id: 'memory', icon: '🧠', name: 'Memory', roles: null },
+    { id: 'librarian', icon: '🗂️', name: 'Librarian', roles: ['platform', 'admin', 'security', 'compliance'] },
+    { id: 'journal', icon: '📓', name: 'Journal', roles: ['admin', 'platform', 'security', 'compliance', 'auditor', 'legal'] },
     { id: 'review', icon: '⏳', name: 'Needs Review', roles: null },
     { id: 'rules', icon: '📜', name: 'Rules', roles: null },
     { id: 'trace', icon: '🔍', name: 'Trace', roles: ['security', 'legal', 'compliance', 'auditor', 'platform', 'admin'] },
@@ -325,6 +327,240 @@
     v.append(tabs);
   };
 
+  // 🗂️ LIBRARIAN — the model organising the file room
+  RENDER.librarian = async (v) => {
+    const s = await api('/api/librarian');
+
+    v.append(cards([
+      ['Model', s.model?.available ? (s.model.local ? 'local' : s.model.provider) : 'not configured', s.model?.available ? 'good' : 'warn'],
+      ['Learned entries', s.memory?.size?.entries ?? 0],
+      ['Folders proposed', s.proposals.open, s.proposals.open ? 'warn' : 'good'],
+      ['Flagged for a human', s.notices.open, s.notices.open ? 'warn' : 'good'],
+      ['Distinct tags', s.tags.distinct]
+    ]));
+
+    const head = el('div', 'card');
+    head.innerHTML = `<h3>The librarian</h3>
+      <p class="tiny dimmer">${esc(s.statement)}</p>
+      <div class="row" style="margin-top:12px">
+        <button id="organizeNow" style="margin:0" type="button">Organise now</button>
+        <span class="tiny dimmer">Runs off the write path. Facts are filed instantly by the rules and tidied afterwards — never unprotected in between.</span>
+      </div>
+      <div id="organizeOut" style="margin-top:12px" aria-live="polite"></div>`;
+    v.append(head);
+    head.querySelector('#organizeNow').addEventListener('click', async () => {
+      const out = head.querySelector('#organizeOut');
+      out.innerHTML = '<div class="loading">organising…</div>';
+      try {
+        const r = await api('/api/librarian/organize', { method: 'POST', body: { limit: 50 } });
+        out.innerHTML = `<div class="tiny">${esc(r.statement)}</div>`;
+        toast(r.ran ? `${r.considered} considered · ${r.moved.length} moved · ${r.proposed.length} proposed` : r.reason);
+        if (r.ran) go('librarian');
+      } catch (e) { out.innerHTML = ''; out.append(el('div', 'empty bad', esc(e.message))); }
+    });
+
+    // Proposals — the whole point is that these are decisions, not notifications.
+    v.append(card(`Folders the librarian wants — ${s.proposals.open} awaiting a decision`,
+      s.proposals.items.length
+        ? `<p class="tiny dimmer" style="margin-bottom:12px">${esc(s.proposals.note)}</p>` + table(
+          ['Proposed folder', 'Why', 'Wanted for', 'Decide'],
+          s.proposals.items.map((p) => [
+            `<span class="mono tiny">${esc(p.path)}</span>${p.parentExists ? '' : '<div class="warn tiny">parent does not exist</div>'}`,
+            `<span class="tiny">${esc(p.because)}</span>${p.suggestedWall ? `<div class="tiny dimmer">model suggested: ${esc(p.suggestedWall)} — you set the real one</div>` : ''}`,
+            `<span class="pill">${p.wantedFor}</span>`,
+            `<button class="tiny" data-approve="${esc(p.id)}" data-path="${esc(p.path)}" type="button">Approve</button>
+             <button class="tiny danger" data-reject="${esc(p.id)}" type="button">Reject</button>`
+          ]))
+        : '<div class="empty">Nothing proposed. The librarian files into folders that already exist and only asks when none of them fit.</div>'));
+
+    v.querySelectorAll('[data-approve]').forEach((n) => n.addEventListener('click', () => approveFolder(n.dataset.approve, n.dataset.path)));
+    v.querySelectorAll('[data-reject]').forEach((n) => n.addEventListener('click', async () => {
+      const reason = prompt('Why is this folder not wanted? The librarian will propose it again otherwise, and nobody will know why it was refused.');
+      if (!reason) return;
+      await api(`/api/librarian/proposals/${n.dataset.reject}/reject`, { method: 'POST', body: { reason } });
+      toast('rejected'); go('librarian');
+    }));
+
+    // Notices — messages to a human, never actions taken on the record.
+    v.append(card(`Flagged for a human — ${s.notices.open} open`,
+      (s.notices.items.length
+        ? table(['', 'What', 'Where', 'When'], s.notices.items.map((n) => [
+          n.level === 'urgent' ? '<span class="pill r">today</span>' : '<span class="pill a">this week</span>',
+          `<div>${esc(n.why)}</div>${n.excerpt ? `<div class="tiny dimmer">"${esc(n.excerpt)}"</div>` : ''}`,
+          `<span class="mono tiny">${esc(n.folder ?? '—')}</span>`,
+          `<span class="tiny dimmer">${esc(String(n.createdAt).slice(0, 16).replace('T', ' '))}</span>`
+        ]))
+        : '<div class="empty">Nothing flagged. A notice is a message to a human — raising one never changes the record it is about.</div>')
+      + (s.notices.withheld
+        ? `<p class="tiny warn" style="margin-top:10px">${s.notices.withheld} further notice(s) concern folders you cannot read. They are counted, not shown — a notice quotes the fact it is about.</p>`
+        : '')));
+
+    // What it has learned — the file that makes it fast.
+    if (s.memory) {
+      const m = s.memory;
+      v.append(card('What filing has learned about this company',
+        `<p class="tiny dimmer">${esc(m.statement)}</p>
+         <div class="row tiny" style="margin-top:10px">
+           <span class="pill ${m.integrity.ok ? 'g' : 'r'}">${m.integrity.ok ? 'intact' : 'ALTERED'}</span>
+           <span class="dimmer mono">${esc(m.format)}</span>
+           <span class="dimmer">${m.size.tokens} vocabulary · ${m.size.clients} entities · ${m.revisions} revisions${m.bytesOnDisk ? ` · ${m.bytesOnDisk} bytes` : ''}</span>
+         </div>`
+        + (m.topClients?.length ? table(['Client or entity', 'Observations', 'Usually filed in'],
+          m.topClients.map((c) => [esc(c.name), Math.round(c.observations), `<span class="mono tiny">${esc(c.usualFolder ?? '—')}</span>`])) : '')
+        + (m.recentCorrections?.length ? `<div class="tiny dimmer" style="margin-top:10px">Recent human corrections — weighted far above anything the model decided alone:</div>`
+          + table(['When', 'From', 'To', 'By'], m.recentCorrections.map((c) => [
+            `<span class="tiny dimmer">${esc(String(c.at).slice(0, 10))}</span>`,
+            `<span class="mono tiny">${esc(c.from)}</span>`, `<span class="mono tiny">${esc(c.to)}</span>`, esc(c.by)
+          ])) : '')));
+    }
+
+    if (s.tags.top.length) {
+      v.append(card(`Tags in use (${s.tags.distinct})`,
+        `<p class="tiny dimmer">The librarian invents these freely. A tag is an index, not a wall — every read through one is still checked against the folder wall underneath, which is exactly why it cannot invent a folder.</p>
+         <div class="row" style="flex-wrap:wrap;gap:6px;margin-top:10px">
+           ${s.tags.top.map((t) => `<span class="pill">${esc(t)}</span>`).join('')}
+         </div>`));
+    }
+  };
+
+  function approveFolder(id, path) {
+    const c = el('div');
+    c.innerHTML = `<p class="tiny dimmer">Approving creates <span class="mono">${esc(path)}</span>. You set the wall, not the model — an access boundary a model chose is one nobody chose.</p>
+      <form id="approveForm">
+        <label>Who may READ it <input name="read" placeholder="sales, support — blank inherits the parent"></label>
+        <label>Who may WRITE it <input name="write" placeholder="sales — blank inherits the parent"></label>
+        <label><input type="checkbox" name="adminOnly"> Administrator-only (named administrators read it; nothing automated moves a fact out)</label>
+        <label>Why are you approving this? <input name="reason" required placeholder="an auditor will be shown this, and your name"></label>
+        <button type="submit">Create folder</button>
+      </form>`;
+    c.querySelector('#approveForm').addEventListener('submit', async (ev) => {
+      ev.preventDefault();
+      const f = new FormData(ev.target);
+      const split = (s) => String(s || '').split(',').map((x) => x.trim()).filter(Boolean);
+      try {
+        await api(`/api/librarian/proposals/${id}/approve`, {
+          method: 'POST',
+          body: {
+            reason: f.get('reason'),
+            read: split(f.get('read')).length ? split(f.get('read')) : null,
+            write: split(f.get('write')).length ? split(f.get('write')) : null,
+            adminOnly: f.get('adminOnly') === 'on'
+          }
+        });
+        closeSheet(); toast(`created ${path}`); go('librarian');
+      } catch (e) { toast(e.message, true); }
+    });
+    openSheet(`Approve ${path}`, c);
+  }
+
+  // 📓 JOURNAL — the complete record of who did what
+  RENDER.journal = async (v) => {
+    const { entries, stats } = await api('/api/journal?limit=200');
+
+    v.append(cards([
+      ['Recorded actions', stats.entries],
+      ['Distinct actors', stats.actors],
+      ['Refusals', stats.refusals, stats.refusals ? 'warn' : 'good'],
+      ['Subjects touched', stats.subjects],
+      ['Chain', stats.integrity.ok ? 'intact' : 'BROKEN', stats.integrity.ok ? 'good' : 'bad']
+    ]));
+
+    const tools = el('div', 'card');
+    tools.innerHTML = `<h3>The complete record</h3>
+      <p class="tiny dimmer">${esc(stats.statement)}</p>
+      <div class="row" style="margin-top:12px">
+        <input id="jSubject" placeholder="fact id — see everything that ever happened to one record" style="flex:1">
+        <button id="jGo" style="margin:0" type="button">Open dossier</button>
+        <button id="jRefusals" style="margin:0" type="button">Refusals only</button>
+        <button id="jExport" style="margin:0" type="button">Export for an auditor</button>
+      </div>`;
+    v.append(tools);
+    tools.querySelector('#jGo').addEventListener('click', () => {
+      const s = tools.querySelector('#jSubject').value.trim();
+      if (s) openDossier(s);
+    });
+    tools.querySelector('#jRefusals').addEventListener('click', async () => {
+      const r = await api('/api/journal/refusals');
+      openSheet('Refused', el('div', '', `<p class="tiny dimmer">${esc(r.note)}</p>` + (r.refusals.length ? table(
+        ['When', 'Who', 'What', 'Subject', 'Reason'],
+        r.refusals.map((e) => [
+          `<span class="tiny dimmer">${esc(e.atIso.slice(0, 16).replace('T', ' '))}</span>`,
+          esc(e.actor?.id ?? '—'), `<span class="pill r">${esc(e.action)}</span>`,
+          `<span class="mono tiny">${esc(e.subject ?? '—')}</span>`,
+          `<span class="tiny">${esc(e.why ?? e.outcome ?? '')}</span>`
+        ])) : '<div class="empty">Nothing has been refused.</div>')));
+    });
+    tools.querySelector('#jExport').addEventListener('click', () => exportJournal());
+
+    v.append(card(`Recent activity (${entries.length})`, entries.length ? table(
+      ['When', 'Who', 'Action', 'Subject', 'Where', 'Why'],
+      entries.map((e) => [
+        `<span class="tiny dimmer">${esc(e.atIso.slice(0, 16).replace('T', ' '))}</span>`,
+        `${esc(e.actor?.id ?? '—')}<div class="tiny dimmer">${esc(e.actor?.kind ?? '')}</div>`,
+        `<span class="pill ${e.refusal ? 'r' : ''}">${esc(e.action)}</span>`,
+        `<span class="clickable mono tiny" data-dossier="${esc(e.subject ?? '')}">${esc(e.subject ?? '—')}</span>`,
+        `<span class="mono tiny">${esc(e.where?.folder ?? '—')}</span>`,
+        `<span class="tiny">${esc((e.why ?? '').slice(0, 70))}</span>`
+      ])) : '<div class="empty">Nothing recorded yet.</div>'));
+
+    v.querySelectorAll('[data-dossier]').forEach((n) => n.addEventListener('click', () => {
+      if (n.dataset.dossier) openDossier(n.dataset.dossier);
+    }));
+  };
+
+  async function openDossier(subject) {
+    let d;
+    try { d = await api(`/api/journal/${encodeURIComponent(subject)}`); }
+    catch (e) { return toast(e.message, true); }
+    const c = el('div');
+    c.innerHTML = `${d.fact ? `<div class="item"><div class="claim">${esc(d.fact.claim)}</div>
+        <div class="tiny dimmer" style="margin-top:6px">${esc(d.fact.folder)} · ${esc(d.fact.sensitivity)} · v${d.fact.version} · ${esc(d.fact.status)}
+        ${d.fact.locked ? ' · 🔒 locked' : ''}${d.fact.golden ? ' · ★ golden' : ''}
+        ${(d.fact.tags || []).map((t) => ` · ${esc(t)}`).join('')}</div></div>` : ''}
+      <p class="tiny">${esc(d.narrative)}</p>
+      ${table(['When', 'Who', 'Action', 'Where', 'Detail'], d.timeline.map((t) => [
+    `<span class="tiny dimmer">${esc(t.at.slice(0, 19).replace('T', ' '))}</span>`,
+    `${esc(t.who)}<div class="tiny dimmer">${esc(t.kind)}</div>`,
+    `<span class="pill ${t.allowed === false ? 'r' : ''}">${esc(t.action)}</span>`,
+    `<span class="mono tiny">${esc(t.where ?? '—')}</span>`,
+    `${t.why ? `<div class="tiny">${esc(t.why)}</div>` : ''}
+         ${(t.changed || []).map((ch) => `<div class="tiny mono dimmer">${esc(ch.field)}: ${esc(JSON.stringify(ch.from))} → ${esc(JSON.stringify(ch.to))}</div>`).join('')}
+         ${t.ledgerSeq ? `<div class="tiny dimmer">ledger #${t.ledgerSeq}</div>` : ''}`
+  ]))}`;
+    openSheet(`Everything that happened to ${subject}`, c);
+  }
+
+  function exportJournal() {
+    const c = el('div');
+    c.innerHTML = `<p class="tiny dimmer">A signed bundle that states its own completeness. A filtered extract presented as a full one is the oldest way to mislead an auditor using nothing but true statements, so the filters you choose are written into the bundle.</p>
+      <form id="exportForm">
+        <label>Why is this being taken? <input name="reason" required placeholder="e.g. FCA information request 2026-114"></label>
+        <label>Limit to one subject (optional) <input name="subject" placeholder="blank = the complete journal"></label>
+        <label>Limit to one actor (optional) <input name="actor"></label>
+        <button type="submit">Generate bundle</button>
+      </form>
+      <div id="exportOut" style="margin-top:12px"></div>`;
+    c.querySelector('#exportForm').addEventListener('submit', async (ev) => {
+      ev.preventDefault();
+      const f = new FormData(ev.target);
+      try {
+        const b = await api('/api/journal/export', {
+          method: 'POST',
+          body: { reason: f.get('reason'), subject: f.get('subject') || null, actor: f.get('actor') || null }
+        });
+        const blob = new Blob([JSON.stringify(b, null, 2)], { type: 'application/json' });
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = `vault-journal-${new Date().toISOString().slice(0, 10)}.json`;
+        a.click();
+        c.querySelector('#exportOut').innerHTML =
+          `<div class="tiny ${b.completeness.full ? '' : 'warn'}">${esc(b.completeness.statement)}</div>
+           <div class="tiny dimmer" style="margin-top:6px">${b.signature ? 'Signed with the customer key.' : 'UNSIGNED — no customer signing key is configured.'}</div>`;
+      } catch (e) { toast(e.message, true); }
+    });
+    openSheet('Export the audit record', c);
+  }
+
   /**
    * Ask a question of the memory.
    *
@@ -395,7 +631,9 @@
         body.append(card(`Facts (${facts.length})`, facts.length ? table(
           ['Claim', 'Type', 'Folder', 'Sensitivity', 'Status', 'Reads'],
           facts.map((f) => [
-            `<span class="clickable" data-fact="${esc(f.id)}">${esc(f.claim)}</span><div class="tiny dimmer mono">${esc(f.id)}</div>`,
+            `<span class="clickable" data-fact="${esc(f.id)}">${esc(f.claim)}</span>`
+            + `<div class="tiny dimmer mono">${esc(f.id)}${f.locked ? ' · 🔒 locked' : ''}</div>`
+            + ((f.tags || []).length ? `<div class="row tiny" style="flex-wrap:wrap;gap:4px;margin-top:4px">${f.tags.map((t) => `<span class="pill">${esc(t)}</span>`).join('')}</div>` : ''),
             claimBadge(f),
             `<span class="tiny mono">${esc(f.folder || '—')}</span>`,
             `<span class="pill">${esc(f.sensitivity)}</span>`,
@@ -416,8 +654,10 @@
         const folders = await api('/api/folders');
         body.append(card('Folder tree', table(['Path', 'Read', 'Write', 'Owners', 'Retention'],
           folders.filter((f) => !f.archived).map((f) => [
-            `<span class="mono tiny">${esc(f.path)}</span> ${f.hardWall ? '🧱' : ''}${f.privileged ? ' ⚖️' : ''}`,
-            `<span class="tiny">${esc((f.read || []).join(', '))}</span>`,
+            `<span class="mono tiny">${esc(f.path)}</span> ${f.adminOnly ? '🔒' : ''}${f.hardWall ? '🧱' : ''}${f.privileged ? ' ⚖️' : ''}`,
+            f.adminOnly
+              ? '<span class="tiny warn">named administrators only</span>'
+              : `<span class="tiny">${esc((f.read || []).join(', '))}</span>`,
             `<span class="tiny">${esc((f.write || []).join(', '))}</span>`,
             f.businessOwner ? esc(f.businessOwner) : '<span class="warn tiny">unowned</span>',
             `<span class="tiny dimmer">${esc(f.retention || 'inherited')}</span>`
