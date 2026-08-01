@@ -23,7 +23,9 @@
     "redteam": "node bin/vault-redteam.js",
     "conformance": "node bin/vault-conformance.js",
     "contract": "node bin/vault-contract.js",
-    "readiness": "node bin/vault-readiness.js"
+    "readiness": "node bin/vault-readiness.js",
+    "sync": "node bin/vault-sync.js",
+    "add-connector": "node bin/vault-add-connector.js"
   },
   "files": [
     "bin",

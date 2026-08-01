@@ -130,6 +130,14 @@ export class ConnectorManager {
   all() { return this.col.all(); }
   active() { return this.col.find((c) => c.status === 'connected' && !c.killed); }
 
+  /**
+   * The credential for one connector, for code inside the trust boundary that
+   * has to make an outbound call with it — the sync scheduler, a health probe.
+   * Never exposed over the API or the MCP server; nothing outside this process
+   * calls it.
+   */
+  credentialFor(id) { return this.secrets.get(id) ?? null; }
+
   /** Disconnect ≠ delete. Facts and history survive; access dies immediately. */
   disconnect(id, { actor, reason }) {
     const c = this.col.get(id);
