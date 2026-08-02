@@ -45,7 +45,7 @@ const CX = 50, CY = 50;
 const R_HEX = 33.5;               // circumradius of the ring of six
 const R_OUTER = 11.6;             // radius of each outer blob
 const R_CENTRE = 14.6;            // the centre blob is deliberately larger
-const FILLET = 9.2;               // radius of the concave neck
+const FILLET = 6.0;               // radius of the concave neck — tuned to the supplied render
 
 /** Hexagon vertex k, starting at twelve o'clock and going clockwise. */
 const vertex = (k) => {

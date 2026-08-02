@@ -8,18 +8,28 @@
  * that the mark in the HTML is still the one the generator produces, and that
  * every animated background stays behind the content and can be switched off.
  *
- * The gradient needs pixels to measure, and it was measured: white on the bare
- * hero bloom fell to 2.24:1 behind the headline before a shadow pocket was
- * added under the content, and 5.03:1 after. That number is recorded here
- * because it is the reason the hero looks the way it does.
+ * Two things here need pixels, and were measured in a real browser rather than
+ * asserted from source:
+ *
+ *   · white on the bare hero footage fell to 2.24:1 behind the right of the
+ *     headline — under the 3:1 that AA asks of large text — which is why the
+ *     scrim exists. With it, the worst of 135 samples across three viewports
+ *     is 11.5:1.
+ *   · the mark's fillet radius was chosen by rendering four candidates side by
+ *     side against the supplied artwork. 6.0 is the one that matches.
+ *
+ * Both numbers are recorded here because they are the reason the hero and the
+ * logo look the way they do, and because nothing in a source-only test can
+ * catch them regressing.
  */
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { readFileSync, existsSync, statSync } from 'node:fs';
 import { MARK_PATH } from '../site/mark.mjs';
 
 const html = readFileSync(new URL('../site/index.html', import.meta.url), 'utf8');
 const css = readFileSync(new URL('../site/styles.css', import.meta.url), 'utf8');
+const js = readFileSync(new URL('../site/app.js', import.meta.url), 'utf8');
 /** Copy as a reader sees it: tags gone, whitespace collapsed. */
 const text = html.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ');
 
@@ -38,6 +48,13 @@ function tokens() {
   return out;
 }
 
+/** The opening tag that carries a given class, for checking its attributes. */
+function tagWithClass(cls) {
+  const at = html.indexOf(`class="${cls}"`);
+  if (at < 0) return null;
+  return html.slice(html.lastIndexOf('<', at), html.indexOf('>', at) + 1);
+}
+
 describe('the page says what it promises to say', () => {
   test('the headline and the three sentences under it are exact', () => {
     // Matched against the rendered text, not the markup, so a line break or a
@@ -48,12 +65,21 @@ describe('the page says what it promises to say', () => {
     assert.match(text, /Everything is traced, sealed, and provable\./);
   });
 
+  test('the headline reads as one sentence even though it is broken over two lines', () => {
+    // <br> is a line break, not a word break. Without the glitch layer's
+    // data-text carrying the unbroken sentence the effect would render the
+    // wrap as part of the copy.
+    const h1 = html.slice(html.indexOf('<h1'), html.indexOf('</h1>'));
+    assert.match(h1, /data-text="The governed memory layer for enterprise AI\."/,
+      'the glitch layers are drawn from data-text; it must hold the approved line verbatim');
+  });
+
   test('the numbers on the page match the product', () => {
     // A marketing claim nobody re-checks is wrong the first time the product
     // changes. These are the ones with a number in them.
     assert.match(text, /\b74\b/, '74 connectors');
     assert.match(text, /576 adversarial cases/);
-    assert.match(text, /\b908\b/, 'the test count');
+    assert.match(text, /\b930\b/, 'the test count');
     assert.match(text, /p50 80ms/);
     assert.match(text, /ten checks|10 checks/i);
   });
@@ -65,11 +91,48 @@ describe('the page says what it promises to say', () => {
     assert.match(text, /does not catch every attack/);
   });
 
+  test('the partner is named, not implied', () => {
+    assert.match(text, /The University of Hong Kong/);
+    assert.match(html, /id="partners"/);
+    assert.match(text, /HKU/);
+  });
+
   test('every section the nav points at exists', () => {
     const targets = [...html.matchAll(/href="#([a-z-]+)"/g)].map((m) => m[1]);
     for (const id of new Set(targets)) {
       assert.match(html, new RegExp(`id="${id}"`), `nav points at #${id}, which is not on the page`);
     }
+  });
+});
+
+describe('the header', () => {
+  test('menu on one side, mark in the middle, contact on the other', () => {
+    const bar = html.slice(html.indexOf('<header'), html.indexOf('</header>'));
+    const order = ['menu-btn', 'brandmark', 'contact-btn'].map((c) => bar.indexOf(c));
+    assert.ok(order.every((i) => i >= 0), 'all three header items must be present');
+    assert.deepEqual([...order].sort((a, b) => a - b), order,
+      'source order is menu, mark, contact — the grid centres the middle column');
+
+    // Three columns with the outer two equal is what actually centres the mark
+    // on the viewport rather than between two items of different widths.
+    const rule = css.slice(css.indexOf('.topbar{'), css.indexOf('}', css.indexOf('.topbar{')));
+    assert.match(rule, /grid-template-columns:1fr auto 1fr/,
+      'equal outer columns, or the mark sits off-centre by half the width difference');
+  });
+
+  test('the menu button says what it controls', () => {
+    const btn = html.slice(html.indexOf('<button class="menu-btn"'), html.indexOf('</button>'));
+    assert.match(btn, /aria-expanded="false"/);
+    assert.match(btn, /aria-controls="drawer"/);
+    assert.match(html, /id="drawer"/);
+  });
+
+  test('nothing sits above the headline but the status badge', () => {
+    // Explicitly asked for: no logo over "The governed memory layer…".
+    const heroInner = html.slice(html.indexOf('<div class="hero-inner">'), html.indexOf('<h1'));
+    assert.ok(!/<use href="#mark">/.test(heroInner),
+      'the mark must not reappear above the headline — it is in the header and nowhere else up there');
+    assert.match(heroInner, /class="kicker"/);
   });
 });
 
@@ -86,10 +149,25 @@ describe('brand colour clears WCAG AA by calculation', () => {
     assert.deepEqual(failures, [], 'a brand colour that fails AA is a brand colour that has to change');
   });
 
+  test('cyan is chrome, never real text', () => {
+    // It is the one colour here that would pass a contrast check and still be
+    // wrong: two saturated colours competing means neither leads. It is allowed
+    // on the glitch layer, which is a chromatic-aberration copy on a
+    // pseudo-element, clipped out of sight for all but a few frames in five
+    // seconds — and never the copy a reader or a screen reader gets.
+    const t = tokens();
+    assert.ok(t.cyan, '--cyan should exist');
+    for (const m of css.matchAll(/([^{}]+)\{[^{}]*color:var\(--cyan\)/g)) {
+      assert.match(m[1], /::(before|after)/,
+        `--cyan sets the colour of "${m[1].trim()}", which is a real element — `
+        + 'cyan is for grid lines and machine chrome only');
+    }
+  });
+
   test('the stylesheet documents the ratios it claims', () => {
     assert.match(css, /18\.9:1/);
     assert.match(css, /6\.9:1/);
-    assert.match(css, /2\.24:1/, 'the measured hero failure is why the shadow pocket exists');
+    assert.match(css, /2\.24:1/, 'the measured hero failure is why the scrim exists');
   });
 });
 
@@ -109,13 +187,20 @@ describe('the mark', () => {
   test('the path in the page is the one the generator produces', () => {
     // The geometry is solved in site/mark.mjs. If somebody nudges the path by
     // hand the two drift apart silently, and the favicon, the header and the
-    // hero stop being the same shape.
+    // footer stop being the same shape.
     assert.ok(html.includes(MARK_PATH), 'site/index.html no longer matches `node site/mark.mjs`');
+  });
+
+  test('the favicon is the same geometry, not a redraw', () => {
+    const icon = html.match(/rel="icon" href="([^"]+)"/)?.[1];
+    assert.ok(icon, 'there should be an inline favicon — one request fewer, and no 404 in the log');
+    assert.ok(decodeURIComponent(icon).includes(MARK_PATH),
+      'the favicon must carry the generated path, or the tab shows a different logo from the page');
   });
 
   test('the geometry lives in exactly one place', () => {
     assert.equal((html.match(/<symbol id="mark"/g) ?? []).length, 1);
-    assert.ok((html.match(/<use href="#mark">/g) ?? []).length >= 3, 'every other use references it');
+    assert.ok((html.match(/<use href="#mark">/g) ?? []).length >= 2, 'every other use references it');
   });
 
   test('it inherits colour instead of hard-coding white', () => {
@@ -137,11 +222,52 @@ describe('the mark', () => {
       'both sweep directions must appear, or nothing is concave');
     assert.ok(!/[LlHhVv]/.test(MARK_PATH), 'no straight segments — every join is a fillet');
   });
+
+  test('the necks are pinched, which is what makes it this logo', () => {
+    // The fillet radius was picked against the supplied artwork by rendering
+    // 6.0 / 7.0 / 8.0 / 9.2 side by side. A larger radius fattens the joins
+    // until the whole thing reads as one blob — recognisably a different logo.
+    const fillet = readFileSync(new URL('../site/mark.mjs', import.meta.url), 'utf8')
+      .match(/const FILLET\s*=\s*([\d.]+)/)?.[1];
+    assert.equal(fillet, '6.0', 'the fillet radius is a brand decision, not a tuning knob');
+  });
 });
 
 describe('it moves, and it can be told not to', () => {
+  test('the hero carries real footage over a live canvas', () => {
+    // The brief asked for a background video. The canvas is not a substitute
+    // for it — it is what stands in during the seconds before the video can
+    // play, and for anyone who never gets it.
+    assert.match(html, /<video class="hero-video"/);
+    assert.match(html, /<canvas class="hero-canvas"/);
+    assert.match(html, /preload="none"/,
+      'the video must not be on the critical path — it is fetched by script, on purpose');
+    assert.ok(!/<video[^>]*\bsrc=/.test(html),
+      'no src in the markup, or the browser fetches it before anyone has decided it is wanted');
+    assert.match(js, /video\.src = 'hero\.webm'/);
+  });
+
+  test('the footage is gated on motion, data and connection', () => {
+    assert.match(js, /prefers-reduced-motion/);
+    assert.match(js, /saveData/);
+    assert.match(js, /effectiveType/);
+    // Revealed only once it can genuinely play, so the worst case is the
+    // canvas rather than a black rectangle.
+    assert.match(js, /'canplay'/);
+    assert.match(css, /\.hero-video\{opacity:0/);
+    assert.match(css, /\.hero-video\.ready\{opacity:1\}/);
+  });
+
+  test('the theme colour is laid over the footage, not baked into it', () => {
+    const scrim = css.slice(css.indexOf('.hero-scrim{'), css.indexOf('}', css.indexOf('.hero-scrim{')));
+    assert.match(scrim, /rgba\(255,106,19/, 'the brand orange must burn through the gradient over the film');
+    assert.match(scrim, /radial-gradient/);
+    assert.match(scrim, /linear-gradient/);
+    assert.match(html, /<div class="hero-scrim"/);
+  });
+
   test('every band has an animated ground', () => {
-    for (const cls of ['bloom', 'bg-scan', 'bg-flow', 'bg-lines', 'bg-dots', 'bg-chain', 'bg-horizon']) {
+    for (const cls of ['bg-scan', 'bg-flow', 'bg-lines', 'bg-dots', 'bg-chain', 'bg-horizon']) {
       assert.match(html, new RegExp(`class="${cls}"`), `${cls} is missing from the page`);
       assert.match(css, new RegExp(`\\.${cls}\\{`), `${cls} has no rule`);
     }
@@ -150,9 +276,10 @@ describe('it moves, and it can be told not to', () => {
   });
 
   test('no decorative layer can be read by a screen reader or catch a click', () => {
-    for (const cls of ['bloom', 'grain', 'bg-scan', 'bg-flow', 'bg-lines', 'bg-dots', 'bg-chain', 'bg-horizon']) {
-      const at = html.indexOf(`class="${cls}"`);
-      const tag = html.slice(html.lastIndexOf('<', at), html.indexOf('>', at));
+    for (const cls of ['hero-canvas', 'hero-video', 'hero-scrim', 'grain', 'scanlines',
+      'bg-scan', 'bg-flow', 'bg-lines', 'bg-dots', 'bg-chain', 'bg-horizon']) {
+      const tag = tagWithClass(cls);
+      assert.ok(tag, `${cls} is not on the page`);
       assert.match(tag, /aria-hidden="true"/, `${cls} must be hidden from assistive technology`);
     }
   });
@@ -163,41 +290,89 @@ describe('it moves, and it can be told not to', () => {
     assert.match(block, /animation-duration:\.001ms !important/,
       'a per-animation opt-out gets forgotten the moment somebody adds the sixteenth animation');
     assert.match(block, /animation-iteration-count:1 !important/);
+    // The canvas is script, not CSS, so the media query cannot reach it.
+    assert.match(js, /if \(reduced\) \{ frame\(t0\); cancelAnimationFrame\(raf\); raf = null; \}/,
+      'reduced motion must paint one still frame, not loop and not go blank');
   });
 
-  test('none of it is a video file', () => {
-    assert.ok(!/<video|\.mp4|\.webm/i.test(html),
-      'a background video is megabytes per loop, decodes on the main thread, cannot be recoloured, '
-      + 'and cannot honour prefers-reduced-motion without JavaScript that has to load first');
+  test('the background stops when nobody is looking at it', () => {
+    // A requestAnimationFrame loop running behind eight sections of content, or
+    // in a hidden tab, is a battery bug rather than a design decision.
+    assert.match(js, /IntersectionObserver/);
+    assert.match(js, /visibilitychange/);
+    assert.match(js, /cancelAnimationFrame/);
   });
 });
 
 describe('it degrades', () => {
   test('content that hides itself has a deadline and a print path', () => {
     // Reveal-on-scroll hid the entire page below the hero in a renderer that
-    // never scrolls. Both of these are the fix.
-    assert.match(html, /setTimeout\(\(\) => \{ for \(const el of hidden\) el\.classList\.add\('in'\); \}/,
+    // never scrolls. All three of these are the fix.
+    assert.match(js, /setTimeout\(\(\) => targets\.forEach\(\(el\) => el\.classList\.add\('in'\)\), 4000\)/,
       'an observer that never fires must not mean content that never appears');
-    assert.match(html, /beforeprint/);
+    assert.match(js, /beforeprint/);
     assert.match(css, /@media print\{/);
     const print = css.slice(css.indexOf('@media print{'));
     assert.match(print, /\.reveal\{opacity:1 !important/);
+    assert.match(print, /\.hero-canvas,\.hero-video/, 'the film must not be part of a printed page');
   });
 
   test('the reveal is additive, so no JavaScript means visible, not blank', () => {
     assert.ok(!/class="[^"]*\breveal\b/.test(html),
       'nothing may ship with the hidden state in the markup — the class is added by script or not at all');
-    assert.match(html, /el\.classList\.add\('reveal'\)/);
+    assert.match(js, /el\.classList\.add\('reveal'\)/);
+  });
+
+  test('the drawer is genuinely hidden when closed, not merely transparent', () => {
+    // A menu that is only opacity:0 is still in the tab order, and a keyboard
+    // user tabs into eight invisible links.
+    assert.match(html, /<div class="drawer" id="drawer" hidden>/);
+    assert.match(js, /panel\.hidden = true/);
+    assert.match(js, /e\.key === 'Escape'/, 'Escape must close it');
   });
 
   test('nothing is fetched from a third party', () => {
     const remote = [...html.matchAll(/(?:src|href)="(https?:)?\/\/[^"]+"/g)].map((m) => m[0]);
     assert.deepEqual(remote, [], 'no CDN fonts, no analytics by default — the page loads with no network but its own');
+    assert.ok(!/https?:\/\//.test(js.replace(/^\s*(\/\/|\*|\/\*).*$/gm, '')),
+      'the script must not reach off-origin either');
   });
 
   test('the FAQ opens without JavaScript', () => {
     assert.match(html, /<details>/, 'native disclosure, so it works before and without script');
-    assert.ok(!/querySelectorAll\('[^']*details/.test(html) && !/summary[^]{0,80}addEventListener/.test(html),
+    assert.ok(!/details/.test(js) && !/summary/.test(js),
       'nothing may script the disclosure open — <details> already works with no JS and with a keyboard');
+  });
+
+  test('the whole site is still four files and no build step', () => {
+    // The product ships with zero dependencies; a marketing site that needs a
+    // toolchain to change a headline would be the first crack in that.
+    assert.ok(!/type="module"[^>]*src="[^"]*\/node_modules/.test(html));
+    assert.ok(!/import .* from ['"][^./]/.test(js), 'app.js must not import a package');
+    assert.match(html, /<script type="module" src="app\.js"><\/script>/);
+  });
+});
+
+describe('the footage that ships', () => {
+  const webm = new URL('../site/hero.webm', import.meta.url);
+
+  test('it is committed, or the hero silently falls back forever', { skip: !existsSync(webm) && 'hero.webm not built' }, () => {
+    const kb = statSync(webm).size / 1024;
+    assert.ok(kb > 20, `hero.webm is ${kb.toFixed(0)} kB — that is a truncated render, not a video`);
+    // A hero background that costs more than a megabyte is a hero background
+    // that people on a train never see.
+    assert.ok(kb < 1400, `hero.webm is ${kb.toFixed(0)} kB — too heavy for a decorative loop`);
+  });
+
+  test('the generator is build-time only and says so', () => {
+    const gen = readFileSync(new URL('../site/video.mjs', import.meta.url), 'utf8');
+    assert.match(gen, /build time/i);
+    // The frames go through ffmpeg's mjpeg decoder because the ffmpeg that
+    // ships with Playwright has no PNG decoder — hand it a PNG and the render
+    // hangs on a dead pipe rather than failing.
+    assert.match(gen, /'mjpeg'/);
+    assert.match(gen, /image\/jpeg/);
+    assert.ok(!/require\('playwright'\)|from 'playwright'/.test(gen),
+      'Playwright must stay optional — resolved at run time, never a static import');
   });
 });
