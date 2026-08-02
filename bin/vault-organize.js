@@ -182,7 +182,24 @@ const r = await pass();
 if (has('watch')) {
   const intervalMs = Number(flag('interval-ms', 5 * 60 * 1000));
   console.log(`  watching — organising every ${Math.round(intervalMs / 1000)}s. Ctrl-C to stop.\n`);
-  const timer = setInterval(() => { pass().catch((e) => console.error(`  pass failed: ${e.message}`)); }, intervalMs);
+  // A pass is async and a local model is slow, so a pass can easily outlast the
+  // interval. Without this guard the timer starts a second pass over the same
+  // candidates — the same facts get tagged twice, notified twice, and paid for
+  // twice, because `organisedAt` is only set once each fact has been handled.
+  // Skipping a tick is the right answer: the next one picks up the backlog.
+  let running = false;
+  let skipped = 0;
+  const timer = setInterval(() => {
+    if (running) {
+      skipped++;
+      console.log(`  (still organising — skipped ${skipped} tick(s); consider a longer --interval-ms)`);
+      return;
+    }
+    running = true;
+    pass()
+      .catch((e) => console.error(`  pass failed: ${e.message}`))
+      .finally(() => { running = false; });
+  }, intervalMs);
   process.on('SIGINT', () => { clearInterval(timer); vault.memory.save({ actor, reason: 'shutdown' }); process.exit(0); });
 } else {
   if (r.ran) vault.memory.save({ actor, reason: 'organise pass' });

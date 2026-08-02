@@ -53,9 +53,23 @@ export async function refilePass({ vault, limit = 50, actor = 'model-refile' } =
     };
   }
 
-  const allowedFolders = vault.folders.all().filter((f) => !f.archived).map((f) => f.path);
+  const folders = vault.folders.all().filter((f) => !f.archived);
+  const allowedFolders = folders.map((f) => f.path);
+  // Administrator-only folders. A fact may be filed INTO one automatically —
+  // that is how something sensitive lands somewhere safe without a human in the
+  // loop — but moving one OUT is always a widening, and this pass must refuse it
+  // exactly as the librarian does. Two model paths with one guard between them
+  // is the same as no guard: whichever one an operator runs is the one that
+  // matters, and `refileWithModel()` is still on the public surface.
+  const adminOnly = new Set(folders.filter((f) => f.adminOnly).map((f) => f.path));
+
   const candidates = vault.facts.live()
-    .filter((f) => !f.golden && !f.legalHold && !f.modelFiledAt)
+    // `locked` joins golden and legalHold here rather than relying on revise()
+    // to throw: a refusal that arrives as an exception counted under "skipped"
+    // is indistinguishable from a model that said nothing, and an administrator
+    // who locked a fact should see it was left alone on purpose.
+    .filter((f) => !f.golden && !f.legalHold && !f.locked && !f.modelFiledAt)
+    .filter((f) => !adminOnly.has(f.folder))
     .sort((a, b) => b.createdAt - a.createdAt)
     .slice(0, limit);
 
@@ -108,6 +122,18 @@ export async function refilePass({ vault, limit = 50, actor = 'model-refile' } =
     }
 
     if (!wantsMove && !wantsRaise) { skipped.push({ id: fact.id, reason: 'the model agreed with the rules' }); continue; }
+
+    // Checked again at the destination, not only at the source. Moving a fact
+    // INTO an administrator-only folder narrows access and is fine; the guard
+    // above covers moving out. This one exists so a model cannot quietly park
+    // something where only administrators will ever see it either.
+    if (wantsMove && adminOnly.has(r.folder)) {
+      toReview.push({
+        id: fact.id, claim: fact.claim, from: fact.folder, proposed: r.folder,
+        reason: `the model proposes moving this into ${r.folder}, which only administrators can read — a human decides who loses sight of a fact`
+      });
+      continue;
+    }
 
     const patch = { modelFiledAt: Date.now(), modelFiledWhy: r.why ?? null };
     if (wantsMove) patch.folder = r.folder;

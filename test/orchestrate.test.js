@@ -533,3 +533,47 @@ describe('bookkeeping does not become a fact version', () => {
     assert.equal(after.folder, 'support/');
   });
 });
+
+describe('the older refile path is held to the same rules as the librarian', () => {
+  function inAdminOnly(v, sensitivity = 'internal') {
+    const f = aFact(v);
+    v.facts.revise(f.id, { folder: 'admin/', namespace: 'admin', sensitivity },
+      { actor: 'ciso', reason: 'board only', kind: 'human_revision' });
+    return v.facts.get(f.id);
+  }
+
+  test('refileWithModel cannot move a fact out of an administrator-only folder', async () => {
+    const v = vault({ model: modelSaying({ folder: 'sales/', sensitivity: 'internal', confident: true, why: 'looks like sales' }) });
+    const f = inAdminOnly(v);
+    const r = await v.refileWithModel({ limit: 10 });
+    assert.equal(v.facts.get(f.id).folder, 'admin/',
+      'two model paths with one guard between them is the same as no guard');
+    assert.deepEqual(r.moved, []);
+  });
+
+  test('nor can it park a fact INTO one where only administrators will see it', async () => {
+    const v = vault({ model: modelSaying({ folder: 'admin/', sensitivity: 'internal', confident: true, why: 'sensitive' }) });
+    const f = aFact(v);
+    const r = await v.refileWithModel({ limit: 10 });
+    assert.equal(v.facts.get(f.id).folder, f.folder);
+    assert.ok(r.toReview.some((t) => /only administrators can read/.test(t.reason)),
+      'a human decides who loses sight of a fact');
+  });
+
+  test('a locked fact is skipped deliberately, not by an exception it happens to throw', async () => {
+    const v = vault({ model: modelSaying({ folder: 'finance/', sensitivity: 'internal', confident: true }) });
+    const f = aFact(v);
+    v.librarian.lock(f.id, { actor: 'ciso', reason: 'verified with the customer' });
+    const r = await v.refileWithModel({ limit: 10 });
+    assert.equal(r.considered, 0, 'an administrator who locked a fact should see it was left alone on purpose');
+    assert.equal(v.facts.get(f.id).folder, f.folder);
+  });
+
+  test('an ordinary fact still gets refiled — the guards are narrow, not a freeze', async () => {
+    const v = vault({ model: modelSaying({ folder: 'finance/', sensitivity: 'internal', confident: true, why: 'billing' }) });
+    const f = aFact(v);
+    const r = await v.refileWithModel({ limit: 10 });
+    assert.equal(v.facts.get(f.id).folder, 'finance/');
+    assert.equal(r.moved.length, 1);
+  });
+});

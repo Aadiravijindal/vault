@@ -168,3 +168,30 @@ is one nobody checks**. It is not open to everyone — `finance` gets a 403.
 
 Reading the record does not imply deciding what the folders are. Approving a new access
 boundary is administrators only, whatever else a role can see.
+
+### Metadata is wide. Content is still walled.
+
+Six roles can read the record, and the journal deliberately holds what the ledger
+refuses — excerpts of claims, queries, transcripts. Those are not the same permission:
+
+> **"May see the audit record" is not "may read every fact in the company."**
+
+So every journal route applies the ordinary folder wall to the *content* of an entry.
+Who did what, when, where, why, and whether it was refused stays visible — that is the
+record, and it is what an investigation runs on. The sentence itself is walled exactly as
+the fact is. Without this, an external auditor refused a payroll fact on the read path
+could recover its text verbatim from the trail of it having been written.
+
+It fails closed: an entry carrying content with no folder attached — a sealed
+conversation, before anything was extracted from it — cannot be checked against a wall,
+so it is withheld rather than guessed at.
+
+Redactions are **marked and counted**, never silently blanked. `GET /api/journal` returns
+`redacted: n`; a dossier says so in its narrative; and an export that withheld content
+reports `contentRedacted` and refuses to describe itself as complete:
+
+> `n` entry(ies) are present but had their CONTENT withheld… An export containing
+> everything requires somebody cleared for everything to take it.
+
+`legal` is exempt, because its row in the role table already reads `content: 'full'`.
+Narrowing that would be a separate decision about the role, not about the journal.

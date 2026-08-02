@@ -368,3 +368,148 @@ describe('filters narrow, and never quietly widen', () => {
     assert.equal(b.entries[0].actor.id, 'alice');
   });
 });
+
+describe('seeing the audit record is not reading every fact in the company', () => {
+  const walled = (v) => (folder) => v.folders.check('read', { id: 'ext-auditor', kind: 'human', department: 'external' }, folder || 'company/').allowed;
+
+  function hrFact(v) {
+    v.consent.record({ subject: 'Priya Raman', basis: 'contract', purpose: 'memory_governance', actor: 'legal' });
+    v.registerAgent({
+      id: 'hr-bot', name: 'hr bot', purpose: 'capture', businessOwner: 'CHRO', technicalOwner: 'Platform',
+      department: 'hr', mode: 'inline', pinnedModel: 'test', folders: ['hr/', 'company/']
+    });
+    const cred = v.issueCredential('hr-bot', {}).credential;
+    v.ingest({
+      agentId: 'hr-bot', channel: 'system_of_record',
+      participants: [{ name: 'Chris', kind: 'employee', internal: true }],
+      turns: [{ speaker: 'Chris', text: 'Priya Raman is on a performance improvement plan until June.' }]
+    }, { credential: cred });
+    return v.facts.all().find((f) => String(f.folder).startsWith('hr'));
+  }
+
+  test('a dossier withholds the claim from somebody who cannot read the folder', () => {
+    const v = vault();
+    const f = hrFact(v);
+    const d = v.journal.dossier(f.id, { facts: v.facts, ledger: v.ledger, canRead: walled(v) });
+    assert.equal(d.fact.claim, null, 'the trail of a fact having been written must not become a way to read it');
+    assert.equal(d.fact.claimRedacted, true);
+    assert.match(d.fact.claimRedactedBecause, /cannot read/);
+    // The shape of the record is still there — that is what an auditor needs.
+    assert.equal(d.fact.folder, 'hr/');
+    assert.ok(d.fact.sensitivity);
+    assert.ok(d.timeline.length, 'who did what and when stays visible');
+    assert.match(d.narrative, /CONTENT withheld/);
+  });
+
+  test('entries withhold excerpts, and say how many', () => {
+    const v = vault();
+    hrFact(v);
+    const entries = v.journal.entries({ canRead: walled(v) });
+    const leaked = entries.filter((e) => e.excerpt && /Priya Raman/.test(e.excerpt));
+    assert.equal(leaked.length, 0, 'the journal holds text the ledger refuses, so it needs the wall the ledger does not');
+    assert.ok(Journal.redactionsIn(entries) > 0, 'and redactions are counted, never silently blanked');
+    assert.ok(entries.every((e) => !e.excerpt || !e.excerptRedacted));
+    assert.ok(entries.some((e) => e.excerptRedactedBecause));
+  });
+
+  test('a raw conversation with no folder fails closed', () => {
+    const v = vault();
+    hrFact(v);
+    const sealed = v.journal.entries({ action: 'message.sealed', canRead: walled(v) });
+    assert.equal(sealed[0].excerpt, null, 'a transcript before extraction cannot be checked against a wall, so it is withheld');
+    assert.equal(sealed[0].excerptRedacted, true);
+  });
+
+  test('somebody who CAN read the folder still sees everything', () => {
+    const v = vault();
+    const f = hrFact(v);
+    const asHr = (folder) => v.folders.check('read', { id: 'chro', kind: 'human', department: 'hr' }, folder || 'company/').allowed;
+    const d = v.journal.dossier(f.id, { facts: v.facts, canRead: asHr });
+    assert.match(d.fact.claim, /Priya Raman/);
+    assert.equal(d.redacted, 0);
+  });
+
+  test('no predicate at all means no filtering — the CLI on the server box', () => {
+    const v = vault();
+    const f = hrFact(v);
+    assert.match(v.journal.dossier(f.id, { facts: v.facts }).fact.claim, /Priya Raman/);
+  });
+
+  test('an export states that content was withheld, and is not called complete', () => {
+    const v = vault();
+    hrFact(v);
+    const b = v.journal.export({ exportedBy: 'ext-auditor', reason: 'annual audit', canRead: walled(v) });
+    assert.ok(b.completeness.contentRedacted > 0);
+    assert.equal(b.completeness.full, false, 'a bundle missing content must never report itself complete');
+    assert.match(b.completeness.statement, /CONTENT withheld/);
+    assert.match(b.completeness.statement, /somebody cleared for everything/);
+    assert.ok(!JSON.stringify(b.entries).includes('performance improvement plan'));
+  });
+});
+
+describe('no route hands back content the read path refuses', () => {
+  test('history, dossier and the journal listing are all walled', async () => {
+    const { ApiServer } = await import('../src/api/server.js');
+    const v = vault();
+    v.consent.record({ subject: 'Priya Raman', basis: 'contract', purpose: 'memory_governance', actor: 'legal' });
+    v.registerAgent({
+      id: 'hr-bot', name: 'hr bot', purpose: 'capture', businessOwner: 'CHRO', technicalOwner: 'Platform',
+      department: 'hr', mode: 'inline', pinnedModel: 'test', folders: ['hr/', 'company/']
+    });
+    const cred = v.issueCredential('hr-bot', {}).credential;
+    v.ingest({
+      agentId: 'hr-bot', channel: 'system_of_record',
+      participants: [{ name: 'Chris', kind: 'employee', internal: true }],
+      turns: [{ speaker: 'Chris', text: 'Priya Raman is on a performance improvement plan until June.' }]
+    }, { credential: cred });
+    const f = v.facts.all().find((x) => String(x.folder).startsWith('hr'));
+
+    const server = new ApiServer({ vault: v, port: 0 });
+    const auditor = server.issueToken({ name: 'ext-auditor', role: 'auditor', department: 'external' });
+    const enduser = server.issueToken({ name: 'mallory', role: 'end_user', department: 'sales' });
+    await server.listen();
+    const port = server.server.address().port;
+    const get = (p, t) => fetch(`http://127.0.0.1:${port}${p}`, { headers: { Authorization: `Bearer ${t}` } });
+    const SECRET = /performance improvement plan/;
+
+    try {
+      assert.equal((await get(`/api/facts/${f.id}`, auditor)).status, 403, 'the read path refuses it');
+
+      const hist = await get(`/api/facts/${f.id}/history`, enduser);
+      assert.equal(hist.status, 403, 'version snapshots carry the claim, so history is the same disclosure as a read');
+
+      const d = await (await get(`/api/journal/${f.id}`, auditor)).json();
+      assert.equal(d.fact.claim, null);
+      assert.ok(!SECRET.test(JSON.stringify(d)), 'nor may the dossier be a way round');
+      assert.ok(d.timeline.length, 'while still answering what actually happened');
+
+      const j = await (await get('/api/journal?limit=100', auditor)).json();
+      assert.ok(!SECRET.test(JSON.stringify(j.entries)));
+      assert.ok(j.redacted > 0, 'and the response says how much it withheld');
+
+      const ex = await fetch(`http://127.0.0.1:${port}/api/journal/export`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${auditor}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ reason: 'annual audit' })
+      });
+      const bundle = await ex.json();
+      assert.ok(!SECRET.test(JSON.stringify(bundle)));
+      assert.equal(bundle.completeness.full, false);
+    } finally { await server.close(); }
+  });
+
+  test('legal keeps full content, because that is what its role says', async () => {
+    const { ApiServer } = await import('../src/api/server.js');
+    const v = vault();
+    ingested(v);
+    const server = new ApiServer({ vault: v, port: 0 });
+    const legal = server.issueToken({ name: 'gc', role: 'legal', department: 'legal', clearance: 'secret' });
+    await server.listen();
+    const port = server.server.address().port;
+    try {
+      const j = await (await fetch(`http://127.0.0.1:${port}/api/journal?limit=50`, { headers: { Authorization: `Bearer ${legal}` } })).json();
+      assert.equal(j.redacted, 0, 'narrowing a role that is defined as full-content access would be a different decision');
+      assert.ok(j.entries.some((e) => e.excerpt));
+    } finally { await server.close(); }
+  });
+});

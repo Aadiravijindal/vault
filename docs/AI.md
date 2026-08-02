@@ -184,7 +184,9 @@ cannot read"* on its own is true, useless, and quickly ignored.
 | Anything **out of** an admin-only folder | out is always a widening |
 
 Each is checked in the librarian **and again in the fact store**, because one check is
-one bug away from not being a check.
+one bug away from not being a check — and in `refile.js`, the narrower model pass that
+`refileWithModel()` still exposes. Two model paths with one guard between them is the
+same as no guard: whichever one an operator runs is the one that matters.
 
 A **lock** is the ordinary version of "don't touch this": weaker than golden (no
 authority role, no four eyes), weaker than a legal hold (no legal consequence). It stops

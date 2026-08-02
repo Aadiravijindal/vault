@@ -91,6 +91,40 @@ export const ACTIONS = [
 /** Actions that mean somebody asked for something and did not get it. */
 const REFUSALS = new Set(['ask.refused', 'read.refused', 'wall.blocked', 'fact.blocked', 'model.refused', 'folder.rejected']);
 
+/**
+ * Hide the CONTENT of an entry from a caller who cannot read where it is filed.
+ *
+ * The journal deliberately holds what the ledger refuses — excerpts of claims,
+ * queries, transcripts — and it is readable by six roles, which is correct: an
+ * audit trail only auditors can see is one nobody checks. But "may see the audit
+ * record" is not "may read every fact in the company", and without this an
+ * external auditor who is refused a payroll fact on the read path could recover
+ * its text verbatim from the trail of it having been written.
+ *
+ * The split is between metadata and content. Who did what, when, where, why and
+ * whether it was refused stays visible — that is the whole point of the record,
+ * and it is what an investigation runs on. The sentence itself is walled exactly
+ * as the fact is.
+ *
+ * Fails closed. An entry carrying content with no folder attached — a sealed
+ * conversation, before anything was extracted from it — cannot be checked
+ * against a wall, so it is redacted rather than guessed at. Redactions are
+ * marked and counted, never silently blanked.
+ */
+function forReader(entry, canRead) {
+  if (!canRead || entry.excerpt == null) return entry;
+  const folder = entry.where?.folder ?? null;
+  if (folder && canRead(folder)) return entry;
+  return {
+    ...entry,
+    excerpt: null,
+    excerptRedacted: true,
+    excerptRedactedBecause: folder
+      ? `the content is filed in ${folder}, which you cannot read — the record of the action is not`
+      : 'this entry carries raw content that is not attached to a folder, so it cannot be checked against a wall'
+  };
+}
+
 export class Journal {
   /**
    * @param {object} opts
@@ -188,13 +222,13 @@ export class Journal {
    * fact in a ten-million-fact estate should not be paying for the other
    * 9,999,999.
    */
-  forSubject(subject) {
-    return this.col.by('bySubject', subject).sort((a, b) => a.seq - b.seq);
+  forSubject(subject, { canRead = null } = {}) {
+    return this.col.by('bySubject', subject).sort((a, b) => a.seq - b.seq).map((e) => forReader(e, canRead));
   }
 
   /** Everything one person or agent did. The other half of an investigation. */
-  forActor(actorId, { limit = 500 } = {}) {
-    return this.col.by('byActor', actorId).sort((a, b) => b.seq - a.seq).slice(0, limit);
+  forActor(actorId, { limit = 500, canRead = null } = {}) {
+    return this.col.by('byActor', actorId).sort((a, b) => b.seq - a.seq).slice(0, limit).map((e) => forReader(e, canRead));
   }
 
   /**
@@ -209,7 +243,7 @@ export class Journal {
    * MORE than was asked for and the caller cannot tell — an investigator
    * filtering the audit record to one person got everyone.
    */
-  entries({ action = null, actor = null, subject = null, folder = null, from = null, to = null, refusalsOnly = false, limit = 500 } = {}) {
+  entries({ action = null, actor = null, subject = null, folder = null, from = null, to = null, refusalsOnly = false, limit = 500, canRead = null } = {}) {
     let out = subject ? this.col.by('bySubject', subject)
       : action ? this.col.by('byAction', action)
         : actor ? this.col.by('byActor', actor)
@@ -222,13 +256,18 @@ export class Journal {
     if (from != null) out = out.filter((e) => e.at >= from);
     if (to != null) out = out.filter((e) => e.at <= to);
     if (refusalsOnly) out = out.filter((e) => e.refusal);
-    return out.sort((a, b) => b.seq - a.seq).slice(0, limit);
+    return out.sort((a, b) => b.seq - a.seq).slice(0, limit).map((e) => forReader(e, canRead));
   }
 
   /** Everything somebody asked for and did not get. */
-  refusals({ sinceMs = 30 * DAY, limit = 500 } = {}) {
+  refusals({ sinceMs = 30 * DAY, limit = 500, canRead = null } = {}) {
     return this.col.find((e) => e.refusal && e.at >= now() - sinceMs)
-      .sort((a, b) => b.seq - a.seq).slice(0, limit);
+      .sort((a, b) => b.seq - a.seq).slice(0, limit).map((e) => forReader(e, canRead));
+  }
+
+  /** How many of these entries had their content withheld from this reader. */
+  static redactionsIn(entries) {
+    return entries.filter((e) => e.excerptRedacted).length;
   }
 
   /**
@@ -239,10 +278,17 @@ export class Journal {
    * about how this system is built — and then check every sentence of it
    * against the entries below.
    */
-  dossier(subject, { facts = null, ledger = null } = {}) {
-    const entries = this.forSubject(subject);
+  dossier(subject, { facts = null, ledger = null, canRead = null } = {}) {
+    const entries = this.forSubject(subject, { canRead });
     if (!entries.length && !facts?.get?.(subject)) throw notFound('journal subject', subject);
-    const fact = facts?.get?.(subject) ?? null;
+    const stored = facts?.get?.(subject) ?? null;
+    // The claim itself is the content the wall exists to protect. The dossier
+    // still shows the record's shape — folder, sensitivity, version, status,
+    // tags — because that is what tells an auditor whether the handling was
+    // right, and none of it is the sentence.
+    const claimVisible = !stored || !canRead || canRead(stored.folder ?? 'company/');
+    const fact = stored ? { ...stored, claim: claimVisible ? stored.claim : null } : null;
+    const redacted = Journal.redactionsIn(entries) + (stored && !claimVisible ? 1 : 0);
     const byAction = {};
     for (const e of entries) byAction[e.action] = (byAction[e.action] ?? 0) + 1;
 
@@ -260,8 +306,12 @@ export class Journal {
         claim: fact.claim, folder: fact.folder, sensitivity: fact.sensitivity,
         status: fact.status, version: fact.version, tags: fact.tags ?? [],
         golden: Boolean(fact.golden), locked: Boolean(fact.locked),
-        legalHold: fact.legalHold ?? null
+        legalHold: fact.legalHold ?? null,
+        claimRedacted: !claimVisible,
+        claimRedactedBecause: claimVisible ? null
+          : `this record is filed in ${stored.folder}, which you cannot read. Everything about how it was handled is shown; the sentence is not.`
       } : null,
+      redacted,
       timeline: entries.map((e) => ({
         seq: e.seq, at: e.atIso, action: e.action,
         who: e.actor?.id ?? 'system', kind: e.actor?.kind ?? 'system',
@@ -288,6 +338,7 @@ export class Journal {
           + `distinct actor(s): ${reads.length} read(s), ${changes.length} change(s), ${refused.length} refusal(s)`
           + `${modelTouches.length ? `, and ${modelTouches.length} action(s) involving a model` : ', and no model has ever touched it'}. `
           + 'Every line below is individually hash-linked to the one before it, and carries the sealed-ledger sequence it corresponds to.'
+          + (redacted ? ` ${redacted} item(s) had their CONTENT withheld because you cannot read where this is filed — the record of what happened is complete, the text is not.` : '')
         : 'Nothing is recorded against this subject.'
     };
   }
@@ -307,13 +358,14 @@ export class Journal {
    * The export is itself journalled. Somebody taking a copy of the record is an
    * event in the record.
    */
-  export({ subject = null, actor = null, folder = null, from = null, to = null, action = null, exportedBy, reason } = {}) {
+  export({ subject = null, actor = null, folder = null, from = null, to = null, action = null, exportedBy, reason, canRead = null } = {}) {
     if (!exportedBy || !reason) {
       throw new VaultError('validation', 'an export must name who is taking it and why — an unattributed copy of the audit record is not evidence, it is a leak');
     }
     const filters = { subject, actor, folder, from: from ? iso(from) : null, to: to ? iso(to) : null, action };
     const total = this.col.count();
-    const entries = this.entries({ subject, actor, folder, from, to, action, limit: Infinity }).sort((a, b) => a.seq - b.seq);
+    const entries = this.entries({ subject, actor, folder, from, to, action, limit: Infinity, canRead }).sort((a, b) => a.seq - b.seq);
+    const redacted = Journal.redactionsIn(entries);
 
     const bundle = {
       format: 'vault.journal.v1',
@@ -325,11 +377,17 @@ export class Journal {
         entriesInBundle: entries.length,
         entriesInJournal: total,
         excluded: total - entries.length,
-        full: entries.length === total,
-        statement: entries.length === total
+        full: entries.length === total && redacted === 0,
+        contentRedacted: redacted,
+        statement: (entries.length === total
           ? 'This is the complete journal. Nothing was filtered out.'
           : `This is a FILTERED extract: ${entries.length} of ${total} entries. ${total - entries.length} entries exist that are not in this bundle. `
-            + 'The filters that produced it are stated above so the recipient can ask for the rest.'
+            + 'The filters that produced it are stated above so the recipient can ask for the rest.')
+          + (redacted
+            ? ` ${redacted} entry(ies) are present but had their CONTENT withheld, because the person who took this export cannot `
+              + 'read the folders that content is filed in. The actions are complete; the text of those items is not. An export '
+              + 'containing everything requires somebody cleared for everything to take it.'
+            : '')
       },
       chain: {
         head: this.head,

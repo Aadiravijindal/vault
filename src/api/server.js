@@ -18,6 +18,7 @@ import { VaultError } from '../util/errors.js';
 import { timingReport, recommendedFirstConnectors } from '../onboarding/onboarding.js';
 import { renderPlan } from '../iac/iac.js';
 import { receiveWebhook } from '../connectors/inbound.js';
+import { Journal } from '../audit/journal.js';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const UI_DIR = join(HERE, '..', 'ui');
@@ -126,6 +127,22 @@ export class ApiServer {
     const ALL = null;              // null = any authenticated principal
     const R = (...roles) => roles;
 
+    /**
+     * The predicate that decides whether this principal may see CONTENT.
+     *
+     * `null` means no filtering — used only for the roles whose entry in the
+     * table already says `content: 'full'`, which today is legal. Everyone else
+     * gets the ordinary folder wall applied to the excerpts the journal holds,
+     * so seeing the audit record never becomes a way to read facts.
+     */
+    const contentFilter = (principal) => {
+      if ((ROLES[principal.role] ?? {}).content === 'full') return null;
+      const actor = principalActor(principal);
+      return (folder) => {
+        try { return v.folders.check('read', actor, folder || 'company/').allowed; } catch { return false; }
+      };
+    };
+
     // ---- health & status -------------------------------------------------
     this.route('GET', '/api/health', ALL, () => ({ ok: true, at: iso(), uptimeMs: now() - v.startedAt }));
     this.route('GET', '/api/whoami', ALL, ({ principal }) => ({
@@ -187,7 +204,15 @@ export class ApiServer {
     });
     this.route('GET', '/api/facts/:id/trace', R('security', 'legal', 'compliance', 'auditor', 'platform', 'admin'), ({ params }) => v.traceFact(params.id));
     this.route('GET', '/api/facts/:id/contagion', R('security', 'legal', 'compliance', 'auditor'), ({ params }) => v.contagion(params.id));
-    this.route('GET', '/api/facts/:id/history', ALL, ({ params }) => v.facts.history(params.id));
+    // Snapshots carry the claim at every version, so this is the same
+    // disclosure as reading the fact and is walled the same way. It was not,
+    // which made it a way around the wall on /api/facts/:id.
+    this.route('GET', '/api/facts/:id/history', ALL, ({ params, principal }) => {
+      const f = v.facts.require(params.id);
+      const wall = v.folders.check('read', principalActor(principal), f.folder || 'company/');
+      if (!wall.allowed) throw new VaultError('wall_violation', wall.reason);
+      return v.facts.history(params.id);
+    });
     this.route('POST', '/api/facts/:id/incident-bundle', R('security', 'legal', 'compliance'), ({ params, body, principal }) =>
       v.incidentBundle(params.id, { actor: principal.name, matter: body.matter }));
     this.route('GET', '/api/folders', ALL, () => v.folders.all());
@@ -279,21 +304,30 @@ export class ApiServer {
     // Wider than most routes on purpose. The complete record of who did what is
     // the thing every one of these roles is separately accountable for, and an
     // audit trail only auditors can see is one nobody checks.
-    this.route('GET', '/api/journal', R('admin', 'platform', 'security', 'compliance', 'auditor', 'legal'), ({ query }) =>
-      ({
-        entries: v.journal.entries({
-          action: query.action || null, actor: query.actor || null, subject: query.subject || null,
-          folder: query.folder || null, refusalsOnly: query.refusals === '1',
-          limit: Math.min(Number(query.limit) || 200, 1000)
-        }),
-        stats: v.journal.stats()
-      }));
-    this.route('GET', '/api/journal/refusals', R('admin', 'platform', 'security', 'compliance', 'auditor'), () =>
-      ({ refusals: v.journal.refusals(), note: 'Everything somebody asked for and did not get. These are the entries an investigation turns on.' }));
-    this.route('GET', '/api/journal/:subject', R('admin', 'platform', 'security', 'compliance', 'auditor', 'legal'), ({ params }) =>
-      v.journal.dossier(params.subject, { facts: v.facts, ledger: v.ledger }));
+    // Every journal route carries `canRead`. The audit record is readable by six
+    // roles on purpose — a trail only auditors can see is one nobody checks —
+    // but "may see the record" is not "may read every fact in the company", and
+    // the journal holds excerpts the ledger deliberately refuses.
+    this.route('GET', '/api/journal', R('admin', 'platform', 'security', 'compliance', 'auditor', 'legal'), ({ query, principal }) => {
+      const entries = v.journal.entries({
+        action: query.action || null, actor: query.actor || null, subject: query.subject || null,
+        folder: query.folder || null, refusalsOnly: query.refusals === '1',
+        limit: Math.min(Number(query.limit) || 200, 1000),
+        canRead: contentFilter(principal)
+      });
+      return { entries, redacted: Journal.redactionsIn(entries), stats: v.journal.stats() };
+    });
+    this.route('GET', '/api/journal/refusals', R('admin', 'platform', 'security', 'compliance', 'auditor'), ({ principal }) => {
+      const refusals = v.journal.refusals({ canRead: contentFilter(principal) });
+      return {
+        refusals, redacted: Journal.redactionsIn(refusals),
+        note: 'Everything somebody asked for and did not get. These are the entries an investigation turns on.'
+      };
+    });
+    this.route('GET', '/api/journal/:subject', R('admin', 'platform', 'security', 'compliance', 'auditor', 'legal'), ({ params, principal }) =>
+      v.journal.dossier(params.subject, { facts: v.facts, ledger: v.ledger, canRead: contentFilter(principal) }));
     this.route('POST', '/api/journal/export', R('admin', 'compliance', 'auditor', 'legal'), ({ body, principal }) =>
-      v.journal.export({ ...body, exportedBy: principal.name, reason: body?.reason }));
+      v.journal.export({ ...body, exportedBy: principal.name, reason: body?.reason, canRead: contentFilter(principal) }));
 
     // ---- 🧠 THE AI MEMORY FILE ---------------------------------------------
     this.route('GET', '/api/memory', R('platform', 'admin', 'security', 'compliance', 'auditor'), () => v.memory.status());
