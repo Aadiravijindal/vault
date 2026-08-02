@@ -1,0 +1,374 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Vault — the governed memory layer for enterprise AI</title>
+<meta name="description" content="Every AI agent in your company reads from one memory. Nothing enters without being checked. Everything is traced, sealed, and provable.">
+
+<meta property="og:title" content="Vault — the governed memory layer for enterprise AI">
+<meta property="og:description" content="Every AI agent in your company reads from one memory. Nothing enters without being checked. Everything is traced, sealed, and provable.">
+<meta property="og:type" content="website">
+<meta name="theme-color" content="#0d0603">
+
+<!-- The mark, as a favicon. Inline so the site still works with no network. -->
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 48 48'%3E%3Cg fill='%23fff' stroke='%23fff' stroke-width='3.1' stroke-linecap='round'%3E%3Cpath d='M10 12 25 7M25 7 40 14M10 12 24 22M40 14 24 22M24 22 38 30M10 12 9 28M9 28 23 38M24 22 23 38M38 30 23 38'/%3E%3Ccircle cx='10' cy='12' r='4.1'/%3E%3Ccircle cx='25' cy='7' r='3.5'/%3E%3Ccircle cx='40' cy='14' r='3.5'/%3E%3Ccircle cx='24' cy='22' r='4.1'/%3E%3Ccircle cx='9' cy='28' r='3.5'/%3E%3Ccircle cx='23' cy='38' r='4.1'/%3E%3Ccircle cx='38' cy='30' r='3.5'/%3E%3C/g%3E%3C/svg%3E">
+
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<!--
+  The mark, once, as a <symbol>. Every other use is a <use> reference, so the
+  geometry lives in exactly one place and recolours with currentColor.
+-->
+<svg width="0" height="0" aria-hidden="true" focusable="false" style="position:absolute">
+  <!--
+    Seven nodes, nine links. Node radius is held well under half the shortest
+    link so the bars stay visible: at r=5 on this spacing the circles merged
+    into a single blob and the graph — which is the whole idea of the mark —
+    stopped reading. Checked down to 26px, where the structure still holds.
+  -->
+  <symbol id="mark" viewBox="0 0 48 48">
+    <g fill="currentColor" stroke="currentColor" stroke-width="3.1" stroke-linecap="round">
+      <path d="M10 12 25 7M25 7 40 14M10 12 24 22M40 14 24 22M24 22 38 30M10 12 9 28M9 28 23 38M24 22 23 38M38 30 23 38"/>
+      <circle cx="10" cy="12" r="4.1"/>
+      <circle cx="25" cy="7"  r="3.5"/>
+      <circle cx="40" cy="14" r="3.5"/>
+      <circle cx="24" cy="22" r="4.1"/>
+      <circle cx="9"  cy="28" r="3.5"/>
+      <circle cx="23" cy="38" r="4.1"/>
+      <circle cx="38" cy="30" r="3.5"/>
+    </g>
+  </symbol>
+</svg>
+
+<a class="skip" href="#main">Skip to content</a>
+
+<header class="topbar" id="top">
+  <a class="wordmark" href="#top" aria-label="Vault — home">
+    <svg class="wordmark-glyph" aria-hidden="true"><use href="#mark"></use></svg>
+    <span>VAULT</span>
+  </a>
+  <nav class="topnav" aria-label="Primary">
+    <a href="#gate">The gate</a>
+    <a href="#proof">Proof</a>
+    <a href="#ai">The model</a>
+    <a href="#record">The record</a>
+    <a href="#limits">Limits</a>
+  </nav>
+  <a class="btn btn-sm" href="#start">Get started</a>
+</header>
+
+<main id="main">
+
+  <!-- ══ HERO ═══════════════════════════════════════════════════════════ -->
+  <section class="hero">
+    <div class="bloom" aria-hidden="true"></div>
+    <div class="grain" aria-hidden="true"></div>
+
+    <div class="hero-inner">
+      <svg class="hero-mark" aria-label="Vault" role="img"><use href="#mark"></use></svg>
+
+      <h1>The governed memory layer for enterprise AI.</h1>
+
+      <p class="lede">
+        Every AI agent in your company reads from one memory. Nothing enters
+        without being checked. Everything is traced, sealed, and provable.
+      </p>
+
+      <div class="cta">
+        <a class="btn" href="#start">Run it in ten seconds</a>
+        <a class="btn btn-ghost" href="#gate">See the gate</a>
+      </div>
+
+      <p class="hero-note">
+        Node 22+. No dependencies, no build step, no <code>npm install</code>.
+        Runs on-prem and air-gapped from a fresh clone.
+      </p>
+    </div>
+
+    <div class="scroll-hint" aria-hidden="true"><span></span></div>
+  </section>
+
+  <!-- ══ THE PROBLEM ════════════════════════════════════════════════════ -->
+  <section class="band" id="problem">
+    <div class="wrap">
+      <p class="eyebrow">The problem</p>
+      <h2 class="statement">
+        Every AI tool in your company keeps its own private notepad — and
+        <em>anything</em> that reaches it becomes something it believes.
+      </h2>
+      <div class="two">
+        <p>
+          A supplier's email says the discount ceiling is 60%. A scraped page carries
+          an instruction dressed as a sentence. A copilot infers a customer is churning
+          and, three weeks later, no one can tell that from a fact somebody actually stated.
+        </p>
+        <p>
+          The memory is where that lands, so the memory is where it has to be stopped.
+          Vault puts one shared memory behind a gate that every agent writes through,
+          and a recorder that never stops.
+        </p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ══ THE GATE ═══════════════════════════════════════════════════════ -->
+  <section class="band alt" id="gate">
+    <div class="wrap">
+      <p class="eyebrow">The gate</p>
+      <h2>Ten checks on every write, from every agent, forever.</h2>
+      <p class="sub">
+        There is no fail-open. The fail-safe posture is queue-and-drain or reject —
+        <em>pass unchecked</em> is not a configuration option, because no code path exists for it.
+      </p>
+
+      <ol class="checks">
+        <li><span class="n">01</span><b>Identity &amp; authorisation</b><i>unregistered agents, expired or wrong-origin credentials, out-of-scope writes</i></li>
+        <li><span class="n">02</span><b>Channel trust</b><i>deny-by-source: email, web forms, scraped pages, other agents' output</i></li>
+        <li><span class="n">03</span><b>Source verification</b><i>unauthenticated senders, lookalike and homoglyph domains, first contact</i></li>
+        <li><span class="n">04</span><b>Private information</b><i>45 detectors — credentials blocked outright, never masked-and-stored</i></li>
+        <li><span class="n">05</span><b>Sensitivity labelling</b><i>never guesses downward; unsure → higher label, then review</i></li>
+        <li><span class="n">06</span><b>Walls</b><i>cross-department writes blocked <em>and</em> alerted, never silently dropped</i></li>
+        <li><span class="n">07</span><b>Instruction detection</b><i>seven layers; any one firing holds the write</i></li>
+        <li><span class="n">08</span><b>Policy rules</b><i>plain language → policy-as-code, backtested before enabling</i></li>
+        <li><span class="n">09</span><b>Reconciliation</b><i>contradictions resolve by authority, not recency</i></li>
+        <li><span class="n">10</span><b>Consent &amp; lawful basis</b><i>no personal data without a recorded basis</i></li>
+      </ol>
+
+      <div class="callout">
+        <h3>Why “authority, not recency”</h3>
+        <p>“Newer wins” was the bug. A stranger's email is always newer than your CFO's approval.</p>
+        <ol class="ladder">
+          <li>approved (golden) <span>beats everything</span></li>
+          <li>verified by a human <span>beats unverified</span></li>
+          <li>trusted channel <span>beats untrusted</span></li>
+          <li>higher org authority <span>beats lower</span></li>
+          <li>more specific <span>beats general</span></li>
+          <li>corroborated <span>beats single-source</span></li>
+          <li>only then: newer <span>beats older</span></li>
+        </ol>
+      </div>
+    </div>
+  </section>
+
+  <!-- ══ WHAT THE AGENT GETS ════════════════════════════════════════════ -->
+  <section class="band" id="labels">
+    <div class="wrap narrow">
+      <p class="eyebrow">What the agent actually gets back</p>
+      <h2>Labels are the difference between confidence and a lie.</h2>
+
+      <pre class="terminal" aria-label="Example of a labelled memory response"><span class="t-dim">9 facts returned · 2 withheld (above your clearance) · 1 held in review</span>
+
+<span class="t-gold">★ GOLDEN</span> <span class="t-dim">· approved by CFO · 12 Mar 2026 · signed</span>
+    "Maximum discount without Finance approval: 20%"
+<span class="t-green">✓ VERIFIED</span> <span class="t-dim">· Marcus Chen (Acme CTO) · phone call · 12d ago</span>
+    "Acme wants a Q3 start date"
+<span class="t-amber">⚠ GUESSED BY AI</span> <span class="t-dim">· unverified · single source · 5d ago</span>
+    "Acme may be evaluating a competitor"
+    <span class="t-red">→ DO NOT STATE AS FACT</span></pre>
+
+      <p class="sub">
+        That is the difference between an AI that says “Acme is evaluating a competitor”
+        and one that says “there's an unconfirmed signal.”
+      </p>
+    </div>
+  </section>
+
+  <!-- ══ PROOF ══════════════════════════════════════════════════════════ -->
+  <section class="band alt" id="proof">
+    <div class="wrap">
+      <p class="eyebrow">The proof problem</p>
+      <h2>A hash chain you control proves nothing to an adversary.</h2>
+      <p class="sub">
+        Opposing counsel will say you own the server and you own the chain. So the chain
+        is only the first of five layers.
+      </p>
+
+      <div class="grid five">
+        <article><h3>Internal hash chain</h3><p>Tamper-evidence, for you.</p></article>
+        <article><h3>Customer-held keys</h3><p>The customer proves integrity, not the vendor.</p></article>
+        <article><h3>External anchoring</h3><p>Periodic digests to independent append-only witnesses.</p></article>
+        <article><h3>Witness diversity</h3><p>More than one, so no single witness can be leaned on.</p></article>
+        <article><h3>Standalone verifier</h3><p>Imports nothing from the product. Your auditor trusts neither party.</p></article>
+      </div>
+
+      <blockquote class="quote">
+        <p>
+          <b>What this proves:</b> no entry was altered, removed or reordered after it was
+          written, and every signed entry was signed by the holder of the private key.
+        </p>
+        <p>
+          <b>What it does not prove:</b> that the facts recorded are true. It proves what was
+          recorded, and that the record has not changed since.
+        </p>
+      </blockquote>
+    </div>
+  </section>
+
+  <!-- ══ THE MODEL LAYER ════════════════════════════════════════════════ -->
+  <section class="band" id="ai">
+    <div class="wrap">
+      <p class="eyebrow">The model layer</p>
+      <h2>The model may arrange the memory. It may never decide who can read it.</h2>
+
+      <div class="split">
+        <div class="rule-card">
+          <h3>A folder is a wall.</h3>
+          <p>
+            It decides <em>who can read what</em>. So the model can never invent one —
+            it proposes, with evidence, and a named administrator approves. “Who approved
+            this category, and when” is the question an auditor asks, and
+            <em>“the model decided”</em> is not an answer.
+          </p>
+        </div>
+        <div class="rule-card accent">
+          <h3>A tag is an index.</h3>
+          <p>
+            It decides <em>what is easy to find</em>, and every read through one is still
+            resolved against the folder wall underneath. So the model invents these
+            freely — client, project, risk. Full freedom on exactly the side that
+            isn't a breach.
+          </p>
+        </div>
+      </div>
+
+      <div class="grid three">
+        <article>
+          <h3>It runs on your hardware</h3>
+          <p>
+            Classifying a payroll line with a hosted model is a <em>disclosure</em>, not a
+            latency question. Point Vault at Ollama and the weights and the text never
+            leave the building. No API key, no per-token bill.
+          </p>
+        </article>
+        <article>
+          <h3>It never blocks a write</h3>
+          <p>
+            The gate publishes a latency budget — p50 80ms — and a model call is
+            hundreds of milliseconds. Rules file every fact instantly; the model refines
+            afterwards. A model outage is never a write outage.
+          </p>
+        </article>
+        <article>
+          <h3>It learns, in one small file</h3>
+          <p>
+            What filing has learned about <em>your</em> company: counts and vocabulary,
+            never claim text. Consulted before any model call, which is why most facts
+            are filed without one. Signed, so an edit cannot be hidden.
+          </p>
+        </article>
+      </div>
+    </div>
+  </section>
+
+  <!-- ══ THE RECORD ═════════════════════════════════════════════════════ -->
+  <section class="band alt" id="record">
+    <div class="wrap">
+      <p class="eyebrow">The record</p>
+      <h2>“Show me everything that ever happened to this record, and who did it.”</h2>
+      <p class="sub">
+        That is the question a regulator actually asks. Every action carries who, what,
+        when, where, why, how, and what changed — field by field.
+      </p>
+
+      <div class="grid two-up">
+        <article>
+          <h3>Refusals are recorded as loudly as successes</h3>
+          <p>
+            A log of things that worked describes a system nobody attacked. Wall hits,
+            refused questions, blocked writes and reads that returned less than was there
+            are the entries an investigation actually turns on.
+          </p>
+        </article>
+        <article>
+          <h3>An export states its own completeness</h3>
+          <p>
+            A selective extract presented as a full one is the oldest way to mislead an
+            auditor using nothing but true statements. Every bundle says how much of the
+            record it contains, how much it does not, and is signed over its own contents.
+          </p>
+        </article>
+      </div>
+
+      <div class="stats">
+        <div><b>74</b><span>tools in the connector catalog</span></div>
+        <div><b>576</b><span>attacks run against the gate, on a schedule</span></div>
+        <div><b>896</b><span>tests, run on every change</span></div>
+        <div><b>0</b><span>dependencies</span></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ══ LIMITS ═════════════════════════════════════════════════════════ -->
+  <section class="band" id="limits">
+    <div class="wrap narrow">
+      <p class="eyebrow">What Vault does not do</p>
+      <h2>The list a vendor usually leaves out.</h2>
+      <ul class="limits">
+        <li>It does not read minds. A fact nobody said in a channel Vault can see is a fact Vault does not have.</li>
+        <li>It does not make an AI truthful. It makes what the AI believes attributable, and wrong beliefs traceable.</li>
+        <li>It does not catch every attack. It publishes its catch rate, runs the suite continuously, and alerts when the number falls — including when it falls and still passes.</li>
+        <li>It does not prove a fact is true. It proves what was recorded, and that the record has not changed.</li>
+        <li>It cannot see inside a tool it is not connected to. Every connector says what it <em>cannot</em> pull, on the card, before you buy.</li>
+      </ul>
+    </div>
+  </section>
+
+  <!-- ══ START ══════════════════════════════════════════════════════════ -->
+  <section class="band alt" id="start">
+    <div class="wrap narrow center">
+      <p class="eyebrow">Get started</p>
+      <h2>Clone it and watch it stop eight real attacks.</h2>
+      <pre class="terminal cmd"><span class="t-dim"># the whole product, narrated, in ~10 seconds</span>
+node demo/seed.js
+
+<span class="t-dim"># same, then opens the console</span>
+node demo/seed.js --serve</pre>
+      <p class="sub">
+        The demo seeds a fictional company, runs normal traffic through it, then runs
+        indirect injection, a golden-fact overwrite, a credential leak, drip-feed
+        poisoning, a cross-wall write, an unregistered agent, a homoglyph domain and
+        hidden white-on-white text — and shows each one being stopped, with the reason.
+      </p>
+      <div class="cta center-cta">
+        <a class="btn" href="#top">Talk to us</a>
+        <a class="btn btn-ghost" href="#gate">Read the architecture</a>
+      </div>
+    </div>
+  </section>
+
+</main>
+
+<footer class="foot">
+  <div class="wrap foot-inner">
+    <a class="wordmark" href="#top" aria-label="Vault — home">
+      <svg class="wordmark-glyph" aria-hidden="true"><use href="#mark"></use></svg>
+      <span>VAULT</span>
+    </a>
+    <p class="foot-line">The company's shared AI memory — with a guard at the door and a recorder that never stops.</p>
+    <p class="foot-legal">© <span id="year">2026</span> Vault. All rights reserved.</p>
+  </div>
+</footer>
+
+<script>
+  document.getElementById('year').textContent = new Date().getFullYear();
+
+  // Reveal on scroll. Purely additive: with no IntersectionObserver, or with
+  // reduced motion asked for, everything is simply visible from the start.
+  const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  if (!reduced && 'IntersectionObserver' in window) {
+    const io = new IntersectionObserver((entries) => {
+      for (const e of entries) {
+        if (e.isIntersecting) { e.target.classList.add('in'); io.unobserve(e.target); }
+      }
+    }, { rootMargin: '0px 0px -12% 0px' });
+    for (const el of document.querySelectorAll('.band .wrap > *')) {
+      el.classList.add('reveal');
+      io.observe(el);
+    }
+  }
+</script>
+</body>
+</html>

@@ -1,0 +1,371 @@
+/*
+  VAULT — marketing site.
+
+  One brand idea: a white mark sitting in a black field that an orange light is
+  burning through from the right. Everything else is restraint, so the gradient
+  is the only thing doing any shouting.
+
+  The hero background is CSS, not a video file. It is a handful of radial
+  gradients drifting slowly over each other, which gets the same living quality
+  as the reference render while staying a few kilobytes, working offline, costing
+  no bandwidth on mobile, and — the part a video cannot do — respecting
+  prefers-reduced-motion by simply holding still.
+*/
+
+:root{
+  /* ---- brand -------------------------------------------------------- */
+  --black:#070402;          /* the field the mark sits in */
+  --black-2:#0d0603;        /* section ground, a shade warmer */
+  --black-3:#150a05;        /* raised surfaces */
+  --ember:#7a1a05;          /* the deep red where black meets fire */
+  --flame:#d63b06;          /* mid burn */
+  --orange:#ff6a13;         /* THE brand orange */
+  --orange-2:#ff8c2b;       /* highlight */
+  --glow:#ffa64d;           /* the hottest edge */
+
+  /* ---- text ---------------------------------------------------------
+     Measured against --black-2 #0d0603 rather than eyeballed:
+       --ink      #fff8f4  →  18.9:1
+       --ink-2    #e8d8ce  →  13.9:1
+       --muted    #b9a396  →   8.3:1
+       --orange   #ff6a13  →   6.9:1
+     All clear WCAG AA for normal text (4.5:1) with room to spare. Note that
+     white on --orange is only 2.87:1, which is why every orange button carries
+     near-black text instead. */
+  --ink:#fff8f4;
+  --ink-2:#e8d8ce;
+  --muted:#b9a396;
+  --line:rgba(255,138,60,.16);
+  --line-soft:rgba(255,138,60,.09);
+
+  --wrap:1120px;
+  --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  --mono:ui-monospace,SFMono-Regular,"SF Mono",Menlo,Consolas,monospace;
+}
+
+*{box-sizing:border-box}
+html{scroll-behavior:smooth}
+@media (prefers-reduced-motion:reduce){ html{scroll-behavior:auto} }
+
+body{
+  margin:0;
+  background:var(--black-2);
+  color:var(--ink-2);
+  font:16px/1.65 var(--sans);
+  -webkit-font-smoothing:antialiased;
+  overflow-x:hidden;
+}
+
+h1,h2,h3{color:var(--ink);line-height:1.12;letter-spacing:-.02em;margin:0}
+em{font-style:normal;color:var(--orange-2)}
+code{font-family:var(--mono);font-size:.92em;color:var(--orange-2)}
+
+.skip{
+  position:absolute;inset-inline-start:-9999px;top:0;z-index:99;
+  background:var(--orange);color:#180a03;padding:10px 16px;font-weight:600;border-radius:0 0 8px 0
+}
+.skip:focus{inset-inline-start:0}
+
+:focus-visible{outline:2px solid var(--glow);outline-offset:3px;border-radius:4px}
+
+.wrap{width:min(var(--wrap),100% - 48px);margin-inline:auto}
+.wrap.narrow{width:min(760px,100% - 48px)}
+.center{text-align:center}
+
+/* ═══ the mark ═══════════════════════════════════════════════════════ */
+.wordmark{
+  display:inline-flex;align-items:center;gap:10px;
+  color:var(--ink);text-decoration:none;font-weight:700;letter-spacing:.18em;font-size:14px
+}
+.wordmark-glyph{width:26px;height:26px;color:var(--ink);flex:none}
+.wordmark:hover{color:var(--orange-2)}
+.wordmark:hover .wordmark-glyph{color:var(--orange-2)}
+
+/* ═══ top bar ════════════════════════════════════════════════════════ */
+.topbar{
+  position:fixed;top:0;inset-inline:0;z-index:20;
+  display:flex;align-items:center;gap:32px;
+  padding:16px clamp(20px,4vw,48px);
+  /* Transparent over the hero, so the gradient is uninterrupted; the blur and
+     the hairline only appear once there is content behind it to separate from. */
+  background:linear-gradient(180deg,rgba(7,4,2,.72),rgba(7,4,2,0));
+  backdrop-filter:blur(10px);
+  -webkit-backdrop-filter:blur(10px);
+}
+.topnav{display:flex;gap:26px;margin-inline-start:auto;font-size:14px}
+.topnav a{color:var(--muted);text-decoration:none;transition:color .18s ease}
+.topnav a:hover{color:var(--ink)}
+@media (max-width:820px){ .topnav{display:none} }
+
+/* ═══ buttons ════════════════════════════════════════════════════════ */
+.btn{
+  display:inline-flex;align-items:center;justify-content:center;
+  background:var(--orange);color:#1a0a02;              /* dark on orange: 6.9:1 */
+  border:1px solid transparent;border-radius:999px;
+  padding:13px 26px;font:600 15px/1 var(--sans);text-decoration:none;
+  transition:transform .18s ease,box-shadow .18s ease,background .18s ease;
+  box-shadow:0 6px 26px rgba(255,106,19,.28)
+}
+.btn:hover{background:var(--orange-2);transform:translateY(-2px);box-shadow:0 10px 34px rgba(255,106,19,.42)}
+.btn-ghost{background:transparent;color:var(--ink);border-color:var(--line);box-shadow:none}
+.btn-ghost:hover{background:rgba(255,138,60,.09);border-color:var(--orange);color:var(--ink);box-shadow:none}
+.btn-sm{padding:9px 18px;font-size:13.5px}
+@media (max-width:560px){ .topbar .btn-sm{display:none} }
+@media (prefers-reduced-motion:reduce){ .btn:hover{transform:none} }
+
+/* ═══ hero ═══════════════════════════════════════════════════════════ */
+.hero{
+  position:relative;isolation:isolate;
+  min-height:100svh;display:grid;place-items:center;
+  padding:140px 24px 100px;
+  background:var(--black);
+  overflow:hidden;
+}
+
+/*
+  The burn. Layered radial gradients — in CSS the FIRST listed paints on top:
+
+    1. the shadow pocket the mark and the headline sit in
+    2. a broad orange field burning in from the right
+    3. a hotter core inside it
+    4. a deep ember bridging fire to black
+    5. a large soft black mass anchoring the left
+
+  Layer 1 is not decoration. Measured with the text hidden, white on the bare
+  gradient fell to 2.24:1 at the right end of the headline — below the 3:1 that
+  AA asks of large text, and invisible to the eye, which read it as "fine". The
+  pocket pulls the type back onto dark ground while the orange still blooms past
+  it, which is also what the brand render does: the mark sits in shadow, the fire
+  happens around it.
+*/
+.hero .bloom{
+  position:absolute;inset:-18%;z-index:-2;
+  background:
+    radial-gradient(62% 50% at 47% 54%, rgba(5,2,1,.94) 0%, rgba(5,2,1,.82) 38%, rgba(5,2,1,.42) 62%, rgba(5,2,1,0) 82%),
+    radial-gradient(46% 58% at 86% 44%, var(--glow) 0%, rgba(255,140,43,.88) 26%, rgba(214,59,6,.52) 54%, rgba(122,26,5,0) 80%),
+    radial-gradient(28% 36% at 94% 50%, rgba(255,196,130,.92) 0%, rgba(255,140,43,0) 70%),
+    radial-gradient(62% 72% at 68% 50%, rgba(122,26,5,.88) 0%, rgba(60,12,3,0) 74%),
+    radial-gradient(52% 62% at 22% 48%, #050201 0%, rgba(5,2,1,.85) 42%, rgba(5,2,1,0) 76%);
+  filter:blur(18px) saturate(1.06);
+  animation:drift 26s ease-in-out infinite alternate;
+}
+@keyframes drift{
+  0%   {transform:translate3d(0,0,0) scale(1)}
+  50%  {transform:translate3d(-2.2%,1.4%,0) scale(1.06)}
+  100% {transform:translate3d(1.6%,-1.8%,0) scale(1.03)}
+}
+
+/* Film grain. An inline feTurbulence, so it is part of the stylesheet rather
+   than an asset that has to load before the page stops looking flat. */
+.grain{
+  position:absolute;inset:0;z-index:-1;pointer-events:none;opacity:.42;
+  mix-blend-mode:overlay;
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='160' height='160' filter='url(%23n)' opacity='.5'/%3E%3C/svg%3E");
+}
+
+.hero-inner{position:relative;text-align:center;max-width:860px}
+
+.hero-mark{
+  width:clamp(76px,9vw,116px);height:clamp(76px,9vw,116px);
+  color:#fff;
+  margin-bottom:clamp(28px,4vw,44px);
+  filter:drop-shadow(0 0 26px rgba(0,0,0,.55));
+  animation:rise .9s cubic-bezier(.2,.8,.2,1) both;
+}
+
+.hero h1{
+  font-size:clamp(34px,5.6vw,68px);
+  font-weight:700;
+  letter-spacing:-.035em;
+  text-wrap:balance;
+  animation:rise .9s cubic-bezier(.2,.8,.2,1) .08s both;
+}
+
+.lede{
+  margin:clamp(20px,3vw,28px) auto 0;max-width:620px;
+  font-size:clamp(16px,1.6vw,19.5px);line-height:1.65;color:var(--ink-2);
+  text-wrap:pretty;
+  animation:rise .9s cubic-bezier(.2,.8,.2,1) .16s both;
+}
+
+.cta{
+  display:flex;gap:14px;justify-content:center;flex-wrap:wrap;
+  margin-top:clamp(30px,4vw,40px);
+  animation:rise .9s cubic-bezier(.2,.8,.2,1) .24s both;
+}
+.center-cta{margin-top:32px}
+
+.hero-note{
+  margin-top:26px;font-size:13.5px;color:var(--muted);
+  animation:rise .9s cubic-bezier(.2,.8,.2,1) .3s both;
+}
+
+@keyframes rise{from{opacity:0;transform:translateY(16px)}to{opacity:1;transform:none}}
+
+.scroll-hint{position:absolute;bottom:30px;left:50%;translate:-50% 0}
+.scroll-hint span{
+  display:block;width:1px;height:44px;
+  background:linear-gradient(180deg,rgba(255,166,77,0),rgba(255,166,77,.75));
+  animation:pulse 2.4s ease-in-out infinite;
+}
+@keyframes pulse{0%,100%{opacity:.25;transform:scaleY(.6)}50%{opacity:1;transform:scaleY(1)}}
+
+@media (prefers-reduced-motion:reduce){
+  .hero .bloom,.hero-mark,.hero h1,.lede,.cta,.hero-note,.scroll-hint span{animation:none}
+  .hero-mark,.hero h1,.lede,.cta,.hero-note{opacity:1;transform:none}
+}
+
+/* ═══ bands ══════════════════════════════════════════════════════════ */
+.band{padding:clamp(72px,10vw,132px) 0;background:var(--black-2);position:relative}
+.band.alt{background:var(--black)}
+.band + .band{border-top:1px solid var(--line-soft)}
+
+/* A thin ember line where sections meet — the only place the brand colour
+   appears without being asked for. */
+.band.alt::before{
+  content:"";position:absolute;top:-1px;inset-inline:0;height:1px;
+  background:linear-gradient(90deg,transparent,rgba(255,106,19,.5),transparent);
+}
+
+.eyebrow{
+  margin:0 0 18px;font-size:12px;font-weight:600;
+  letter-spacing:.19em;text-transform:uppercase;color:var(--orange)
+}
+.band h2{font-size:clamp(26px,3.6vw,42px);max-width:19ch;text-wrap:balance}
+.band .center h2{margin-inline:auto}
+.statement{max-width:24ch !important}
+.sub{margin:22px 0 0;max-width:70ch;color:var(--muted);font-size:clamp(15px,1.5vw,17px);text-wrap:pretty}
+.band .center .sub{margin-inline:auto}
+
+.two{display:grid;grid-template-columns:1fr 1fr;gap:clamp(24px,4vw,56px);margin-top:36px}
+.two p{margin:0;color:var(--muted);text-wrap:pretty}
+@media (max-width:760px){ .two{grid-template-columns:1fr} }
+
+/* reveal-on-scroll (added by script; absent = always visible) */
+.reveal{opacity:0;transform:translateY(22px);transition:opacity .7s ease,transform .7s cubic-bezier(.2,.8,.2,1)}
+.reveal.in{opacity:1;transform:none}
+
+/* ═══ the ten checks ═════════════════════════════════════════════════ */
+.checks{list-style:none;margin:44px 0 0;padding:0;counter-reset:none;
+  display:grid;grid-template-columns:1fr 1fr;gap:1px;background:var(--line-soft);
+  border:1px solid var(--line-soft);border-radius:14px;overflow:hidden}
+.checks li{
+  background:var(--black-2);padding:22px 24px;
+  display:grid;grid-template-columns:auto 1fr;column-gap:16px;row-gap:6px;align-items:baseline;
+  transition:background .2s ease
+}
+.band.alt .checks li{background:var(--black)}
+.checks li:hover{background:var(--black-3)}
+.checks .n{font:600 12px/1 var(--mono);color:var(--orange);grid-row:span 2;padding-top:4px}
+.checks b{color:var(--ink);font-size:15.5px;font-weight:600}
+.checks i{font-style:normal;color:var(--muted);font-size:13.5px;line-height:1.55}
+@media (max-width:760px){ .checks{grid-template-columns:1fr} }
+
+/* ═══ callout / ladder ═══════════════════════════════════════════════ */
+.callout{
+  margin-top:44px;padding:clamp(26px,3.5vw,38px);
+  border:1px solid var(--line);border-radius:16px;
+  background:
+    radial-gradient(120% 140% at 100% 0%, rgba(255,106,19,.09), transparent 62%),
+    var(--black-3);
+}
+.callout h3{font-size:20px;margin-bottom:10px}
+.callout > p{margin:0 0 22px;color:var(--muted)}
+.ladder{margin:0;padding:0;list-style:none;counter-reset:step}
+.ladder li{
+  counter-increment:step;
+  display:flex;align-items:baseline;gap:14px;
+  padding:11px 0;border-top:1px solid var(--line-soft);
+  color:var(--ink);font-size:15px
+}
+.ladder li::before{
+  content:counter(step);font:600 11px/1 var(--mono);color:var(--orange);
+  min-width:18px
+}
+.ladder li:first-child{border-top:0}
+.ladder li:first-child{color:var(--orange-2);font-weight:600}
+.ladder span{margin-inline-start:auto;color:var(--muted);font-size:13.5px;text-align:end}
+@media (max-width:560px){
+  .ladder li{flex-wrap:wrap}
+  .ladder span{margin-inline-start:32px;width:100%;text-align:start}
+}
+
+/* ═══ terminal ═══════════════════════════════════════════════════════ */
+.terminal{
+  margin:36px 0 0;padding:clamp(20px,3vw,30px);
+  background:#050201;border:1px solid var(--line-soft);border-radius:14px;
+  font:13.5px/1.75 var(--mono);color:var(--ink-2);
+  overflow-x:auto;white-space:pre;text-align:start;
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.03)
+}
+.terminal.cmd{margin-inline:auto;max-width:520px}
+.t-dim{color:var(--muted)}
+.t-gold{color:#ffd166;font-weight:600}
+.t-green{color:#4ade80;font-weight:600}
+.t-amber{color:var(--orange-2);font-weight:600}
+.t-red{color:#ff8b8b;font-weight:600}
+
+/* ═══ grids ══════════════════════════════════════════════════════════ */
+.grid{display:grid;gap:1px;margin-top:44px;background:var(--line-soft);
+  border:1px solid var(--line-soft);border-radius:16px;overflow:hidden}
+.grid article{background:var(--black-2);padding:clamp(22px,2.6vw,30px);transition:background .2s ease}
+.band.alt .grid article{background:var(--black)}
+.grid article:hover{background:var(--black-3)}
+.grid h3{font-size:16.5px;margin-bottom:10px;color:var(--ink)}
+.grid p{margin:0;color:var(--muted);font-size:14.5px;line-height:1.62;text-wrap:pretty}
+.grid.five{grid-template-columns:repeat(5,1fr)}
+.grid.three{grid-template-columns:repeat(3,1fr)}
+.grid.two-up{grid-template-columns:1fr 1fr}
+@media (max-width:980px){ .grid.five{grid-template-columns:repeat(2,1fr)} .grid.three{grid-template-columns:1fr} }
+@media (max-width:680px){ .grid.five,.grid.two-up{grid-template-columns:1fr} }
+
+/* ═══ folder / tag split ═════════════════════════════════════════════ */
+.split{display:grid;grid-template-columns:1fr 1fr;gap:18px;margin-top:44px}
+.rule-card{
+  padding:clamp(24px,3vw,34px);border-radius:16px;
+  border:1px solid var(--line-soft);background:var(--black-3)
+}
+.rule-card.accent{
+  border-color:var(--line);
+  background:
+    radial-gradient(130% 150% at 0% 0%, rgba(255,106,19,.12), transparent 60%),
+    var(--black-3);
+}
+.rule-card h3{font-size:22px;margin-bottom:12px}
+.rule-card.accent h3{color:var(--orange-2)}
+.rule-card p{margin:0;color:var(--muted);text-wrap:pretty}
+@media (max-width:760px){ .split{grid-template-columns:1fr} }
+
+/* ═══ quote ══════════════════════════════════════════════════════════ */
+.quote{
+  margin:44px 0 0;padding:clamp(24px,3vw,32px);
+  border-inline-start:2px solid var(--orange);border-radius:0 14px 14px 0;
+  background:var(--black-3)
+}
+.quote p{margin:0;color:var(--muted);max-width:78ch;text-wrap:pretty}
+.quote p + p{margin-top:14px}
+.quote b{color:var(--ink)}
+
+/* ═══ stats ══════════════════════════════════════════════════════════ */
+.stats{display:grid;grid-template-columns:repeat(4,1fr);gap:24px;margin-top:52px}
+.stats div{border-top:1px solid var(--line);padding-top:18px}
+.stats b{display:block;font-size:clamp(30px,4vw,46px);font-weight:700;color:var(--orange);letter-spacing:-.03em;line-height:1}
+.stats span{display:block;margin-top:8px;color:var(--muted);font-size:13.5px;line-height:1.5}
+@media (max-width:760px){ .stats{grid-template-columns:1fr 1fr} }
+
+/* ═══ limits ═════════════════════════════════════════════════════════ */
+.limits{list-style:none;margin:36px 0 0;padding:0}
+.limits li{
+  position:relative;padding:16px 0 16px 30px;
+  border-top:1px solid var(--line-soft);color:var(--muted);text-wrap:pretty
+}
+.limits li::before{
+  content:"";position:absolute;inset-inline-start:2px;top:24px;
+  width:7px;height:7px;border-radius:50%;background:var(--orange);opacity:.75
+}
+
+/* ═══ footer ═════════════════════════════════════════════════════════ */
+.foot{padding:56px 0 64px;background:var(--black);border-top:1px solid var(--line-soft)}
+.foot-inner{display:flex;flex-direction:column;gap:14px;align-items:flex-start}
+.foot-line{margin:0;color:var(--muted);font-size:14.5px;max-width:60ch}
+.foot-legal{margin:0;color:var(--muted);opacity:.6;font-size:12.5px}
