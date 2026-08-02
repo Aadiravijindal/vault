@@ -163,9 +163,16 @@ money above the ordinary. The model rates significance and raises a notice.
 
 A notice is a **message**, not an action. Nothing about the fact changes because one was
 raised. The model gets to have an opinion about significance — something it is genuinely
-good at — without that opinion being able to touch the record on its own. Notices quote
-the fact they are about, so the inbox applies the same folder wall the fact has: what you
-cannot read is counted, never shown.
+good at — without that opinion being able to touch the record on its own. Notices quote the fact they are about, so the inbox applies the same folder wall the
+fact has — **including for administrators**, because there is no admin bypass anywhere
+else in this product and there is not one here.
+
+What you cannot read is summarised rather than merely counted: which folder, how many,
+how urgent, and when the latest arrived. The `why` and the excerpt stay hidden, because
+those are the content the wall exists to protect; the folder and the count are metadata
+about *where attention is needed*. Withholding those protects nothing and costs somebody
+the ability to route the message to a person who can act on it — and *"1 notice you
+cannot read"* on its own is true, useless, and quickly ignored.
 
 ### What it may never touch
 
@@ -206,6 +213,19 @@ logs loudly. `adminOnly` is inherited downward and a child cannot opt out.
 Writes are unaffected. Filing *into* one of these is ordinary — that is how something
 sensitive lands somewhere safe without a human in the loop — and it is getting things
 *out* again that is controlled.
+
+**Name at least one administrator.** An administrator-only folder on a deployment with
+nobody named to read it is the one operation in this system that loses data while every
+individual check passes: the write succeeds, the ledger is clean, the fact is filed
+correctly, and no human or agent can ever retrieve it. So it is reported three ways —
+a high finding on the Map, a warning on the Librarian screen, and an alert raised the
+moment something is first written there — and the read refusal says *"nobody can"*
+rather than *"you cannot"*, because sending somebody to ask an administrator who does
+not exist is worse than saying nothing.
+
+```js
+new Vault({ administrators: ['ciso'] })   // or grant it through your IdP
+```
 
 ---
 

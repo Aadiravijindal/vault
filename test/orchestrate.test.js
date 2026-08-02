@@ -323,3 +323,115 @@ describe('status is honest about the deal being made', () => {
     assert.ok(Array.isArray(s.administrators));
   });
 });
+
+describe('an administrator-only folder that nobody can read is a fault, not a permission', () => {
+  test('a fresh vault with no administrators named reports it as a high finding', () => {
+    const v = new Vault({ signingKey: Ledger.newSigningKey(), seedRules: false });
+    assert.equal(v.folders.hasNamedAdministrators, false);
+    const finding = v.folders.findings().find((f) => f.path === 'admin/' && /no administrators are named/.test(f.finding));
+    assert.ok(finding, 'writes succeed and nothing can be read back — that is data loss, not a governance gap');
+    assert.equal(finding.severity, 'high');
+    assert.match(finding.fix, /administrators/);
+    assert.equal(v.folders.findings()[0].path, 'admin/', 'and it is reported ahead of the ordinary ownership findings');
+  });
+
+  test('the refusal says "nobody can" rather than "you cannot"', () => {
+    const orphaned = new Vault({ signingKey: Ledger.newSigningKey(), seedRules: false });
+    const r1 = orphaned.folders.check('read', { id: 'ciso', kind: 'human' }, 'admin/');
+    assert.equal(r1.allowed, false);
+    assert.equal(r1.misconfigured, true);
+    assert.match(r1.reason, /NO administrators are named/);
+    assert.match(r1.reason, /configuration fault, not a permission decision/,
+      'sending somebody to ask an administrator who does not exist is worse than saying nothing');
+
+    const configured = new Vault({ signingKey: Ledger.newSigningKey(), administrators: ['ciso'], seedRules: false });
+    const r2 = configured.folders.check('read', { id: 'dana', kind: 'human' }, 'admin/');
+    assert.equal(r2.allowed, false);
+    assert.ok(!r2.misconfigured, 'a real permission answer must not be dressed up as a misconfiguration');
+    assert.match(r2.reason, /dana is not a named administrator/);
+  });
+
+  test('a write into the hole alerts at the moment it happens', () => {
+    const v = new Vault({ signingKey: Ledger.newSigningKey(), seedRules: false });
+    const raised = [];
+    const real = v.alerts.raise.bind(v.alerts);
+    v.alerts.raise = (a) => { raised.push(a); return real(a); };
+    v.folders.enforce('write', { id: 'sys', kind: 'system' }, 'admin/');
+    const alert = raised.find((a) => a.kind === 'adminonly_folder_unreadable');
+    assert.ok(alert, 'the finding on the Map is only seen by somebody who goes looking');
+    assert.equal(alert.severity, 'high');
+    assert.match(alert.detail, /nobody will ever be able to read it back/);
+  });
+
+  test('naming an administrator clears it, and so does the identity layer', () => {
+    const v = new Vault({ signingKey: Ledger.newSigningKey(), administrators: ['ciso'], seedRules: false });
+    assert.equal(v.folders.findings().some((f) => /no administrators are named/.test(f.finding)), false);
+    assert.equal(v.folders.check('read', { id: 'ciso', kind: 'human' }, 'admin/').allowed, true);
+    // A deployment that mints administrators from its IdP rather than the
+    // constructor still works — that is what principalActor sets.
+    assert.equal(v.folders.check('read', { id: 'from-idp', kind: 'human', administrator: true }, 'admin/').allowed, true);
+  });
+
+  test('the librarian screen warns about it too, because that is where facts get routed there', () => {
+    const v = new Vault({ signingKey: Ledger.newSigningKey(), seedRules: false });
+    const w = v.librarian.status({ actor: { id: 'x', kind: 'human' } }).warnings;
+    assert.equal(w.length, 1);
+    assert.equal(w[0].path, 'admin/');
+    assert.equal(w[0].severity, 'high');
+  });
+});
+
+describe('a notice you cannot read still tells you where to look', () => {
+  test('withheld notices are summarised by folder, urgency and time', () => {
+    const v = vault();
+    v.folders.ensure('hr/reviews/');
+    v.librarian.notify({ factId: null, level: 'urgent', why: 'a named person resigned', folder: 'hr/reviews/' });
+    v.librarian.notify({ factId: null, level: 'attention', why: 'a second thing', folder: 'hr/reviews/' });
+    v.librarian.notify({ factId: null, level: 'urgent', why: 'a legal threat', folder: 'legal/' });
+
+    const inbox = v.librarian.inbox({ actor: { id: 'ciso', kind: 'human', department: 'admin' } });
+    assert.equal(inbox.open, 0, 'an administrator is not automatically on every read list — there is no admin bypass');
+    assert.equal(inbox.withheld, 3);
+    assert.equal(inbox.urgentWithheld, 2);
+
+    // "1 notice you cannot read" is true and useless. Where and how urgent is
+    // what lets somebody route the message to a person who can act on it.
+    const hr = inbox.withheldSummary.find((r) => r.folder === 'hr/reviews/');
+    assert.equal(hr.total, 2);
+    assert.equal(hr.urgent, 1);
+    assert.ok(hr.latestAt.includes('T'));
+    assert.equal(inbox.withheldSummary[0].folder, 'hr/reviews/', 'most urgent first');
+  });
+
+  test('the summary never carries what the notice says', () => {
+    const v = vault();
+    v.folders.ensure('hr/reviews/');
+    v.librarian.notify({ factId: null, level: 'urgent', why: 'ZZSECRETZZ is being terminated', folder: 'hr/reviews/' });
+    const inbox = v.librarian.inbox({ actor: { id: 'ciso', kind: 'human', department: 'sales' } });
+    assert.ok(!JSON.stringify(inbox.withheldSummary).includes('ZZSECRETZZ'),
+      'the wall protects the content; the folder and the count are metadata about where attention is needed');
+    assert.ok(!JSON.stringify(inbox.withheldSummary).includes('terminated'));
+  });
+
+  test('nothing withheld means no summary and no note', () => {
+    const v = vault();
+    const inbox = v.librarian.inbox({ actor: { id: 'ciso', kind: 'human', department: 'sales' } });
+    assert.equal(inbox.withheld, 0);
+    assert.deepEqual(inbox.withheldSummary, []);
+    assert.equal(inbox.note, null);
+  });
+});
+
+describe('the status payload carries what the screen needs', () => {
+  test('withheld notices reach status(), not just inbox()', () => {
+    const v = vault();
+    v.folders.ensure('hr/reviews/');
+    v.librarian.notify({ factId: null, level: 'urgent', why: 'a named person resigned', folder: 'hr/reviews/' });
+    const s = v.librarian.status({ actor: { id: 'ciso', kind: 'human', department: 'admin' } });
+    assert.equal(s.notices.withheld, 1);
+    assert.equal(s.notices.urgentWithheld, 1);
+    assert.equal(s.notices.withheldSummary.length, 1, 'field-picking the payload is how the screen ended up rendering an empty table');
+    assert.equal(s.notices.withheldSummary[0].folder, 'hr/reviews/');
+    assert.match(s.notices.note, /cannot read/);
+  });
+});

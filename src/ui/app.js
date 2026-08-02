@@ -339,6 +339,13 @@
       ['Distinct tags', s.tags.distinct]
     ]));
 
+    for (const w of s.warnings ?? []) {
+      v.append(card('⚠️ Facts filed here can be read by nobody',
+        `<p class="tiny warn"><span class="mono">${esc(w.path)}</span> — ${esc(w.detail)}.</p>
+         <p class="tiny dimmer" style="margin-top:6px">Writes into it succeed and the ledger stays clean, which is why this does not
+         look like a fault from any single operation. Fix: ${esc(w.fix)}.</p>`));
+    }
+
     const head = el('div', 'card');
     head.innerHTML = `<h3>The librarian</h3>
       <p class="tiny dimmer">${esc(s.statement)}</p>
@@ -392,7 +399,13 @@
         ]))
         : '<div class="empty">Nothing flagged. A notice is a message to a human — raising one never changes the record it is about.</div>')
       + (s.notices.withheld
-        ? `<p class="tiny warn" style="margin-top:10px">${s.notices.withheld} further notice(s) concern folders you cannot read. They are counted, not shown — a notice quotes the fact it is about.</p>`
+        ? `<p class="tiny warn" style="margin-top:10px">${esc(s.notices.note ?? '')}</p>`
+          + table(['', 'Folder', 'Waiting', 'Latest'], (s.notices.withheldSummary ?? []).map((r) => [
+            r.urgent ? '<span class="pill r">urgent</span>' : '<span class="pill a">—</span>',
+            `<span class="mono tiny">${esc(r.folder)}</span>`,
+            `<span class="tiny">${r.total} notice(s)${r.urgent ? `, ${r.urgent} urgent` : ''}</span>`,
+            `<span class="tiny dimmer">${esc(String(r.latestAt).slice(0, 16).replace('T', ' '))}</span>`
+          ]))
         : '')));
 
     // What it has learned — the file that makes it fast.

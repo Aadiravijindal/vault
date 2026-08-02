@@ -551,20 +551,51 @@ export class Librarian {
    */
   inbox({ actor, limit = 50 } = {}) {
     const open = this.notices.by('byStatus', 'open');
-    const visible = open.filter((n) => {
-      if (!n.folder) return true;
-      try { return this.vault.folders.check('read', actor ?? { id: 'unknown', kind: 'human' }, n.folder).allowed; } catch { return false; }
-    });
-    const withheld = open.length - visible.length;
+    const visible = [];
+    const hidden = [];
+    for (const n of open) {
+      if (!n.folder) { visible.push(n); continue; }
+      let allowed = false;
+      try { allowed = this.vault.folders.check('read', actor ?? { id: 'unknown', kind: 'human' }, n.folder).allowed; } catch { allowed = false; }
+      (allowed ? visible : hidden).push(n);
+    }
+
+    // WHERE things are waiting, without WHAT they say.
+    //
+    // A count alone told an administrator "1 notice you cannot read", which is
+    // true and useless — they cannot tell whether it is a routine tag on a
+    // marketing note or a threat of litigation, so the honest count reads as
+    // noise and gets ignored. The wall exists to protect the fact's CONTENT:
+    // the `why` and the excerpt are model-written summaries of it and stay
+    // hidden. Which folder, how many, how urgent and when are metadata about
+    // where attention is needed, and withholding those protects nothing while
+    // costing somebody the ability to route the message to the right person.
+    const byFolder = new Map();
+    for (const n of hidden) {
+      const row = byFolder.get(n.folder) ?? { folder: n.folder, total: 0, urgent: 0, latestAt: 0 };
+      row.total++;
+      if (n.level === 'urgent') row.urgent++;
+      row.latestAt = Math.max(row.latestAt, n.createdAt);
+      byFolder.set(n.folder, row);
+    }
+    const withheldSummary = [...byFolder.values()]
+      .sort((a, b) => b.urgent - a.urgent || b.total - a.total)
+      .map((r) => ({ ...r, latestAt: iso(r.latestAt) }));
+    const urgentWithheld = withheldSummary.reduce((a, r) => a + r.urgent, 0);
+
     return {
       notices: visible
         .sort((a, b) => (b.level === 'urgent') - (a.level === 'urgent') || b.createdAt - a.createdAt)
         .slice(0, limit)
         .map((n) => ({ ...n, createdAt: iso(n.createdAt) })),
       open: visible.length,
-      withheld,
-      note: withheld
-        ? `${withheld} further notice(s) exist about folders you cannot read. They are counted, not shown — a notice quotes the fact it is about.`
+      withheld: hidden.length,
+      withheldSummary,
+      urgentWithheld,
+      note: hidden.length
+        ? `${hidden.length} further notice(s) concern folders you cannot read`
+          + (urgentWithheld ? `, ${urgentWithheld} of them urgent` : '')
+          + '. Where and how many is shown below; what they say is not, because a notice quotes the fact it is about.'
         : null
     };
   }
@@ -698,7 +729,14 @@ export class Librarian {
   status({ actor = null } = {}) {
     const open = this.openProposals();
     const inbox = this.inbox({ actor });
+    // Surfaced here as well as on the Map, because this is the screen where a
+    // fact gets routed into an administrator-only folder — the person looking
+    // at it is the one who needs to know that nothing can come back out.
+    const unreadable = this.vault.folders.findings().filter((f) => /no administrators are named/.test(f.finding));
     return {
+      warnings: unreadable.map((f) => ({
+        severity: 'high', path: f.path, detail: f.finding, fix: f.fix
+      })),
       model: this.vault.model?.status() ?? null,
       memory: this.vault.memory?.status() ?? null,
       lastRun: this.lastRun ? { ...this.lastRun, at: iso(this.lastRun.at) } : null,
@@ -710,7 +748,17 @@ export class Librarian {
         })),
         note: 'Proposed, not created. A folder is a wall, so a named administrator approves it and that name is what an auditor is shown.'
       },
-      notices: { open: inbox.open, withheld: inbox.withheld, items: inbox.notices.slice(0, 20) },
+      // Forwarded whole rather than field-picked. Picking is how the summary
+      // and the note went missing here while `inbox()` returned both correctly,
+      // and the screen showed an empty table where the withheld work was.
+      notices: {
+        open: inbox.open,
+        withheld: inbox.withheld,
+        urgentWithheld: inbox.urgentWithheld,
+        withheldSummary: inbox.withheldSummary,
+        note: inbox.note,
+        items: inbox.notices.slice(0, 20)
+      },
       tags: { distinct: this.tagVocabulary().length, top: this.tagVocabulary().slice(0, 20) },
       administrators: [...this.administrators],
       statement: 'The librarian tags freely, files into folders that exist, proposes ones that do not, and tells a human when '

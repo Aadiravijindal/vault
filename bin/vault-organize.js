@@ -112,8 +112,13 @@ if (has('notices')) {
   // hidden count is the same failure as a silent drop: the reader concludes
   // there is nothing there, and there is.
   if (inbox.withheld) {
-    console.log(`  ${inbox.note}`);
-    console.log(`  Run with --as <your name> --department <dept> to see the ones addressed to you.\n`);
+    console.log(`  ${inbox.note}\n`);
+    for (const r of inbox.withheldSummary) {
+      console.log(`    ${r.urgent ? '🔴' : '🟡'} ${String(r.folder).padEnd(24)} ${r.total} notice(s)`
+        + `${r.urgent ? `, ${r.urgent} urgent` : ''}   latest ${r.latestAt.slice(0, 16).replace('T', ' ')}`);
+    }
+    console.log('');
+    console.log('  Run with --as <your name> --department <dept> to read the ones addressed to you.\n');
   }
   process.exit(0);
 }

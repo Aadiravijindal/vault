@@ -76,6 +76,21 @@ export class FolderTree {
     return this.administrators.has(actor.id);
   }
 
+  /**
+   * Can anybody at all read an administrator-only folder on this deployment?
+   *
+   * If no administrator is named, the answer is no — and since writing into one
+   * is ordinary, that combination is a write-only hole: facts go in, are filed
+   * correctly, are sealed correctly, and can never be read by anyone again.
+   * Nothing about the individual operations looks wrong, which is exactly why
+   * this has to be reported rather than left to be discovered.
+   *
+   * `actor.administrator` set by the identity layer still works, so a
+   * deployment that mints administrators from its IdP rather than from the
+   * constructor is not falsely flagged — see `administratorSource`.
+   */
+  get hasNamedAdministrators() { return this.administrators.size > 0; }
+
   _seed() {
     for (const [path, spec] of Object.entries(DEFAULT_TREE)) this.ensure(path, { ...spec, seeded: true });
   }
@@ -165,7 +180,7 @@ export class FolderTree {
 
   /** An unowned folder is a finding, reported on the Map (§11.1). */
   findings() {
-    return this.all()
+    const out = this.all()
       .filter((f) => !f.archived && (!f.businessOwner || !f.technicalOwner))
       .map((f) => ({
         path: f.path,
@@ -173,6 +188,22 @@ export class FolderTree {
           : !f.businessOwner ? 'no business owner' : 'no technical owner',
         severity: f.hardWall ? 'high' : 'medium'
       }));
+
+    // An administrator-only folder with nobody named to read it. Reported ahead
+    // of the ownership findings because it is not a governance gap, it is
+    // active data loss: writes succeed, the ledger is clean, the facts are
+    // filed correctly, and no human or agent can ever retrieve one.
+    if (!this.hasNamedAdministrators) {
+      for (const f of this.all().filter((x) => !x.archived && x.adminOnly)) {
+        out.unshift({
+          path: f.path,
+          finding: 'administrator-only, but no administrators are named — anything filed here is readable by nobody',
+          severity: 'high',
+          fix: 'set `administrators: ["name"]` when constructing the Vault, or grant the administrator capability through your identity provider'
+        });
+      }
+    }
+    return out;
   }
 
   // -- the wall ------------------------------------------------------------
@@ -197,7 +228,15 @@ export class FolderTree {
     // in the right department, or the restriction would be decorative. Writes
     // are unaffected — filing INTO one of these is ordinary, and it is getting
     // things out again that is controlled.
-    if (folder.adminOnly && mode === 'read' && !this.isAdministrator(actor)) {
+    if (folder.adminOnly && mode === 'read') {
+      // Administrator-only REPLACES the read list, in both directions. Falling
+      // through to the department list on the allow side looks harmless and is
+      // not: the list on one of these folders is vestigial, so a named
+      // administrator without a matching department was refused the one folder
+      // the whole feature exists to give them.
+      if (this.isAdministrator(actor)) {
+        return { allowed: true, reason: `${actor.id ?? 'this actor'} is a named administrator`, folder };
+      }
       if (actor.kind === 'agent') {
         return { allowed: false, reason: `${folder.path} is administrator-only — no agent reads one, with or without break-glass`, folder };
       }
@@ -209,9 +248,19 @@ export class FolderTree {
       }
       return {
         allowed: false,
-        reason: `${folder.path} is administrator-only — ${actor.id ?? 'this actor'} is not a named administrator`,
+        // The two refusals are different problems and must not read the same.
+        // "You are not an administrator" is a permission answer. "Nobody is an
+        // administrator" is a misconfiguration that has been silently eating
+        // data, and telling the reader the first when the truth is the second
+        // sends them to ask an administrator who does not exist.
+        reason: this.hasNamedAdministrators
+          ? `${folder.path} is administrator-only — ${actor.id ?? 'this actor'} is not a named administrator`
+          : `${folder.path} is administrator-only and NO administrators are named on this deployment, so nothing filed here `
+            + 'can be read by anyone. This is a configuration fault, not a permission decision — set `administrators` on the '
+            + 'Vault, or grant the administrator capability through your identity provider.',
         folder,
-        requiresBreakGlass: true
+        requiresBreakGlass: true,
+        misconfigured: !this.hasNamedAdministrators
       };
     }
 
@@ -263,6 +312,19 @@ export class FolderTree {
         folder: result.folder?.path ?? path, mode, reason: result.reason, at: iso()
       });
       throw forbidden(result.reason, { code: 'wall_violation', folder: result.folder?.path ?? path, mode });
+    }
+    // A write that succeeds into a folder nobody can read is the only operation
+    // in this system that loses data while every individual check passes. It is
+    // caught here, at the moment it happens, because the finding on the Map is
+    // only seen by somebody who goes looking.
+    if (mode === 'write' && result.folder?.adminOnly && !this.hasNamedAdministrators) {
+      this.onAlert({
+        severity: 'high', kind: 'adminonly_folder_unreadable', actor: actor.id,
+        subject: result.folder.path, at: iso(),
+        detail: `${result.folder.path} is administrator-only and no administrators are named on this deployment. `
+          + 'This write will succeed and nobody will ever be able to read it back. Set `administrators` on the Vault, '
+          + 'or grant the administrator capability through your identity provider.'
+      });
     }
     if (result.breakGlass) {
       this.ledger.append('admin.breakglass', {
