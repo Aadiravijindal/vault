@@ -618,6 +618,28 @@ export class FactStore {
     return updated;
   }
 
+  /**
+   * Record that an automated pass has already looked at this fact.
+   *
+   * Deliberately NOT a revision. The librarian marks every fact it considers so
+   * the next pass skips it, and routing that through `revise()` gave a fact a
+   * new version for having been looked at and not changed — so a nightly
+   * organise pass over a large estate would fill the version history and the
+   * ledger with entries recording that nothing happened. An audit trail where
+   * most entries are bookkeeping is one nobody reads.
+   *
+   * Safe because none of these fields are in the integrity view: the content
+   * hash does not move, exactly as it does not move for a read. A pass that
+   * actually CHANGES something still goes through `revise()` and is still a
+   * version, attributed and reversible.
+   */
+  markOrganised(id, { at = now(), by = null, why = null } = {}) {
+    const f = this.get(id);
+    if (!f) return null;
+    const col = f.golden ? this.goldenCol : this.col;
+    return col.update(id, { organisedAt: at, organisedBy: by, organisedWhy: why });
+  }
+
   /** Record a read (§10 USAGE, §11.4 step 10). */
   recordRead(id, { agentId, purpose, fields = null, at = now() }) {
     const f = this.get(id);

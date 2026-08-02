@@ -329,8 +329,14 @@ export class Librarian {
    * account's history into one search result is a question worth being able to
    * answer.
    */
-  tag(factId, tags, { actor, reason = 'tagged', kind = 'human' } = {}) {
+  tag(factId, tags, { actor, reason = 'tagged', kind = 'human', as = null } = {}) {
     const fact = this.vault.facts.require(factId);
+    // A tag is not a wall, but writing one is still a WRITE to a walled record.
+    // Without this a caller who is refused the fact on read could still attach
+    // a tag to it — a modification of something they cannot see, and a way to
+    // confirm a fact exists in a folder that is closed to them. The librarian's
+    // own pass runs as the system and has no `as`, so it is unaffected.
+    if (as) this.vault.folders.enforce('write', as, fact.folder, { subject: factId });
     const guard = this._mayTouch(fact);
     if (!guard.ok) throw forbidden(guard.reason, { factId });
     const accepted = this._acceptTags(tags);
@@ -351,8 +357,9 @@ export class Librarian {
     return updated;
   }
 
-  untag(factId, tags, { actor, reason = 'untagged' } = {}) {
+  untag(factId, tags, { actor, reason = 'untagged', as = null } = {}) {
     const fact = this.vault.facts.require(factId);
+    if (as) this.vault.folders.enforce('write', as, fact.folder, { subject: factId });
     const drop = new Set((Array.isArray(tags) ? tags : [tags]).map(normaliseTag).filter(Boolean));
     const before = fact.tags ?? [];
     const after = before.filter((t) => !drop.has(t));
@@ -457,11 +464,11 @@ export class Librarian {
    * boundary that a model chose is an access boundary nobody chose — so the
    * value that actually gets written is the one the human passed in.
    */
-  approveProposal(id, { actor, reason, read = null, write = null, adminOnly = false }) {
+  approveProposal(id, { actor, reason, read = null, write = null, adminOnly = false, as = null }) {
     const p = this.proposals.get(id);
     if (!p) throw notFound('folder proposal', id);
     if (p.status !== 'open') throw new VaultError('conflict', `this proposal was already ${p.status}`, { id });
-    this._requireAdmin(actor, 'approve a new folder');
+    this._requireAdmin(actor, 'approve a new folder', as);
     if (!reason) throw new VaultError('validation', 'approving a new folder requires a stated reason — "who approved this category and why" is the question an auditor asks');
 
     const spec = {};
@@ -485,10 +492,10 @@ export class Librarian {
     return { proposal: updated, folder };
   }
 
-  rejectProposal(id, { actor, reason }) {
+  rejectProposal(id, { actor, reason, as = null }) {
     const p = this.proposals.get(id);
     if (!p) throw notFound('folder proposal', id);
-    this._requireAdmin(actor, 'reject a folder proposal');
+    this._requireAdmin(actor, 'reject a folder proposal', as);
     if (!reason) throw new VaultError('validation', 'a rejection needs a reason — the model will propose this again otherwise, and nobody will know why it was refused last time');
     const updated = this.proposals.update(id, {
       status: 'rejected', decision: 'rejected', decidedBy: actor, decidedAt: now(), decisionReason: reason
@@ -623,8 +630,8 @@ export class Librarian {
    * one is right, leave it alone. Automated passes skip it; humans can still
    * revise it deliberately.
    */
-  lock(factId, { actor, reason }) {
-    this._requireAdmin(actor, 'lock a fact');
+  lock(factId, { actor, reason, as = null }) {
+    this._requireAdmin(actor, 'lock a fact', as);
     if (!reason) throw new VaultError('validation', 'locking a fact requires a reason');
     const fact = this.vault.facts.require(factId);
     const updated = this.vault.facts.revise(factId, { locked: true, lockedBy: actor, lockedAt: now(), lockReason: reason },
@@ -636,8 +643,8 @@ export class Librarian {
     return updated;
   }
 
-  unlock(factId, { actor, reason }) {
-    this._requireAdmin(actor, 'unlock a fact');
+  unlock(factId, { actor, reason, as = null }) {
+    this._requireAdmin(actor, 'unlock a fact', as);
     const fact = this.vault.facts.require(factId);
     const updated = this.vault.facts.revise(factId, { locked: false, unlockedBy: actor, unlockedAt: now() },
       { actor, reason: reason ?? 'unlocked', kind: 'lock' });
@@ -673,13 +680,23 @@ export class Librarian {
     return { ok: true };
   }
 
-  _requireAdmin(actor, what) {
-    if (!actor) throw forbidden(`a named administrator is required to ${what}`);
-    if (this.administrators.size && !this.administrators.has(actor)) {
-      throw forbidden(`${actor} is not an administrator — only a named administrator may ${what}`, {
-        code: 'not_administrator', administrators: [...this.administrators]
-      });
-    }
+  /**
+   * Only a named administrator.
+   *
+   * Delegates to the folder tree rather than checking its own list, so there is
+   * ONE definition of "administrator" in the product. Keeping a second copy here
+   * meant a deployment that mints administrators from its identity provider —
+   * which is how the API grants the capability — had a role-admin the walls
+   * accepted and the librarian refused. Two answers to the same question is a
+   * bug whichever one is right.
+   */
+  _requireAdmin(actor, what, as = null) {
+    if (!actor && !as?.id) throw forbidden(`a named administrator is required to ${what}`);
+    const candidate = as ?? { id: actor };
+    if (this.vault.folders.isAdministrator({ ...candidate, id: candidate.id ?? actor })) return;
+    throw forbidden(`${as?.id ?? actor} is not an administrator — only a named administrator may ${what}`, {
+      code: 'not_administrator', administrators: [...this.administrators]
+    });
   }
 
   _move(fact, to, { actor, why, source }) {
@@ -704,10 +721,17 @@ export class Librarian {
     });
   }
 
+  /**
+   * Note that this fact has been considered, so the next pass skips it.
+   *
+   * Bookkeeping, not a change — see FactStore#markOrganised for why this must
+   * not create a fact version. A pass that actually moves, tags or relabels
+   * something goes through `revise()` and is a version like any other.
+   */
   _markOrganised(factId, actor, why) {
     try {
-      this.vault.facts.revise(factId, { organisedAt: now() }, { actor, reason: why ?? 'organised', kind: 'organise' });
-    } catch { /* a hold or a lock refusing is correct behaviour */ }
+      this.vault.facts.markOrganised(factId, { by: actor, why: why ?? null });
+    } catch { /* a fact that vanished mid-pass is not an error worth raising */ }
   }
 
   _toReview(fact, proposed, why) {

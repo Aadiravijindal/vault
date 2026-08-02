@@ -328,3 +328,43 @@ describe('the API boundaries on the new surfaces', () => {
     } finally { await server.close(); }
   });
 });
+
+describe('filters narrow, and never quietly widen', () => {
+  test('combining actor with folder filters by both', () => {
+    const v = vault();
+    const j = v.journal;
+    j.record('fact.read', { subject: 'f-1', actor: { id: 'alice', kind: 'human' }, where: { folder: 'sales/' } });
+    j.record('fact.read', { subject: 'f-2', actor: { id: 'bob', kind: 'human' }, where: { folder: 'sales/' } });
+    j.record('fact.read', { subject: 'f-3', actor: { id: 'alice', kind: 'human' }, where: { folder: 'hr/' } });
+
+    const both = j.entries({ actor: 'alice', folder: 'sales/' });
+    assert.deepEqual(both.map((e) => e.subject), ['f-1'],
+      'a filter that returns MORE than was asked for is the dangerous direction — the investigator cannot tell');
+    assert.deepEqual(j.entries({ actor: 'alice' }).map((e) => e.subject).sort(), ['f-1', 'f-3']);
+    assert.deepEqual(j.entries({ folder: 'sales/' }).map((e) => e.subject).sort(), ['f-1', 'f-2']);
+  });
+
+  test('every combination of the four filters holds', () => {
+    const v = vault();
+    const j = v.journal;
+    j.record('fact.read', { subject: 'f-1', actor: { id: 'alice', kind: 'human' }, where: { folder: 'sales/' } });
+    j.record('fact.tagged', { subject: 'f-1', actor: { id: 'bob', kind: 'human' }, where: { folder: 'sales/' } });
+    j.record('fact.tagged', { subject: 'f-2', actor: { id: 'alice', kind: 'human' }, where: { folder: 'hr/' } });
+
+    assert.equal(j.entries({ action: 'fact.tagged', actor: 'alice' }).length, 1);
+    assert.equal(j.entries({ action: 'fact.tagged', folder: 'sales/' }).length, 1);
+    assert.equal(j.entries({ subject: 'f-1', actor: 'bob' }).length, 1);
+    assert.equal(j.entries({ subject: 'f-1', actor: 'bob', action: 'fact.read' }).length, 0);
+    assert.equal(j.entries({ subject: 'f-1', folder: 'hr/' }).length, 0);
+  });
+
+  test('a filtered export inherits the corrected filters', () => {
+    const v = vault();
+    const j = v.journal;
+    j.record('fact.read', { subject: 'f-1', actor: { id: 'alice', kind: 'human' }, where: { folder: 'sales/' } });
+    j.record('fact.read', { subject: 'f-2', actor: { id: 'bob', kind: 'human' }, where: { folder: 'sales/' } });
+    const b = j.export({ actor: 'alice', folder: 'sales/', exportedBy: 'ciso', reason: 'one person' });
+    assert.equal(b.entries.length, 1, 'an export scoped to one person must not hand over everyone');
+    assert.equal(b.entries[0].actor.id, 'alice');
+  });
+});

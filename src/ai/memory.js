@@ -134,7 +134,7 @@ export class MemoryFile {
     }
 
     for (const e of entities) {
-      const key = String(e.id || e.name || '').toLowerCase().slice(0, 80);
+      const key = entityKey(e);
       if (!key) continue;
       const c = this.state.clients[key] ?? (this.state.clients[key] = { n: 0, type: e.type ?? 'unknown', folders: {}, sens: {}, seen: 0 });
       c.n += weight;
@@ -217,7 +217,7 @@ export class MemoryFile {
     // A named entity is far stronger evidence than a word: "Acme" appearing in
     // a claim tells you more about where it belongs than any three verbs do.
     for (const ent of entities) {
-      const key = String(ent.id || ent.name || '').toLowerCase();
+      const key = entityKey(ent);
       const c = this.state.clients[key];
       if (!c || c.n < 2) continue;
       evidence += 3;
@@ -268,7 +268,7 @@ export class MemoryFile {
 
   /** What the file knows about one named client or entity. */
   client(name) {
-    const c = this.state.clients[String(name).toLowerCase()];
+    const c = this.state.clients[entityKey(name)];
     if (!c) return null;
     const folders = Object.entries(c.folders).sort((a, b) => b[1] - a[1]);
     const levels = Object.entries(c.sens).sort((a, b) => b[1] - a[1]);
@@ -543,6 +543,20 @@ function emptyState(tenant = 'default') {
  */
 function vocabularyOf(claim) {
   return [...new Set(contentTokens(claim || ''))].filter((t) => !/\d{3,}/.test(t));
+}
+
+/**
+ * The key an entity is stored and looked up under.
+ *
+ * One function, used by learn, recall and client, because these three deriving
+ * it separately is exactly what went wrong: learn truncated at 80 characters and
+ * recall did not, so any entity with a longer name was written under one key and
+ * searched for under another. Nothing failed — the memory simply never
+ * recognised that client again, silently, forever.
+ */
+export function entityKey(entity) {
+  const raw = typeof entity === 'string' ? entity : (entity?.id || entity?.name || '');
+  return String(raw).trim().toLowerCase().slice(0, 80);
 }
 
 /** How concentrated a distribution is: 1 = always one folder, 0 = spread evenly. */

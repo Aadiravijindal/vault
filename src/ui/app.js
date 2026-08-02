@@ -563,9 +563,13 @@
         });
         const blob = new Blob([JSON.stringify(b, null, 2)], { type: 'application/json' });
         const a = document.createElement('a');
-        a.href = URL.createObjectURL(blob);
+        const url = URL.createObjectURL(blob);
+        a.href = url;
         a.download = `vault-journal-${new Date().toISOString().slice(0, 10)}.json`;
         a.click();
+        // The blob holds the whole audit bundle. Not revoking it keeps a copy of
+        // the export alive in the tab for as long as it stays open.
+        URL.revokeObjectURL(url);
         c.querySelector('#exportOut').innerHTML =
           `<div class="tiny ${b.completeness.full ? '' : 'warn'}">${esc(b.completeness.statement)}</div>
            <div class="tiny dimmer" style="margin-top:6px">${b.signature ? 'Signed with the customer key.' : 'UNSIGNED — no customer signing key is configured.'}</div>`;

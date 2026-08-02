@@ -435,3 +435,101 @@ describe('the status payload carries what the screen needs', () => {
     assert.match(s.notices.note, /cannot read/);
   });
 });
+
+describe('a tag is not a wall, but writing one is still a write', () => {
+  test('somebody refused the fact on read cannot tag it either', () => {
+    const v = vault();
+    const f = aFact(v);
+    const outsider = { id: 'mallory', kind: 'human', department: 'marketing' };
+    assert.equal(v.folders.check('write', outsider, f.folder).allowed, false);
+    assert.throws(
+      () => v.librarian.tag(f.id, ['client:whoever'], { actor: 'mallory', as: outsider }),
+      /wall/i,
+      'attaching a tag is a modification of a walled record, and confirms the record exists'
+    );
+    assert.deepEqual(v.facts.get(f.id).tags, []);
+  });
+
+  test('the refusal is logged and alerted like any other cross-wall attempt', () => {
+    const v = vault();
+    const f = aFact(v);
+    const raised = [];
+    const real = v.alerts.raise.bind(v.alerts);
+    v.alerts.raise = (a) => { raised.push(a); return real(a); };
+    try { v.librarian.tag(f.id, ['client:x'], { actor: 'mallory', as: { id: 'mallory', kind: 'human', department: 'marketing' } }); } catch { /* expected */ }
+    assert.ok(raised.some((a) => a.kind === 'cross_wall_attempt'), 'silent refusal hides the attempt');
+  });
+
+  test('somebody who may write the folder can tag', () => {
+    const v = vault();
+    const f = aFact(v);
+    v.librarian.tag(f.id, ['client:acme corp'], { actor: 'dana', as: { id: 'dana', kind: 'human', department: 'sales' } });
+    assert.deepEqual(v.facts.get(f.id).tags, ['client:acme corp']);
+  });
+
+  test('the librarian itself is unaffected — it runs as the system, with no `as`', async () => {
+    const v = vault({ model: modelSaying({ tags: ['client:acme corp'], folder: null, significance: 0, confident: true }) });
+    const f = aFact(v);
+    await v.organize({ limit: 5 });
+    assert.ok(v.facts.get(f.id).tags.length, 'the model pass is not a principal and must not be wall-checked as one');
+  });
+});
+
+describe('there is one definition of "administrator"', () => {
+  test('an administrator granted by the identity provider is one everywhere', () => {
+    const v = vault();
+    const f = aFact(v);
+    const fromIdp = { id: 'alice', kind: 'human', administrator: true };
+    assert.equal(v.folders.isAdministrator(fromIdp), true);
+    // Previously the librarian kept its own name list and refused this actor —
+    // two answers to the same question is a bug whichever one is right.
+    v.librarian.lock(f.id, { actor: 'alice', reason: 'verified', as: fromIdp });
+    assert.equal(v.facts.get(f.id).locked, true);
+    const p = v.librarian.propose({ path: 'sales/renewals/', because: 'test' });
+    v.librarian.approveProposal(p.id, { actor: 'alice', reason: 'agreed', as: fromIdp, read: ['sales'] });
+    assert.ok(v.folders.get('sales/renewals/'));
+  });
+
+  test('somebody with neither the name nor the capability is still refused', () => {
+    const v = vault();
+    const f = aFact(v);
+    assert.throws(() => v.librarian.lock(f.id, { actor: 'mallory', as: { id: 'mallory', kind: 'human' } }), /not an administrator/);
+  });
+
+  test('permitAsk accepts the identity provider too', () => {
+    const v = vault();
+    const r = v.permitAsk('dana', { actor: 'alice', reason: 'she runs the account reviews', as: { id: 'alice', administrator: true } });
+    assert.equal(r.canAsk, true);
+    assert.equal(v.mayAsk({ id: 'dana' }).allowed, true);
+    assert.throws(() => v.permitAsk('bob', { actor: 'mallory', reason: 'x' }), /not one/);
+  });
+});
+
+describe('bookkeeping does not become a fact version', () => {
+  test('a pass where the model agrees leaves the version untouched', async () => {
+    const v = vault({ model: modelSaying({ tags: [], folder: null, significance: 0, confident: true }) });
+    const f = aFact(v);
+    await v.organize({ limit: 5 });
+    const after = v.facts.get(f.id);
+    assert.equal(after.version, f.version, 'a nightly pass over a large estate must not fill the history with "nothing happened"');
+    assert.equal(v.facts.history(f.id).length, 1);
+    assert.ok(after.organisedAt, 'but it must still be marked, or the next pass reconsiders it forever');
+  });
+
+  test('the content hash is untouched, so marking is not tampering', async () => {
+    const v = vault({ model: modelSaying({ tags: [], folder: null, significance: 0, confident: true }) });
+    const f = aFact(v);
+    await v.organize({ limit: 5 });
+    assert.equal(v.facts.get(f.id).contentHash, f.contentHash);
+    assert.equal(v.facts.verifyIntegrity().ok, true);
+  });
+
+  test('a pass that actually changes something IS a version', async () => {
+    const v = vault({ model: modelSaying({ tags: ['topic:renewal'], folder: 'support/', significance: 0, confident: true }) });
+    const f = aFact(v);
+    await v.organize({ limit: 5 });
+    const after = v.facts.get(f.id);
+    assert.ok(after.version > f.version, 'a move and a tag are real changes and stay attributed and reversible');
+    assert.equal(after.folder, 'support/');
+  });
+});

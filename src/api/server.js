@@ -249,20 +249,31 @@ export class ApiServer {
       v.organize({ limit: body?.limit ?? 50, actor: principal.name }));
     this.route('GET', '/api/librarian/proposals', R('platform', 'admin', 'compliance'), () =>
       ({ proposals: v.librarian.openProposals() }));
+    // `as` carries the resolved principal so the librarian asks the folder tree
+    // who an administrator is, rather than keeping a second answer of its own.
     this.route('POST', '/api/librarian/proposals/:id/approve', R('admin'), ({ params, body, principal }) =>
-      v.librarian.approveProposal(params.id, { actor: principal.name, ...body }));
+      v.librarian.approveProposal(params.id, { ...body, actor: principal.name, as: principalActor(principal) }));
     this.route('POST', '/api/librarian/proposals/:id/reject', R('admin'), ({ params, body, principal }) =>
-      v.librarian.rejectProposal(params.id, { actor: principal.name, reason: body?.reason }));
+      v.librarian.rejectProposal(params.id, { actor: principal.name, reason: body?.reason, as: principalActor(principal) }));
     this.route('GET', '/api/librarian/notices', R('platform', 'admin', 'security', 'compliance', 'legal'), ({ principal }) =>
       v.librarian.inbox({ actor: principalActor(principal) }));
     this.route('POST', '/api/librarian/notices/:id/dismiss', R('platform', 'admin', 'security'), ({ params, body, principal }) =>
       v.librarian.dismissNotice(params.id, { actor: principal.name, reason: body?.reason }));
+    // Open to any authenticated principal at the router, and walled inside: a
+    // tag is a WRITE to a record that may be behind a wall the caller cannot
+    // even read across, so `as` makes the librarian enforce it.
     this.route('POST', '/api/facts/:id/tag', ALL, ({ params, body, principal }) =>
-      v.librarian.tag(params.id, body?.tags ?? [], { actor: principal.name, reason: body?.reason ?? 'tagged from the console' }));
+      v.librarian.tag(params.id, body?.tags ?? [], {
+        actor: principal.name, reason: body?.reason ?? 'tagged from the console', as: principalActor(principal)
+      }));
+    this.route('POST', '/api/facts/:id/untag', ALL, ({ params, body, principal }) =>
+      v.librarian.untag(params.id, body?.tags ?? [], {
+        actor: principal.name, reason: body?.reason ?? 'untagged from the console', as: principalActor(principal)
+      }));
     this.route('POST', '/api/facts/:id/lock', R('admin', 'platform'), ({ params, body, principal }) =>
-      v.librarian.lock(params.id, { actor: principal.name, reason: body?.reason }));
+      v.librarian.lock(params.id, { actor: principal.name, reason: body?.reason, as: principalActor(principal) }));
     this.route('POST', '/api/facts/:id/unlock', R('admin', 'platform'), ({ params, body, principal }) =>
-      v.librarian.unlock(params.id, { actor: principal.name, reason: body?.reason }));
+      v.librarian.unlock(params.id, { actor: principal.name, reason: body?.reason, as: principalActor(principal) }));
 
     // ---- 📓 THE JOURNAL ----------------------------------------------------
     // Wider than most routes on purpose. The complete record of who did what is

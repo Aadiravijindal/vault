@@ -1089,8 +1089,11 @@ export class Vault {
   }
 
   /** Let a named administrator grant or revoke the right to ask. */
-  permitAsk(who, { actor, reason, revoke = false }) {
-    if (!this.administrators.includes(actor) && this.administrators.length) {
+  permitAsk(who, { actor, reason, revoke = false, as = null }) {
+    // Asks the folder tree who an administrator is, so there is one definition
+    // in the product rather than a copy here that disagrees with it — an
+    // administrator granted by the identity provider is an administrator.
+    if (!this.folders.isAdministrator(as ?? { id: actor })) {
       throw new VaultError('forbidden', `only a named administrator may change who can ask — ${actor} is not one`);
     }
     if (!reason) throw new VaultError('validation', 'granting or revoking the right to ask requires a reason');

@@ -227,3 +227,26 @@ describe('status is honest about what this file is', () => {
     assert.ok(s.topClients.some((c) => c.name === 'acme-corp'));
   });
 });
+
+describe('one key, derived once', () => {
+  test('a long entity name is stored and recalled under the same key', () => {
+    const long = `${'a'.repeat(95)}-corp`;
+    const m = new MemoryFile();
+    for (let i = 0; i < 8; i++) {
+      m.learn({ factId: `f-${i}`, folder: 'finance/', claim: 'quarterly ledger reconciliation', by: 'human', entities: [{ id: long }] });
+    }
+    const r = m.recall({ claim: 'unrelated words entirely', entities: [{ id: long }], allowedFolders: ['finance/'] });
+    assert.ok(r, 'learn truncated the key and recall did not, so the memory silently never recognised this client again');
+    assert.equal(r.folder, 'finance/');
+    assert.ok(m.client(long), 'and client() must find it under the same key too');
+  });
+
+  test('the key is stable across id, name and raw string, and trims', () => {
+    const m = new MemoryFile();
+    for (let i = 0; i < 8; i++) {
+      m.learn({ factId: `f-${i}`, folder: 'sales/', claim: 'renewal discussion', by: 'human', entities: [{ name: '  Acme Corp  ' }] });
+    }
+    assert.ok(m.client('acme corp'), 'trimmed and lowercased');
+    assert.ok(m.recall({ claim: 'x', entities: [{ id: 'ACME CORP' }], allowedFolders: ['sales/'] }));
+  });
+});

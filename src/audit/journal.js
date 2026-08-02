@@ -197,13 +197,26 @@ export class Journal {
     return this.col.by('byActor', actorId).sort((a, b) => b.seq - a.seq).slice(0, limit);
   }
 
+  /**
+   * Filtered entries, newest first.
+   *
+   * An index is chosen to narrow the candidate set, and then EVERY filter is
+   * applied to what comes back — including the one the index already covers.
+   * Re-checking a condition the index guaranteed looks redundant and is not: the
+   * previous version applied only the filters it thought the chosen index had
+   * missed, so `{ actor, folder }` picked the folder index and never filtered by
+   * actor at all. That is the failure mode that matters here, because it returns
+   * MORE than was asked for and the caller cannot tell — an investigator
+   * filtering the audit record to one person got everyone.
+   */
   entries({ action = null, actor = null, subject = null, folder = null, from = null, to = null, refusalsOnly = false, limit = 500 } = {}) {
-    let out = action ? this.col.by('byAction', action)
-      : folder ? this.col.by('byFolder', folder)
+    let out = subject ? this.col.by('bySubject', subject)
+      : action ? this.col.by('byAction', action)
         : actor ? this.col.by('byActor', actor)
-          : subject ? this.col.by('bySubject', subject)
+          : folder ? this.col.by('byFolder', folder)
             : this.col.all();
-    if (action && actor) out = out.filter((e) => e.actor?.id === actor);
+    if (action) out = out.filter((e) => e.action === action);
+    if (actor) out = out.filter((e) => e.actor?.id === actor);
     if (subject) out = out.filter((e) => e.subject === subject);
     if (folder) out = out.filter((e) => e.where?.folder === folder);
     if (from != null) out = out.filter((e) => e.at >= from);
