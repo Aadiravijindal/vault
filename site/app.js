@@ -266,9 +266,32 @@ document.getElementById('year').textContent = new Date().getFullYear();
   }, { rootMargin: '0px 0px -8% 0px' });
   targets.forEach((el) => io.observe(el));
 
-  // Failsafe: content that hides itself waiting for an event must have a
-  // deadline, or a renderer that never scrolls shows a blank page.
-  setTimeout(() => targets.forEach((el) => el.classList.add('in')), 4000);
+  // Failsafe. Content that hides itself waiting for an event needs a deadline,
+  // or an environment where the observer never fires shows a blank page below
+  // the hero. But a blanket timer over *every* target also reveals the sections
+  // the reader has not reached yet — four seconds of scrolling lands around
+  // "our approach", and every band after it was already marked done before it
+  // arrived, which is exactly what killed the animation. So the deadline only
+  // ever covers what is at or above the fold: a floor under the observer, not a
+  // replacement for it. It re-arms after scrolling stops, so a dead observer
+  // still cannot leave a gap, and it is inert whenever the observer works.
+  const floor = () => {
+    for (const el of targets) {
+      if (el.classList.contains('in')) continue;
+      if (el.getBoundingClientRect().top >= innerHeight) continue;
+      el.classList.add('in');
+      io.unobserve(el);
+      if (el.querySelector('[data-count]')) countUp(el);
+    }
+  };
+  let deadline = setTimeout(floor, 2500);
+  addEventListener('scroll', () => {
+    clearTimeout(deadline);
+    deadline = setTimeout(floor, 2500);
+  }, { passive: true });
+
+  // Print is the one case that genuinely has no fold: the whole document is
+  // painted at once, so everything has to be up.
   addEventListener('beforeprint', () => targets.forEach((el) => el.classList.add('in')));
 
   function countUp(scope) {

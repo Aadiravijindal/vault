@@ -80,7 +80,7 @@ describe('the page says what it promises to say', () => {
     // changes. These are the ones with a number in them.
     assert.match(text, /\b74\b/, '74 connectors');
     assert.match(text, /576 adversarial cases/);
-    assert.match(text, /\b958\b/, 'the test count');
+    assert.match(text, /\b959\b/, 'the test count');
     assert.match(text, /p50 80ms/);
     assert.match(text, /ten checks|10 checks/i);
   });
@@ -433,13 +433,34 @@ describe('it degrades', () => {
   test('content that hides itself has a deadline and a print path', () => {
     // Reveal-on-scroll hid the entire page below the hero in a renderer that
     // never scrolls. All three of these are the fix.
-    assert.match(js, /setTimeout\(\(\) => targets\.forEach\(\(el\) => el\.classList\.add\('in'\)\), 4000\)/,
+    assert.match(js, /const floor = \(\) => \{/,
       'an observer that never fires must not mean content that never appears');
+    assert.match(js, /setTimeout\(floor,/, 'the floor needs a deadline to run on');
+    assert.match(js, /addEventListener\('scroll'[\s\S]{0,120}setTimeout\(floor,/,
+      're-arming on scroll is what lets the deadline stay bounded to the fold');
     assert.match(js, /beforeprint/);
     assert.match(css, /@media print\{/);
     const print = css.slice(css.indexOf('@media print{'));
     assert.match(print, /\.reveal\{opacity:1 !important/);
     assert.match(print, /\.hero-canvas,\.hero-video/, 'the film must not be part of a printed page');
+  });
+
+  test('the deadline cannot reveal a section the reader has not reached', () => {
+    // The failsafe used to be `targets.forEach(el => el.classList.add('in'))`
+    // on a flat 4s timer, which fired while the reader was still around the
+    // third band and marked every section below it as already arrived. The
+    // page then scrolled for six more sections with no animation at all —
+    // the failsafe silently cancelled the feature it was protecting.
+    const body = js.slice(js.indexOf('const floor'), js.indexOf('beforeprint'));
+    assert.match(body, /getBoundingClientRect\(\)\.top >= innerHeight\) continue/,
+      'the deadline must skip anything still below the fold');
+    assert.ok(!/setTimeout\(\(\) => targets\.forEach/.test(js),
+      'a deadline over every target regardless of position is the bug, not the fix');
+
+    // Print is the one path allowed to reveal everything, because a printed
+    // page has no fold — it is painted in full, all at once.
+    const printPath = js.slice(js.indexOf("addEventListener('beforeprint'"));
+    assert.match(printPath, /targets\.forEach\(\(el\) => el\.classList\.add\('in'\)\)/);
   });
 
   test('the reveal is additive, so no JavaScript means visible, not blank', () => {
