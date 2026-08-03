@@ -43,87 +43,129 @@ document.getElementById('year').textContent = new Date().getFullYear();
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   }
 
+  // The same room as the film, at a fraction of its detail. This has to paint
+  // in a single frame on a phone, so there are no reflections, no dust and no
+  // racks — just the three panels, their glow and the desk. It is a stand-in
+  // for the two seconds before the video plays, not a second implementation of
+  // it, and the composition matches so the crossfade is not a cut.
   function frame(now) {
     const t = ((now - t0) / 8000) % 1;           // an 8s loop, same as the film
-    const GATE = W * 0.31;                       // off-centre, as in the film —
-    ctx.clearRect(0, 0, W, H);                   // centred it hides behind the copy
+    const S = H / 720;
+    const camX = Math.sin(t * TAU) * 14 * S;
+    const camY = Math.cos(t * TAU) * 7 * S;
+    const deskY = H * 0.72;
 
-    // far field
-    for (let i = 0; i < 60; i++) {
-      const x = rnd(i) * W; const y = rnd(i + 500) * H;
-      const pulse = 0.35 + 0.65 * (0.5 + 0.5 * Math.sin((t + rnd(i + 900)) * TAU * 2));
-      ctx.fillStyle = `rgba(255,120,40,${0.05 + 0.14 * pulse})`;
-      ctx.beginPath(); ctx.arc(x, y, 1.1 + 1.5 * pulse, 0, TAU); ctx.fill();
-    }
+    ctx.fillStyle = '#05030a';
+    ctx.fillRect(0, 0, W, H);
 
-    // perspective floor
-    ctx.save();
-    ctx.strokeStyle = 'rgba(255,132,52,.3)'; ctx.lineWidth = 1;
-    const horizon = H * 0.62;
-    for (let i = 0; i < 26; i++) {
-      const p = ((i + t) % 26) / 26;
-      const y = horizon + p ** 2.6 * (H - horizon) * 1.9;
-      if (y > H) continue;
-      ctx.globalAlpha = Math.min(1, p * 2.2) * 0.7;
-      ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W, y); ctx.stroke();
-    }
-    ctx.globalAlpha = 0.42;
-    for (let i = -14; i <= 14; i++) {
-      ctx.beginPath(); ctx.moveTo(W / 2 + i * 18, horizon); ctx.lineTo(W / 2 + i * 210, H); ctx.stroke();
-    }
-    ctx.restore();
-
-    // the gate
-    const g = ctx.createLinearGradient(GATE - 130, 0, GATE + 130, 0);
-    g.addColorStop(0, 'rgba(255,106,19,0)');
-    g.addColorStop(0.5, `rgba(255,140,43,${0.26 + 0.09 * Math.sin(t * TAU * 3)})`);
-    g.addColorStop(1, 'rgba(255,106,19,0)');
-    ctx.fillStyle = g; ctx.fillRect(GATE - 130, 0, 260, H);
-    ctx.save();
-    ctx.shadowColor = 'rgba(255,150,60,.9)'; ctx.shadowBlur = 22;
-    ctx.strokeStyle = 'rgba(255,214,176,.9)'; ctx.lineWidth = 2.5;
-    ctx.beginPath(); ctx.moveTo(GATE, 0); ctx.lineTo(GATE, H); ctx.stroke();
-    ctx.restore();
-    for (let i = 0; i < 10; i++) {
-      const y = (H / 11) * (i + 1);
-      const lit = (Math.sin((t * 2 - i / 14) * TAU) + 1) / 2;
-      ctx.fillStyle = `rgba(255,196,130,${0.35 + 0.65 * lit})`;
-      ctx.fillRect(GATE - 13, y - 2, 26, 4);
-    }
-
-    // packets
-    for (let i = 0; i < 48; i++) {
-      const y = 40 + rnd(i + 20) * (H - 80);
-      const p = ((t * (0.55 + rnd(i + 40) * 0.75) + rnd(i + 60)) % 1);
-      const x = p * (W + 260) - 130;
-      const blocked = rnd(i + 80) > 0.83;
-      const crossed = x > GATE;
-
-      if (blocked && crossed) {
-        const d = (x - GATE) / 90;
-        if (d > 1) continue;
-        const a = (1 - d) * 0.9;
-        ctx.save();
-        ctx.shadowColor = 'rgba(255,60,60,.9)'; ctx.shadowBlur = 22;
-        ctx.fillStyle = `rgba(255,96,96,${a})`;
-        ctx.beginPath(); ctx.arc(GATE, y, 3 + 10 * d, 0, TAU); ctx.fill();
-        ctx.strokeStyle = `rgba(255,120,120,${a * 0.65})`; ctx.lineWidth = 1.5;
-        ctx.beginPath(); ctx.arc(GATE, y, 6 + 26 * d, 0, TAU); ctx.stroke();
-        ctx.restore();
-        continue;
+    // racks, reduced to their status lights
+    for (let i = 0; i < 7; i++) {
+      const x = (i / 7) * W * 1.15 - W * 0.06;
+      const w = W * 0.085;
+      ctx.fillStyle = 'rgba(18,10,20,.85)';
+      ctx.fillRect(x + camX * 0.25, H * 0.06 + camY * 0.25, w, deskY - H * 0.06);
+      for (let j = 0; j < 10; j++) {
+        const y = H * 0.1 + j * (deskY - H * 0.14) / 10 + camY * 0.25;
+        const blink = 0.35 + 0.65 * (0.5 + 0.5 * Math.sin((t + rnd(i * 7 + j)) * TAU * 2));
+        ctx.fillStyle = rnd(i * 40 + j) > 0.55
+          ? `rgba(255,140,43,${0.1 + 0.35 * blink})`
+          : `rgba(90,110,130,${0.05 + 0.1 * blink})`;
+        ctx.fillRect(x + w * 0.14 + camX * 0.25, y, w * 0.1, 2.5 * S);
       }
-
-      const len = 16 + rnd(i + 100) * 30;
-      const tail = ctx.createLinearGradient(x - len, y, x, y);
-      tail.addColorStop(0, crossed ? 'rgba(255,140,43,0)' : 'rgba(190,190,200,0)');
-      tail.addColorStop(1, crossed ? 'rgba(255,190,120,.9)' : 'rgba(225,225,235,.55)');
-      ctx.fillStyle = tail; ctx.fillRect(x - len, y - 1.1, len, 2.2);
-      ctx.fillStyle = crossed ? 'rgba(255,205,150,.95)' : 'rgba(240,240,248,.7)';
-      ctx.shadowColor = crossed ? 'rgba(255,140,43,.9)' : 'rgba(200,210,255,.5)';
-      ctx.shadowBlur = crossed ? 12 : 7;
-      ctx.beginPath(); ctx.arc(x, y, crossed ? 2.4 : 1.9, 0, TAU); ctx.fill();
-      ctx.shadowBlur = 0;
     }
+
+    const panel = (x, y, w, h, shear, draw) => {
+      ctx.save();
+      ctx.translate(x + camX, y + camY);
+      ctx.transform(1, shear, 0, 1, 0, 0);
+      ctx.fillStyle = '#151020';
+      ctx.fillRect(-7 * S, -7 * S, w + 14 * S, h + 14 * S);
+      ctx.strokeStyle = 'rgba(255,150,70,.22)'; ctx.lineWidth = 1 * S;
+      ctx.strokeRect(-7 * S, -7 * S, w + 14 * S, h + 14 * S);
+      ctx.fillStyle = '#0b0814';
+      ctx.fillRect(0, 0, w, h);
+      ctx.save(); ctx.beginPath(); ctx.rect(0, 0, w, h); ctx.clip();
+      draw(w, h);
+      ctx.fillStyle = 'rgba(0,0,0,.22)';
+      for (let yy = 0; yy < h; yy += 3 * S) ctx.fillRect(0, yy, w, 1 * S);
+      ctx.restore();
+      ctx.restore();
+    };
+
+    // centre: lines of output, as bars — the real text is in the film
+    const cw = W * 0.40; const ch = H * 0.44;
+    panel(W * 0.5 - cw / 2, H * 0.24, cw, ch, 0, (w, h) => {
+      const lh = 13 * S;
+      const rows = Math.ceil(h / lh);
+      const scrolled = t * rows;
+      for (let i = 0; i < rows + 1; i++) {
+        const k = (Math.floor(scrolled) + i) % 37;
+        const y = i * lh - (scrolled % 1) * lh + 8 * S;
+        const kind = rnd(k * 3) > 0.86 ? 'bad' : rnd(k * 3) > 0.72 ? 'warn' : 'ok';
+        ctx.fillStyle = kind === 'bad' ? 'rgba(255,110,110,.55)'
+          : kind === 'warn' ? 'rgba(255,190,90,.5)' : 'rgba(196,206,224,.32)';
+        ctx.fillRect(10 * S, y, (0.2 + rnd(k * 5) * 0.72) * (w - 20 * S), 4 * S);
+      }
+    });
+
+    // left: the walls
+    panel(W * 0.045, H * 0.30, W * 0.20, H * 0.34, 0.05, (w, h) => {
+      const n = 12;
+      for (let i = 0; i < n; i++) {
+        const y = 22 * S + i * (h - 30 * S) / n;
+        const hot = Math.floor(t * n) === i;
+        if (hot) { ctx.fillStyle = 'rgba(255,106,19,.14)'; ctx.fillRect(0, y - 5 * S, w, 14 * S); }
+        ctx.fillStyle = hot ? 'rgba(255,200,150,.8)' : 'rgba(180,190,210,.3)';
+        ctx.fillRect(9 * S, y, (0.3 + rnd(i) * 0.4) * w, 4 * S);
+        ctx.fillStyle = i % 3 === 0 ? 'rgba(255,110,110,.6)' : 'rgba(120,200,255,.35)';
+        ctx.fillRect(w - 34 * S, y - 1 * S, 26 * S, 5 * S);
+      }
+    });
+
+    // right: the ten checks
+    panel(W * 0.755, H * 0.30, W * 0.20, H * 0.34, -0.05, (w, h) => {
+      for (let i = 0; i < 10; i++) {
+        const y = 26 * S + i * (h - 36 * S) / 10;
+        const lit = (Math.sin((t * 2 - i / 13) * TAU) + 1) / 2;
+        ctx.fillStyle = `rgba(170,180,200,${0.2 + 0.25 * lit})`;
+        ctx.fillRect(9 * S, y, w * 0.34, 4 * S);
+        ctx.fillStyle = 'rgba(255,255,255,.05)';
+        ctx.fillRect(w * 0.52, y - 1 * S, w * 0.38, 6 * S);
+        ctx.fillStyle = `rgba(255,166,77,${0.3 + 0.65 * lit})`;
+        ctx.fillRect(w * 0.52, y - 1 * S, w * 0.38 * (0.35 + 0.65 * lit), 6 * S);
+      }
+    });
+
+    // the light they throw
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    for (const [gx, gy, gr, a] of [
+      [W * 0.5 + camX, H * 0.45 + camY, W * 0.42, 0.3],
+      [W * 0.145 + camX, H * 0.47 + camY, W * 0.2, 0.15],
+      [W * 0.855 + camX, H * 0.47 + camY, W * 0.2, 0.15]
+    ]) {
+      const g = ctx.createRadialGradient(gx, gy, 0, gx, gy, gr);
+      g.addColorStop(0, `rgba(255,140,43,${a})`);
+      g.addColorStop(0.45, `rgba(214,59,6,${a * 0.3})`);
+      g.addColorStop(1, 'rgba(255,106,19,0)');
+      ctx.fillStyle = g; ctx.beginPath(); ctx.arc(gx, gy, gr, 0, TAU); ctx.fill();
+    }
+    ctx.restore();
+
+    // the desk
+    const desk = ctx.createLinearGradient(0, deskY, 0, H);
+    desk.addColorStop(0, 'rgba(26,14,10,.95)');
+    desk.addColorStop(1, 'rgba(8,4,8,1)');
+    ctx.fillStyle = desk;
+    ctx.fillRect(0, deskY, W, H - deskY);
+    ctx.fillStyle = 'rgba(255,140,43,.16)';
+    ctx.fillRect(0, deskY, W, 1.5 * S);
+
+    const v = ctx.createRadialGradient(W / 2, H / 2, H * 0.32, W / 2, H / 2, W * 0.78);
+    v.addColorStop(0, 'rgba(4,2,7,0)');
+    v.addColorStop(1, 'rgba(4,2,7,.8)');
+    ctx.fillStyle = v;
+    ctx.fillRect(0, 0, W, H);
 
     raf = requestAnimationFrame(frame);
   }

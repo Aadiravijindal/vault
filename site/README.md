@@ -103,11 +103,21 @@ node site/video.mjs                                  # 1280x720, 24fps, 8s
 node site/video.mjs --w 960 --h 540 --seconds 6
 ```
 
-**The footage is the product.** Memory streams in from the left, hits the gate, most of it
-passes and turns orange, about one in six flares red and dies at the wall. Stock footage of
-a server room says nothing; this says what Vault does in eight seconds with no narration.
-It is also reproducible — the palette comes from the same tokens as the site, so a brand
-shift is one edit and one command rather than a re-shoot.
+**The footage is the product, literally.** A workstation at night: three screens running
+Vault, the desk catching their light, racks blinking behind, dust in the glow. The centre
+screen is a terminal — and `video.mjs` **runs `demo/seed.js` at build time and puts its
+real output on it**, so every `BLOCKED` and `HELD` in the footage is an outcome the gate
+actually produced. There is no separate script to keep in sync and nothing on that screen
+claims a result the product does not deliver. If the demo cannot run, the render proceeds
+on a short fallback rather than failing.
+
+Licensed stock footage of somebody else's office was the alternative. It says nothing
+about this product and cannot be checked against it.
+
+The screens are drawn with a 1.5px blur. Sharp, the terminal is legible right behind the
+headline and competes with it; a background that reads as *screens with work on them*
+rather than *text you try to read* is the entire job. The bezels stay crisp, so the panels
+still read as hardware.
 
 Frames are drawn in headless Chromium on a 2D canvas at a fixed timestep and piped
 straight into ffmpeg, so nothing large is ever held in memory or written between the two.
@@ -135,8 +145,11 @@ has decided it is wanted. `app.js` sets the source only when motion is not reduc
 connection is not metered, and `effectiveType` is not 2g; it reveals the video only on
 `canplay`.
 
-Underneath, a canvas draws the same scene live, so there is never a black rectangle and
-never a stalled first frame. It stops when the hero scrolls out of view or the tab is
+Underneath, a canvas draws the same room live — the three panels, their glow and the desk,
+without the reflections, the dust or the real text, because it has to paint in a single
+frame on a phone. It is a stand-in for the two seconds before the video plays, not a second
+implementation of it, and the composition matches so the crossfade is not a cut. There is
+never a black rectangle and never a stalled first frame. It stops when the hero scrolls out of view or the tab is
 hidden — a `requestAnimationFrame` loop running behind eight sections of content is a
 battery bug, not a design decision. Under reduced motion it paints exactly one frame: the
 composition is still there, it simply holds still.
@@ -146,7 +159,7 @@ composition is still there, it simply holds still.
 The scrim is not decoration. Measured in a browser with the text hidden, white on the bare
 footage fell to **2.24:1** at the right of the headline — under the 3:1 AA asks of large
 text, and it *looked* fine, which is the point. With the scrim in place, the worst of 135
-samples across three viewports is **11.5:1**. If you move the scrim, or brighten the
+samples across three viewports is **8.93:1**. If you move the scrim, or brighten the
 footage, measure it again.
 
 ---
@@ -169,10 +182,29 @@ flags are derived from the geometry too — an early attempt guessed them and pr
 crescents, because the blob arcs took the short way between tangent points and cut straight
 through the blob.
 
-**`FILLET = 6.0` is a brand decision, not a tuning knob.** It was chosen by rendering 6.0,
-7.0, 8.0 and 9.2 side by side against the supplied artwork. Anything larger fattens the
-joins until the whole thing reads as one blob — recognisably a different logo. A test pins
-it.
+### The proportions are measured, not chosen
+
+The supplied artwork is 437 x 477 at its bounding box, and for a hexagon with a vertex at
+twelve o'clock those two numbers pin everything down:
+
+```
+height = 2·R_HEX + 2·R_OUTER  = 477   →  R_HEX   ≈ 173.5 px
+width  = √3·R_HEX + 2·R_OUTER = 437      R_OUTER ≈  64.5 px
+```
+
+which is `R_OUTER/R_HEX = 0.372`, with the centre blob at ~1.20x an outer one. In a
+100-unit viewBox: **R_HEX 33.5, R_OUTER 12.45, R_CENTRE 14.9**.
+
+**And the fillet is not free either.** For two blobs at distance `d` the fillet centre sits
+`off` from the line joining them and the visible waist is `2·(off − F)`. If `off ≤ F` the
+two fillet arcs cross and *the outline self-intersects* — the neck stops being a neck and
+becomes a torn spike. This shipped once: `R_OUTER 11.6` with `FILLET 6.0` gives a waist of
+**−1.19** on every outer join, which is why the mark looked wrong rather than merely
+slightly off. `fillets()` refuses that case now, and a test computes the waist for both
+join types.
+
+The artwork's neck is ~11% of an outer blob's diameter; solving for that gives
+**`FILLET = 5.75`**.
 
 The alternative was an `feGaussianBlur` + `feColorMatrix` "gooey" filter, which fakes the
 same effect. Rejected: a filter cannot go in a favicon data URI, costs a compositing pass

@@ -40,12 +40,39 @@
  * loose groups read as something alive.
  */
 
+/*
+ * ── THE PROPORTIONS, MEASURED FROM THE ARTWORK ──────────────────────────────
+ *
+ * Not chosen by eye. The supplied logo is 437 × 477 at its bounding box, and
+ * for a hexagon with a vertex at twelve o'clock those two numbers pin the whole
+ * thing down:
+ *
+ *     height = 2·R_HEX + 2·R_OUTER  = 477      → R_HEX ≈ 173.5 px
+ *     width  = √3·R_HEX + 2·R_OUTER = 437        R_OUTER ≈ 64.5 px
+ *
+ * which is R_OUTER/R_HEX = 0.372, and the centre blob measures ~1.20× an outer
+ * one. Scaled into a 100-unit viewBox with R_HEX = 33.5, that is the constants
+ * below.
+ *
+ * ── AND WHY THE FILLET IS NOT A FREE CHOICE ─────────────────────────────────
+ *
+ * For two blobs radius rA, rB at distance d, the fillet centre sits `off` from
+ * the line joining them, and the visible waist of the neck is 2·(off − F).
+ * **If off ≤ F the two fillet arcs cross and the outline self-intersects** —
+ * the neck stops being a neck and becomes a spike. `fillets()` refuses that
+ * case now, because an earlier version shipped it: R_OUTER = 11.6 with F = 6.0
+ * gives a waist of −1.19 on every outer↔outer join, and the mark rendered with
+ * a torn sliver where the artwork has a clean thin waist.
+ *
+ * The artwork's waist is ~11% of an outer blob's diameter, and solving
+ * 2·(off − F) = 0.11·2·R_OUTER for F gives 5.75.
+ */
 const VIEW = 100;                 // viewBox is 0 0 100 100
 const CX = 50, CY = 50;
 const R_HEX = 33.5;               // circumradius of the ring of six
-const R_OUTER = 11.6;             // radius of each outer blob
-const R_CENTRE = 14.6;            // the centre blob is deliberately larger
-const FILLET = 6.0;               // radius of the concave neck — tuned to the supplied render
+const R_OUTER = 12.45;            // radius of each outer blob
+const R_CENTRE = 14.9;            // the centre blob is deliberately larger
+const FILLET = 5.75;              // solved from the artwork's neck, not tuned by eye
 
 /** Hexagon vertex k, starting at twelve o'clock and going clockwise. */
 const vertex = (k) => {
@@ -89,6 +116,17 @@ function fillets(a, b, F = FILLET) {
     throw new Error(`blobs ${d.toFixed(2)} apart cannot take a fillet of ${F} — widen the gap or shrink the fillet`);
   }
   const off = Math.sqrt(off2);
+  // The waist is 2·(off − F). At off ≤ F the two fillet arcs cross each other
+  // and the outline self-intersects — the neck renders as a torn spike rather
+  // than a pinch. It is not a near-miss that looks slightly off; it is an
+  // invalid path, and it shipped once, so it is checked rather than assumed.
+  if (off <= F) {
+    throw new Error(
+      `fillet ${F} between blobs ${a.r} and ${b.r} at ${d.toFixed(2)} gives a waist of `
+      + `${(2 * (off - F)).toFixed(2)} — the neck would self-intersect. Raise the fillet, `
+      + 'enlarge the blobs, or close the gap.'
+    );
+  }
   const ux = dx / d, uy = dy / d;      // along AB
   const nx = -uy, ny = ux;             // perpendicular
   return [

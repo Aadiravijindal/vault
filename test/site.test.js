@@ -14,13 +14,13 @@
  *   · white on the bare hero footage fell to 2.24:1 behind the right of the
  *     headline — under the 3:1 that AA asks of large text — which is why the
  *     scrim exists. With it, the worst of 135 samples across three viewports
- *     is 11.5:1.
- *   · the mark's fillet radius was chosen by rendering four candidates side by
- *     side against the supplied artwork. 6.0 is the one that matches.
+ *     is 8.93:1.
+ *   · the mark's proportions were measured off the supplied artwork's 437x477
+ *     bounding box, which pins R_HEX and R_OUTER exactly; see mark.mjs.
  *
- * Both numbers are recorded here because they are the reason the hero and the
- * logo look the way they do, and because nothing in a source-only test can
- * catch them regressing.
+ * Both are recorded here because they are the reason the hero and the logo
+ * look the way they do, and because nothing in a source-only test can catch
+ * them regressing.
  */
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
@@ -79,7 +79,7 @@ describe('the page says what it promises to say', () => {
     // changes. These are the ones with a number in them.
     assert.match(text, /\b74\b/, '74 connectors');
     assert.match(text, /576 adversarial cases/);
-    assert.match(text, /\b930\b/, 'the test count');
+    assert.match(text, /\b932\b/, 'the test count');
     assert.match(text, /p50 80ms/);
     assert.match(text, /ten checks|10 checks/i);
   });
@@ -223,13 +223,49 @@ describe('the mark', () => {
     assert.ok(!/[LlHhVv]/.test(MARK_PATH), 'no straight segments — every join is a fillet');
   });
 
-  test('the necks are pinched, which is what makes it this logo', () => {
-    // The fillet radius was picked against the supplied artwork by rendering
-    // 6.0 / 7.0 / 8.0 / 9.2 side by side. A larger radius fattens the joins
-    // until the whole thing reads as one blob — recognisably a different logo.
-    const fillet = readFileSync(new URL('../site/mark.mjs', import.meta.url), 'utf8')
-      .match(/const FILLET\s*=\s*([\d.]+)/)?.[1];
-    assert.equal(fillet, '6.0', 'the fillet radius is a brand decision, not a tuning knob');
+  test('the proportions are the ones measured from the artwork', () => {
+    // Derived, not tuned: the supplied logo's 437x477 bounding box pins R_HEX
+    // and R_OUTER for a hexagon with a vertex at twelve o'clock, and its neck
+    // is ~11% of an outer blob's diameter, which pins the fillet.
+    const src = readFileSync(new URL('../site/mark.mjs', import.meta.url), 'utf8');
+    const konst = (name) => src.match(new RegExp(`const ${name}\\s*=\\s*([\\d.]+)`))?.[1];
+    assert.equal(konst('R_HEX'), '33.5');
+    assert.equal(konst('R_OUTER'), '12.45');
+    assert.equal(konst('R_CENTRE'), '14.9');
+    assert.equal(konst('FILLET'), '5.75', 'the fillet is solved from the artwork, not a tuning knob');
+  });
+
+  test('no neck self-intersects — the failure that shipped once', () => {
+    // For blobs rA, rB at distance d the fillet centre sits `off` from the
+    // centre line and the waist is 2*(off - F). At off <= F the two fillet
+    // arcs cross and the outline tears. R_OUTER 11.6 with FILLET 6.0 gave
+    // -1.19 on every outer join and went out looking like a broken logo.
+    const src = readFileSync(new URL('../site/mark.mjs', import.meta.url), 'utf8');
+    const konst = (name) => Number(src.match(new RegExp(`const ${name}\\s*=\\s*([\\d.]+)`))[1]);
+    const [hex, outer, centre, F] = ['R_HEX', 'R_OUTER', 'R_CENTRE', 'FILLET'].map(konst);
+
+    const waist = (rA, rB, d) => {
+      const ra = rA + F; const rb = rB + F;
+      const along = (d * d + ra * ra - rb * rb) / (2 * d);
+      const off2 = ra * ra - along * along;
+      assert.ok(off2 > 0, `no fillet solution for ${rA}/${rB} at ${d}`);
+      return 2 * (Math.sqrt(off2) - F);
+    };
+
+    // Every join in the mark: outer-to-outer along a hexagon edge, and
+    // centre-to-outer along a radius. Both spans are R_HEX.
+    for (const [label, w] of [
+      ['outer↔outer', waist(outer, outer, hex)],
+      ['centre↔outer', waist(outer, centre, hex)]
+    ]) {
+      assert.ok(w > 0, `${label} waist is ${w.toFixed(2)} — the neck self-intersects`);
+    }
+
+    // And the outer neck is genuinely pinched, which is what makes it this
+    // logo rather than a string of sausages.
+    const ratio = waist(outer, outer, hex) / (2 * outer);
+    assert.ok(ratio > 0.08 && ratio < 0.16,
+      `outer neck is ${(ratio * 100).toFixed(1)}% of a blob — the artwork's is about 11%`);
   });
 });
 
@@ -362,6 +398,19 @@ describe('the footage that ships', () => {
     // A hero background that costs more than a megabyte is a hero background
     // that people on a train never see.
     assert.ok(kb < 1400, `hero.webm is ${kb.toFixed(0)} kB — too heavy for a decorative loop`);
+  });
+
+  test('the terminal in the footage shows real product output', () => {
+    // The screen says BLOCKED and HELD. If that text were hand-written it
+    // would be a marketing claim nobody re-checks; instead the generator runs
+    // demo/seed.js and puts its actual stdout on the screen, so the footage
+    // cannot outlive the behaviour it depicts.
+    const gen = readFileSync(new URL('../site/video.mjs', import.meta.url), 'utf8');
+    assert.match(gen, /demo['"/\s,\]]*['"]?\s*,?\s*['"]seed\.js['"]|'seed\.js'/,
+      'the footage must be driven by demo/seed.js, not by a copy of its output');
+    assert.match(gen, /execFileSync/);
+    // …and it must not take the whole build down when the demo cannot run.
+    assert.match(gen, /fallback/i, 'a demo that fails must degrade, not fail the render');
   });
 
   test('the generator is build-time only and says so', () => {
