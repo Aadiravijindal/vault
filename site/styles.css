@@ -154,8 +154,13 @@ body.scrolled .topbar{background:rgba(7,4,10,.9);border-bottom-color:var(--line-
 .btn-lg{padding:17px 40px;font-size:16px}
 
 /* ═══ hero ═══════════════════════════════════════════════════════════ */
-.hero{position:relative;isolation:isolate;min-height:100svh;display:grid;place-items:center;
-  padding:150px 24px 110px;background:var(--black);overflow:hidden}
+.hero{position:relative;isolation:isolate;min-height:100svh;display:grid;
+  /* The copy sits bottom-left over the footage, so the grid pins it to the
+     end of the block axis and the start of the inline axis rather than
+     centring it. `start` not `left`, so a right-to-left locale mirrors it. */
+  align-content:end;justify-items:start;
+  padding:150px clamp(20px,5vw,84px) clamp(96px,12vh,140px);
+  background:var(--black);overflow:hidden}
 
 .hero-canvas,.hero-video{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;z-index:-3}
 /* The film fades in over the canvas once it can genuinely play, so there is
@@ -165,28 +170,32 @@ body.scrolled .topbar{background:rgba(7,4,10,.9);border-bottom-color:var(--line-
 
 /*
   The scrim. Not decoration: measured against the footage with the text hidden,
-  white on the bare scene fell to 2.24:1 behind the right of the headline —
-  under the 3:1 AA asks of large text, and invisible to the eye, which read it
-  as "fine". This pulls the type back onto dark ground while the orange still
-  burns past it, in the brand's own colours rather than flat black.
+  white on the bare scene fell to 2.24:1 behind the headline — under the 3:1 AA
+  asks of large text, and invisible to the eye, which read it as "fine". This
+  pulls the type back onto dark ground while the orange still burns past it, in
+  the brand's own colours rather than flat black.
+
+  The whole stack follows the copy: the pocket sits bottom-left, and the brand
+  burns in from the top-right, which is where the footage's vanishing point and
+  its brightest thing — the far windows — happen to be.
 */
 .hero-scrim{position:absolute;inset:0;z-index:-2;
   background:
-    /* an ellipse behind the copy only — tight enough that the packets and the
-       gate are still legible either side of it. The gate is rendered at 31% of
-       the width for the same reason: it has to fall outside this. */
-    radial-gradient(44% 32% at 50% 52%, rgba(7,4,10,.8) 0%, rgba(7,4,10,.54) 45%, rgba(7,4,10,.14) 72%, rgba(7,4,10,0) 88%),
-    linear-gradient(180deg, rgba(7,4,10,.82) 0%, rgba(7,4,10,.04) 24%, rgba(7,4,10,.04) 62%, rgba(7,4,10,.92) 100%),
-    /* the brand burning in from the right, over the footage rather than under */
-    radial-gradient(70% 62% at 92% 44%, rgba(255,106,19,.32), rgba(214,59,6,.1) 46%, transparent 74%),
-    radial-gradient(56% 66% at 6% 66%, rgba(122,26,5,.26), transparent 70%)}
+    /* the pocket the copy sits in */
+    radial-gradient(64% 52% at 24% 82%, rgba(7,4,10,.88) 0%, rgba(7,4,10,.66) 38%, rgba(7,4,10,.22) 68%, rgba(7,4,10,0) 88%),
+    /* a floor of shadow across the bottom, so a long headline never runs off it */
+    linear-gradient(0deg, rgba(7,4,10,.92) 0%, rgba(7,4,10,.5) 22%, rgba(7,4,10,0) 52%),
+    linear-gradient(180deg, rgba(7,4,10,.8) 0%, rgba(7,4,10,.06) 26%, rgba(7,4,10,0) 55%),
+    /* the brand burning in from the top right, over the footage rather than under */
+    radial-gradient(66% 62% at 88% 22%, rgba(255,106,19,.34), rgba(214,59,6,.12) 46%, transparent 76%),
+    radial-gradient(50% 60% at 4% 40%, rgba(122,26,5,.22), transparent 72%)}
 
 .scanlines{position:absolute;inset:0;z-index:-1;pointer-events:none;opacity:.5;
   background-image:repeating-linear-gradient(0deg,rgba(0,0,0,.35) 0 1px,transparent 1px 3px)}
 .grain{position:absolute;inset:0;z-index:-1;pointer-events:none;opacity:.38;mix-blend-mode:overlay;
   background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='160' height='160' filter='url(%23n)' opacity='.5'/%3E%3C/svg%3E")}
 
-.hero-inner{position:relative;text-align:center;max-width:960px}
+.hero-inner{position:relative;text-align:left;max-width:min(880px,94vw)}
 
 .kicker{display:inline-flex;align-items:center;gap:10px;margin:0 0 26px;
   font-size:11.5px;letter-spacing:.24em;color:var(--orange);
@@ -199,12 +208,12 @@ body.scrolled .topbar{background:rgba(7,4,10,.9);border-bottom-color:var(--line-
 
 .hero h1{font-size:clamp(32px,5.6vw,70px);font-weight:700;letter-spacing:-.04em;text-wrap:balance;
   animation:rise .9s cubic-bezier(.2,.8,.2,1) .08s both}
-.lede{margin:clamp(20px,3vw,28px) auto 0;max-width:640px;font-size:clamp(16px,1.6vw,19px);
+.lede{margin:clamp(20px,3vw,28px) 0 0;max-width:600px;font-size:clamp(16px,1.6vw,19px);
   line-height:1.65;color:var(--ink-2);text-wrap:pretty;
   animation:rise .9s cubic-bezier(.2,.8,.2,1) .16s both}
-.cta{display:flex;gap:14px;justify-content:center;flex-wrap:wrap;margin-top:clamp(30px,4vw,40px);
+.cta{display:flex;gap:14px;justify-content:flex-start;flex-wrap:wrap;margin-top:clamp(30px,4vw,40px);
   animation:rise .9s cubic-bezier(.2,.8,.2,1) .24s both}
-.center-cta{margin-top:34px}
+.center-cta{margin-top:34px;justify-content:center}
 @keyframes rise{from{opacity:0;transform:translateY(18px)}to{opacity:1;transform:none}}
 
 /*
@@ -229,7 +238,7 @@ body.scrolled .topbar{background:rgba(7,4,10,.9);border-bottom-color:var(--line-
   90.5%{clip-path:inset(60% 0 22% 0)} 92.5%{clip-path:inset(20% 0 58% 0)}
   94.5%{clip-path:inset(80% 0 4% 0)}  96%{clip-path:inset(0 0 100% 0)}}
 
-.hero-hud{position:absolute;bottom:26px;left:clamp(16px,3vw,36px);display:flex;gap:22px;
+.hero-hud{position:absolute;bottom:26px;right:clamp(16px,3vw,36px);display:flex;gap:22px;
   font:11px/1 var(--mono);letter-spacing:.16em;color:var(--muted)}
 .hero-hud b{color:var(--orange);font-weight:600}
 @media (max-width:700px){ .hero-hud{display:none} }

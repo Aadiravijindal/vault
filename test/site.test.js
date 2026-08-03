@@ -11,10 +11,11 @@
  * Two things here need pixels, and were measured in a real browser rather than
  * asserted from source:
  *
- *   · white on the bare hero footage fell to 2.24:1 behind the right of the
- *     headline — under the 3:1 that AA asks of large text — which is why the
- *     scrim exists. With it, the worst of 135 samples across three viewports
- *     is 8.93:1.
+ *   · white on the bare hero footage fell to 2.24:1 behind the headline —
+ *     under the 3:1 that AA asks of large text — which is why the scrim
+ *     exists. With it, and with the copy moved to the bottom-left corner
+ *     where the footage is quietest, the worst of 135 samples across three
+ *     viewports is 14.08:1.
  *   · the mark's proportions were measured off the supplied artwork's 437x477
  *     bounding box, which pins R_HEX and R_OUTER exactly; see mark.mjs.
  *
@@ -79,7 +80,7 @@ describe('the page says what it promises to say', () => {
     // changes. These are the ones with a number in them.
     assert.match(text, /\b74\b/, '74 connectors');
     assert.match(text, /576 adversarial cases/);
-    assert.match(text, /\b932\b/, 'the test count');
+    assert.match(text, /\b933\b/, 'the test count');
     assert.match(text, /p50 80ms/);
     assert.match(text, /ten checks|10 checks/i);
   });
@@ -302,6 +303,30 @@ describe('it moves, and it can be told not to', () => {
     assert.match(html, /<div class="hero-scrim"/);
   });
 
+  test('the copy sits bottom-left, and the scrim follows it there', () => {
+    const hero = css.slice(css.indexOf('.hero{'), css.indexOf('}', css.indexOf('.hero{')));
+    assert.match(hero, /align-content:end/);
+    // `start`, not `left` — a right-to-left locale has to mirror the layout.
+    assert.match(hero, /justify-items:start/);
+    assert.ok(!/place-items:center/.test(hero), 'the hero no longer centres its copy');
+
+    const inner = css.slice(css.indexOf('.hero-inner{'), css.indexOf('}', css.indexOf('.hero-inner{')));
+    assert.match(inner, /text-align:left/);
+
+    // The dark pocket has to be under the copy, or the measurement that
+    // justifies it is measuring the wrong corner. Low x, high y.
+    const scrim = css.slice(css.indexOf('.hero-scrim{'), css.indexOf('}', css.indexOf('.hero-scrim{')));
+    const pocket = scrim.match(/radial-gradient\([^)]*?at (\d+)% (\d+)%, rgba\(7,4,10,\.8/);
+    assert.ok(pocket, 'the scrim should still open with the pocket the copy sits in');
+    assert.ok(Number(pocket[1]) < 40, `pocket is at ${pocket[1]}% across — it must be on the left`);
+    assert.ok(Number(pocket[2]) > 60, `pocket is at ${pocket[2]}% down — it must be at the bottom`);
+
+    // …and nothing else may claim that corner.
+    const hud = css.slice(css.indexOf('.hero-hud{'), css.indexOf('}', css.indexOf('.hero-hud{')));
+    assert.match(hud, /right:/, 'the HUD moved out of the corner the headline now occupies');
+    assert.ok(!/left:/.test(hud));
+  });
+
   test('every band has an animated ground', () => {
     for (const cls of ['bg-scan', 'bg-flow', 'bg-lines', 'bg-dots', 'bg-chain', 'bg-horizon']) {
       assert.match(html, new RegExp(`class="${cls}"`), `${cls} is missing from the page`);
@@ -400,17 +425,25 @@ describe('the footage that ships', () => {
     assert.ok(kb < 1400, `hero.webm is ${kb.toFixed(0)} kB — too heavy for a decorative loop`);
   });
 
-  test('the terminal in the footage shows real product output', () => {
-    // The screen says BLOCKED and HELD. If that text were hand-written it
-    // would be a marketing claim nobody re-checks; instead the generator runs
-    // demo/seed.js and puts its actual stdout on the screen, so the footage
-    // cannot outlive the behaviour it depicts.
+  test('the film grade is in the brand, and the print is damaged like film', () => {
+    // The look asked for is old stock: it needs the wander, the flicker and
+    // the physical damage, not just a sepia wash. Each of these is a separate
+    // effect and each one going missing changes the result.
     const gen = readFileSync(new URL('../site/video.mjs', import.meta.url), 'utf8');
-    assert.match(gen, /demo['"/\s,\]]*['"]?\s*,?\s*['"]seed\.js['"]|'seed\.js'/,
-      'the footage must be driven by demo/seed.js, not by a copy of its output');
-    assert.match(gen, /execFileSync/);
-    // …and it must not take the whole build down when the demo cannot run.
-    assert.match(gen, /fallback/i, 'a demo that fails must degrade, not fail the render');
+    for (const [what, re] of [
+      ['gate weave', /weaveX/],
+      ['lamp flicker', /flicker/],
+      ['grain', /__grain/],
+      ['scratches', /scratch/i],
+      ['halation', /halation|bloom/i],
+      ['the brand grade', /rgba\(255,106,19/]
+    ]) {
+      assert.match(gen, re, `the old-film pass is missing its ${what}`);
+    }
+    // Graded first, damaged second — the order it happens in reality. The
+    // other way round tints the scratches.
+    assert.ok(gen.indexOf("globalCompositeOperation = 'color'") < gen.indexOf('scratches, splices'),
+      'the grade must be applied before the damage, or the damage is graded too');
   });
 
   test('the generator is build-time only and says so', () => {

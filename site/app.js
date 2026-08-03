@@ -43,129 +43,132 @@ document.getElementById('year').textContent = new Date().getFullYear();
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   }
 
-  // The same room as the film, at a fraction of its detail. This has to paint
-  // in a single frame on a phone, so there are no reflections, no dust and no
-  // racks — just the three panels, their glow and the desk. It is a stand-in
-  // for the two seconds before the video plays, not a second implementation of
-  // it, and the composition matches so the crossfade is not a cut.
+  // The same room as the film, at a fraction of its detail: the aisle, the
+  // ceiling strips, the desks and the far glass, with no chairs, no monitors,
+  // no scratches and no grain. It has to paint in a single frame on a phone.
+  // It is a stand-in for the seconds before the video plays, not a second
+  // implementation of it, and the composition matches so the crossfade to the
+  // film is not a cut.
   function frame(now) {
     const t = ((now - t0) / 8000) % 1;           // an 8s loop, same as the film
     const S = H / 720;
-    const camX = Math.sin(t * TAU) * 14 * S;
-    const camY = Math.cos(t * TAU) * 7 * S;
-    const deskY = H * 0.72;
 
-    ctx.fillStyle = '#05030a';
+    const weaveX = (Math.sin(t * TAU * 3) * 0.6 + Math.sin(t * TAU * 7 + 1.3) * 0.34) * 3.4 * S;
+    const weaveY = (Math.cos(t * TAU * 2) * 0.5 + Math.sin(t * TAU * 5 + 0.7) * 0.3) * 2.8 * S;
+
+    ctx.fillStyle = '#040206';
     ctx.fillRect(0, 0, W, H);
+    ctx.save();
+    ctx.translate(weaveX, weaveY);
 
-    // racks, reduced to their status lights
-    for (let i = 0; i < 7; i++) {
-      const x = (i / 7) * W * 1.15 - W * 0.06;
-      const w = W * 0.085;
-      ctx.fillStyle = 'rgba(18,10,20,.85)';
-      ctx.fillRect(x + camX * 0.25, H * 0.06 + camY * 0.25, w, deskY - H * 0.06);
-      for (let j = 0; j < 10; j++) {
-        const y = H * 0.1 + j * (deskY - H * 0.14) / 10 + camY * 0.25;
-        const blink = 0.35 + 0.65 * (0.5 + 0.5 * Math.sin((t + rnd(i * 7 + j)) * TAU * 2));
-        ctx.fillStyle = rnd(i * 40 + j) > 0.55
-          ? `rgba(255,140,43,${0.1 + 0.35 * blink})`
-          : `rgba(90,110,130,${0.05 + 0.1 * blink})`;
-        ctx.fillRect(x + w * 0.14 + camX * 0.25, y, w * 0.1, 2.5 * S);
-      }
-    }
+    const VPX = W * 0.6; const HOR = H * 0.44; const FL = 700 * S;
+    const px = (X, Z) => VPX + (X * FL) / Z;
+    const py = (Y, Z) => HOR + (Y * FL) / Z;
+    const ROWS = 10; const SPACING = 2.6; const NEAR = 4.2;
+    const FAR = NEAR + ROWS * SPACING;
 
-    const panel = (x, y, w, h, shear, draw) => {
-      ctx.save();
-      ctx.translate(x + camX, y + camY);
-      ctx.transform(1, shear, 0, 1, 0, 0);
-      ctx.fillStyle = '#151020';
-      ctx.fillRect(-7 * S, -7 * S, w + 14 * S, h + 14 * S);
-      ctx.strokeStyle = 'rgba(255,150,70,.22)'; ctx.lineWidth = 1 * S;
-      ctx.strokeRect(-7 * S, -7 * S, w + 14 * S, h + 14 * S);
-      ctx.fillStyle = '#0b0814';
-      ctx.fillRect(0, 0, w, h);
-      ctx.save(); ctx.beginPath(); ctx.rect(0, 0, w, h); ctx.clip();
-      draw(w, h);
-      ctx.fillStyle = 'rgba(0,0,0,.22)';
-      for (let yy = 0; yy < h; yy += 3 * S) ctx.fillRect(0, yy, w, 1 * S);
-      ctx.restore();
-      ctx.restore();
+    const quad = (pts, fill) => {
+      ctx.beginPath();
+      ctx.moveTo(pts[0][0], pts[0][1]);
+      for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i][0], pts[i][1]);
+      ctx.closePath(); ctx.fillStyle = fill; ctx.fill();
     };
 
-    // centre: lines of output, as bars — the real text is in the film
-    const cw = W * 0.40; const ch = H * 0.44;
-    panel(W * 0.5 - cw / 2, H * 0.24, cw, ch, 0, (w, h) => {
-      const lh = 13 * S;
-      const rows = Math.ceil(h / lh);
-      const scrolled = t * rows;
-      for (let i = 0; i < rows + 1; i++) {
-        const k = (Math.floor(scrolled) + i) % 37;
-        const y = i * lh - (scrolled % 1) * lh + 8 * S;
-        const kind = rnd(k * 3) > 0.86 ? 'bad' : rnd(k * 3) > 0.72 ? 'warn' : 'ok';
-        ctx.fillStyle = kind === 'bad' ? 'rgba(255,110,110,.55)'
-          : kind === 'warn' ? 'rgba(255,190,90,.5)' : 'rgba(196,206,224,.32)';
-        ctx.fillRect(10 * S, y, (0.2 + rnd(k * 5) * 0.72) * (w - 20 * S), 4 * S);
-      }
-    });
-
-    // left: the walls
-    panel(W * 0.045, H * 0.30, W * 0.20, H * 0.34, 0.05, (w, h) => {
-      const n = 12;
-      for (let i = 0; i < n; i++) {
-        const y = 22 * S + i * (h - 30 * S) / n;
-        const hot = Math.floor(t * n) === i;
-        if (hot) { ctx.fillStyle = 'rgba(255,106,19,.14)'; ctx.fillRect(0, y - 5 * S, w, 14 * S); }
-        ctx.fillStyle = hot ? 'rgba(255,200,150,.8)' : 'rgba(180,190,210,.3)';
-        ctx.fillRect(9 * S, y, (0.3 + rnd(i) * 0.4) * w, 4 * S);
-        ctx.fillStyle = i % 3 === 0 ? 'rgba(255,110,110,.6)' : 'rgba(120,200,255,.35)';
-        ctx.fillRect(w - 34 * S, y - 1 * S, 26 * S, 5 * S);
-      }
-    });
-
-    // right: the ten checks
-    panel(W * 0.755, H * 0.30, W * 0.20, H * 0.34, -0.05, (w, h) => {
-      for (let i = 0; i < 10; i++) {
-        const y = 26 * S + i * (h - 36 * S) / 10;
-        const lit = (Math.sin((t * 2 - i / 13) * TAU) + 1) / 2;
-        ctx.fillStyle = `rgba(170,180,200,${0.2 + 0.25 * lit})`;
-        ctx.fillRect(9 * S, y, w * 0.34, 4 * S);
-        ctx.fillStyle = 'rgba(255,255,255,.05)';
-        ctx.fillRect(w * 0.52, y - 1 * S, w * 0.38, 6 * S);
-        ctx.fillStyle = `rgba(255,166,77,${0.3 + 0.65 * lit})`;
-        ctx.fillRect(w * 0.52, y - 1 * S, w * 0.38 * (0.35 + 0.65 * lit), 6 * S);
-      }
-    });
-
-    // the light they throw
-    ctx.save();
-    ctx.globalCompositeOperation = 'lighter';
-    for (const [gx, gy, gr, a] of [
-      [W * 0.5 + camX, H * 0.45 + camY, W * 0.42, 0.3],
-      [W * 0.145 + camX, H * 0.47 + camY, W * 0.2, 0.15],
-      [W * 0.855 + camX, H * 0.47 + camY, W * 0.2, 0.15]
-    ]) {
-      const g = ctx.createRadialGradient(gx, gy, 0, gx, gy, gr);
-      g.addColorStop(0, `rgba(255,140,43,${a})`);
-      g.addColorStop(0.45, `rgba(214,59,6,${a * 0.3})`);
-      g.addColorStop(1, 'rgba(255,106,19,0)');
-      ctx.fillStyle = g; ctx.beginPath(); ctx.arc(gx, gy, gr, 0, TAU); ctx.fill();
+    // the far glass and the city through it
+    const wz = FAR + 3;
+    const wl = px(-7.2, wz); const wr = px(7.2, wz);
+    const wt = py(-2.6, wz); const wb = py(1.9, wz);
+    quad([[wl, wt], [wr, wt], [wr, wb], [wl, wb]], 'rgba(10,7,18,1)');
+    for (let i = 0; i < 60; i++) {
+      const x = wl + rnd(i) * (wr - wl);
+      const y = wt + rnd(i + 300) * (wb - wt);
+      const tw = 0.55 + 0.45 * Math.sin((t + rnd(i + 600)) * TAU * 2);
+      ctx.fillStyle = rnd(i + 90) > 0.35
+        ? `rgba(255,168,90,${0.1 + 0.3 * tw})`
+        : `rgba(150,180,235,${0.06 + 0.18 * tw})`;
+      ctx.beginPath(); ctx.arc(x, y, (1.4 + rnd(i + 40) * 2.4) * S, 0, TAU); ctx.fill();
     }
+
+    // floor, and the pool of light down the aisle
+    quad([[0, py(1.55, NEAR)], [W, py(1.55, NEAR)], [wr, wb], [wl, wb]], 'rgba(9,6,12,1)');
+    const aisle = ctx.createLinearGradient(0, py(1.55, FAR), 0, H);
+    aisle.addColorStop(0, 'rgba(255,150,70,.16)');
+    aisle.addColorStop(0.45, 'rgba(255,140,60,.06)');
+    aisle.addColorStop(1, 'rgba(255,140,60,0)');
+    quad([
+      [px(-1.5, NEAR), py(1.55, NEAR)], [px(1.5, NEAR), py(1.55, NEAR)],
+      [px(1.5, FAR), py(1.55, FAR)], [px(-1.5, FAR), py(1.55, FAR)]
+    ], aisle);
+
+    const rows = [];
+    for (let i = 0; i < ROWS; i++) rows.push(NEAR + ((i + t) % ROWS) * SPACING);
+    rows.sort((a, b) => b - a);
+
+    for (const z of rows) {
+      const fade = Math.max(0, Math.min(1, (FAR - z) / FAR)) * 0.55 + 0.2;
+
+      for (const sx of [-1, 1]) {
+        const x1 = px(sx * 1.1, z); const x2 = px(sx * 3.4, z);
+        const yy = py(-2.35, z); const h = Math.max(1.2 * S, (0.09 * FL) / z);
+        const g = ctx.createLinearGradient(x1, yy, x2, yy);
+        g.addColorStop(0, `rgba(255,196,140,${0.1 * fade})`);
+        g.addColorStop(0.5, `rgba(255,222,180,${0.72 * fade})`);
+        g.addColorStop(1, `rgba(255,196,140,${0.1 * fade})`);
+        ctx.fillStyle = g;
+        ctx.fillRect(Math.min(x1, x2), yy, Math.abs(x2 - x1), h);
+      }
+
+      for (const sx of [-1, 1]) {
+        const zf = z + 1.35; const inner = sx * 1.45; const outer = sx * 4.5;
+        quad([
+          [px(inner, z), py(0.35, z)], [px(outer, z), py(0.35, z)],
+          [px(outer, z), py(1.1, z)], [px(inner, z), py(1.1, z)]
+        ], `rgba(28,19,32,${0.7 + 0.3 * fade})`);
+        quad([
+          [px(inner, z), py(1.1, z)], [px(outer, z), py(1.1, z)],
+          [px(outer, zf), py(1.1, zf)], [px(inner, zf), py(1.1, zf)]
+        ], `rgba(52,33,34,${0.45 + 0.55 * fade})`);
+        quad([
+          [px(inner, zf), py(1.1, zf)], [px(outer, zf), py(1.1, zf)],
+          [px(outer, zf), py(1.62, zf)], [px(inner, zf), py(1.62, zf)]
+        ], 'rgba(17,11,18,.95)');
+        ctx.strokeStyle = `rgba(255,178,110,${0.16 + 0.4 * fade})`;
+        ctx.lineWidth = Math.max(1, 1.4 * S);
+        ctx.beginPath();
+        ctx.moveTo(px(inner, zf), py(1.1, zf));
+        ctx.lineTo(px(outer, zf), py(1.1, zf));
+        ctx.stroke();
+      }
+    }
+
+    // haze, so depth reads
+    const haze = ctx.createLinearGradient(0, HOR - H * 0.2, 0, H);
+    haze.addColorStop(0, 'rgba(120,60,30,.1)');
+    haze.addColorStop(0.45, 'rgba(60,26,14,.05)');
+    haze.addColorStop(1, 'rgba(4,2,6,0)');
+    ctx.fillStyle = haze; ctx.fillRect(0, 0, W, H);
+
     ctx.restore();
 
-    // the desk
-    const desk = ctx.createLinearGradient(0, deskY, 0, H);
-    desk.addColorStop(0, 'rgba(26,14,10,.95)');
-    desk.addColorStop(1, 'rgba(8,4,8,1)');
-    ctx.fillStyle = desk;
-    ctx.fillRect(0, deskY, W, H - deskY);
-    ctx.fillStyle = 'rgba(255,140,43,.16)';
-    ctx.fillRect(0, deskY, W, 1.5 * S);
-
-    const v = ctx.createRadialGradient(W / 2, H / 2, H * 0.32, W / 2, H / 2, W * 0.78);
-    v.addColorStop(0, 'rgba(4,2,7,0)');
-    v.addColorStop(1, 'rgba(4,2,7,.8)');
-    ctx.fillStyle = v;
+    // the film grade, minus the damage — the CSS .grain layer over the hero
+    // supplies the texture, so this only has to carry the colour.
+    ctx.save();
+    ctx.globalCompositeOperation = 'color';
+    ctx.fillStyle = 'rgba(255,106,19,.34)';
     ctx.fillRect(0, 0, W, H);
+    ctx.restore();
+
+    const v = ctx.createRadialGradient(W * 0.62, H * 0.42, H * 0.18, W * 0.62, H * 0.42, W * 0.85);
+    v.addColorStop(0, 'rgba(4,2,7,0)');
+    v.addColorStop(0.55, 'rgba(4,2,7,.3)');
+    v.addColorStop(1, 'rgba(4,2,7,.9)');
+    ctx.fillStyle = v; ctx.fillRect(0, 0, W, H);
+
+    const pocket = ctx.createRadialGradient(W * 0.2, H * 0.82, 0, W * 0.2, H * 0.82, W * 0.62);
+    pocket.addColorStop(0, 'rgba(4,2,7,.5)');
+    pocket.addColorStop(0.6, 'rgba(4,2,7,.2)');
+    pocket.addColorStop(1, 'rgba(4,2,7,0)');
+    ctx.fillStyle = pocket; ctx.fillRect(0, 0, W, H);
 
     raf = requestAnimationFrame(frame);
   }

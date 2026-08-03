@@ -103,21 +103,33 @@ node site/video.mjs                                  # 1280x720, 24fps, 8s
 node site/video.mjs --w 960 --h 540 --seconds 6
 ```
 
-**The footage is the product, literally.** A workstation at night: three screens running
-Vault, the desk catching their light, racks blinking behind, dust in the glow. The centre
-screen is a terminal — and `video.mjs` **runs `demo/seed.js` at build time and puts its
-real output on it**, so every `BLOCKED` and `HELD` in the footage is an outcome the gate
-actually produced. There is no separate script to keep in sync and nothing on that screen
-claims a result the product does not deliver. If the demo cannot run, the render proceeds
-on a short fallback rather than failing.
+**An open-plan office, late.** Ceiling strips receding down the aisle, desks and chairs
+either side, the city out of focus through the far glass, dust turning in the light. The
+camera drifts forward. **Nobody is there** — which is the point, because the thing this
+product governs runs when nobody is.
 
-Licensed stock footage of somebody else's office was the alternative. It says nothing
-about this product and cannot be checked against it.
+The vanishing point sits right of centre and the near-left desks stay in shadow, because
+the copy lands in the bottom-left corner and has to sit on quiet ground. The composition
+and the layout are one decision, not two.
 
-The screens are drawn with a 1.5px blur. Sharp, the terminal is legible right behind the
-headline and competes with it; a background that reads as *screens with work on them*
-rather than *text you try to read* is the entire job. The bezels stay crisp, so the panels
-still read as hardware.
+Licensed stock footage of somebody else's office was the alternative. It cannot be
+recoloured when the brand shifts, cannot be composed around the copy, and has to be
+licensed for every place the site is served.
+
+### The old-film pass
+
+Applied to the whole frame after the room is drawn, in the order it happens in reality —
+**grade first, damage second**, because the other way round tints the scratches:
+
+| | |
+|---|---|
+| Grade | a `color` composite into the brand orange, then an `overlay` gradient ember→orange→violet |
+| Gate weave | the frame wanders in the gate; integer frequencies only, so the wander closes its own loop |
+| Lamp flicker | the exposure is never perfectly even |
+| Grain | rendered at 320px wide and scaled up with smoothing off — real grain is clumped, and a 1:1 noise field costs eight times as much to look like digital noise instead |
+| Scratches | vertical, alive for a run of frames, then the print moves on |
+| Dust | specks on the print, light and dark, new every frame |
+| Halation | the bloom old stock puts around every highlight |
 
 Frames are drawn in headless Chromium on a 2D canvas at a fixed timestep and piped
 straight into ffmpeg, so nothing large is ever held in memory or written between the two.
@@ -145,9 +157,9 @@ has decided it is wanted. `app.js` sets the source only when motion is not reduc
 connection is not metered, and `effectiveType` is not 2g; it reveals the video only on
 `canplay`.
 
-Underneath, a canvas draws the same room live — the three panels, their glow and the desk,
-without the reflections, the dust or the real text, because it has to paint in a single
-frame on a phone. It is a stand-in for the two seconds before the video plays, not a second
+Underneath, a canvas draws the same room live — the aisle, the ceiling strips, the desks
+and the far glass, without the chairs, the monitors, the scratches or the grain, because it
+has to paint in a single frame on a phone. It is a stand-in for the two seconds before the video plays, not a second
 implementation of it, and the composition matches so the crossfade is not a cut. There is
 never a black rectangle and never a stalled first frame. It stops when the hero scrolls out of view or the tab is
 hidden — a `requestAnimationFrame` loop running behind eight sections of content is a
@@ -156,11 +168,18 @@ composition is still there, it simply holds still.
 
 ### The hero, measured
 
+The copy sits in the **bottom-left corner**, and the scrim's dark pocket sits there with
+it, while the brand burns in from the top right — which is where the footage's vanishing
+point and its brightest thing, the far windows, happen to be.
+
 The scrim is not decoration. Measured in a browser with the text hidden, white on the bare
-footage fell to **2.24:1** at the right of the headline — under the 3:1 AA asks of large
-text, and it *looked* fine, which is the point. With the scrim in place, the worst of 135
-samples across three viewports is **8.93:1**. If you move the scrim, or brighten the
-footage, measure it again.
+footage fell to **2.24:1** behind the headline — under the 3:1 AA asks of large text, and
+it *looked* fine, which is the point. With the scrim in place and the copy in the quiet
+corner, the worst of 135 samples across three viewports is **14.08:1**. If you move the
+copy, the scrim, or the composition, measure it again.
+
+The hero's grid uses `align-content:end` and `justify-items:start` rather than absolute
+positioning, so a right-to-left locale mirrors the whole layout for free.
 
 ---
 

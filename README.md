@@ -18,7 +18,7 @@ Node 22+. No dependencies, no build step, no `npm install`.
 node demo/seed.js            # the whole product, narrated, in ~10 seconds
 node demo/seed.js --serve    # same, then opens the 16-screen UI
 node bin/vault.js serve      # empty vault, UI + API on :8080
-npm test                     # 932 tests
+npm test                     # 933 tests
 ```
 
 `demo/seed.js` seeds a fictional company, runs normal traffic through it, then runs
@@ -224,7 +224,7 @@ site/         the marketing site — no build step, no dependencies, nothing thi
               index.html · styles.css · app.js · hero.webm
               mark.mjs, video.mjs — build-time generators for the logo and the footage
 demo/         seed.js — the whole product, narrated
-test/         932 tests
+test/         933 tests
 ```
 
 Zero dependencies is a deliberate constraint, not a flex: the product has to run

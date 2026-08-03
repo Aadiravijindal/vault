@@ -7,19 +7,19 @@
  *
  * ── WHY THIS IS GENERATED AND NOT SHOT ──────────────────────────────────────
  *
- * A workstation at night, running Vault. Three screens: the terminal, the
- * folder map, the gate ticking through its ten checks. The desk catches their
- * light, racks blink somewhere behind, dust drifts through the glow.
+ * An open-plan office, late. Ceiling strips receding down the aisle, desks
+ * and chairs either side, the city out of focus through the far glass, dust
+ * turning in the light. The camera drifts forward. Nobody is there — which is
+ * the point, because the thing this product governs runs when nobody is.
  *
- * The terminal is the part that matters. Its text is not set dressing — this
- * script RUNS `demo/seed.js` at build time and puts its real output on the
- * screen, so every BLOCKED and HELD in the footage is an outcome the gate
- * actually produced. Licensed stock footage of somebody else's office says
- * nothing about this product and cannot be checked against it.
+ * Then the whole frame is put through an old-film pass: graded into the brand
+ * orange, gate weave, lamp flicker, clumped grain, scratches that live a few
+ * frames and move on, dust on the print, halation around every highlight.
  *
- * It is also reproducible. The palette comes from the same tokens as the site,
- * so when the brand shifts the footage shifts with it — one edit, one command,
- * rather than a re-shoot.
+ * It is reproducible. The palette comes from the same tokens as the site, so
+ * when the brand shifts the footage shifts with it — one edit, one command,
+ * rather than a re-shoot. Stock footage of somebody else's office can do none
+ * of that, and has to be licensed for every place the site is served.
  *
  * ── HOW ─────────────────────────────────────────────────────────────────────
  *
@@ -107,260 +107,301 @@ const FOLDERS = [
 /**
  * The scene, as a string evaluated inside the page.
  *
- * A workstation at night: three screens running Vault, the desk catching their
- * light, the room falling away behind. The centre screen is the real terminal
- * output captured above; the side screens are the folder map and the gate.
+ * An open-plan office, late, lit by its ceiling strips and the city through
+ * the far glass. The camera drifts down the aisle. Nobody is there — which is
+ * the point, because the thing this product governs runs when nobody is.
+ *
+ * The vanishing point sits right of centre and the near-left desks stay in
+ * shadow, because the copy lands in the bottom-left corner and has to sit on
+ * quiet ground.
  *
  * Everything is a function of `t` in [0,1) — never of a frame counter or a
- * clock — which is what makes the loop seamless: at t=1 every position, phase
- * and offset is back where it was at t=0. The camera drift uses a full sine
- * period for the same reason.
+ * clock — which is what makes the loop seamless. The dolly works by cycling
+ * each row of desks through a fixed set of depths, so at t=1 the room is
+ * arranged exactly as it was at t=0 even though it has moved the whole way.
  */
 const SCENE = `(W, H, t, LINES, FOLDERS) => {
   const c = document.getElementById('c').getContext('2d');
   const TAU = Math.PI * 2;
-  const S = H / 720;                       // everything is authored at 720p
+  const S = H / 720;
   const rnd = (i) => { const x = Math.sin(i * 127.1 + 311.7) * 43758.5453; return x - Math.floor(x); };
 
-  // ---- the camera ------------------------------------------------------
-  // A slow handheld drift. Small, and a whole sine period, so it closes.
-  const camX = Math.sin(t * TAU) * 14 * S;
-  const camY = Math.cos(t * TAU) * 7 * S;
+  // ── film: gate weave ──────────────────────────────────────────────────
+  // The frame never sits perfectly still in the gate of a real projector.
+  // Integer frequencies only, so the wander closes its own loop.
+  const weaveX = (Math.sin(t * TAU * 3) * 0.6 + Math.sin(t * TAU * 7 + 1.3) * 0.34) * 3.4 * S;
+  const weaveY = (Math.cos(t * TAU * 2) * 0.5 + Math.sin(t * TAU * 5 + 0.7) * 0.3) * 2.8 * S;
+  // …and the lamp never holds a perfectly even exposure either
+  const flicker = 1 + 0.055 * Math.sin(t * TAU * 11) + 0.03 * Math.sin(t * TAU * 23 + 2);
 
-  // ---- the room --------------------------------------------------------
-  c.fillStyle = '#05030a';
+  c.fillStyle = '#040206';
   c.fillRect(0, 0, W, H);
 
-  const deskY = H * 0.72;
-
-  // back wall: server racks, far off and barely lit
   c.save();
-  c.translate(camX * 0.25, camY * 0.25);
-  for (let i = 0; i < 7; i++) {
-    const x = (i / 7) * W * 1.15 - W * 0.06;
-    const w = W * 0.085;
-    c.fillStyle = 'rgba(18,10,20,.85)';
-    c.fillRect(x, H * 0.06, w, deskY - H * 0.06);
-    // rack status lights — the only thing alive back there
-    for (let j = 0; j < 16; j++) {
-      const y = H * 0.1 + j * (deskY - H * 0.14) / 16;
-      const on = rnd(i * 40 + j) > 0.55;
-      const blink = 0.35 + 0.65 * (0.5 + 0.5 * Math.sin((t * (1 + rnd(i * 7 + j)) + rnd(j * 3 + i)) * TAU * 2));
-      c.fillStyle = on
-        ? 'rgba(255,140,43,' + (0.1 + 0.35 * blink) + ')'
-        : 'rgba(90,110,130,' + (0.05 + 0.1 * blink) + ')';
-      c.fillRect(x + w * 0.14, y, w * 0.1, 2.5 * S);
-      c.fillRect(x + w * 0.34, y, w * 0.06, 2.5 * S);
-    }
+  c.translate(weaveX, weaveY);
+  c.globalAlpha = flicker > 1 ? 1 : flicker;
+
+  // ── the room ──────────────────────────────────────────────────────────
+  const VPX = W * 0.6;            // vanishing point, right of centre
+  const HOR = H * 0.44;
+  const FL = 700 * S;             // focal length
+  const px = (X, Z) => VPX + (X * FL) / Z;
+  const py = (Y, Z) => HOR + (Y * FL) / Z;
+
+  const ROWS = 10;
+  const SPACING = 2.6;
+  const NEAR = 4.2;               // far enough back that the near row is a
+                                  // desk rather than a wall across the frame
+  const FAR = NEAR + ROWS * SPACING;
+
+  const quad = (pts, fill) => {
+    c.beginPath();
+    c.moveTo(pts[0][0], pts[0][1]);
+    for (let i = 1; i < pts.length; i++) c.lineTo(pts[i][0], pts[i][1]);
+    c.closePath();
+    c.fillStyle = fill; c.fill();
+  };
+
+  // ---- the far glass, and the city behind it ---------------------------
+  const wz = FAR + 3;
+  const wl = px(-7.2, wz), wr = px(7.2, wz);
+  const wt = py(-2.6, wz), wb = py(1.9, wz);
+  quad([[wl, wt], [wr, wt], [wr, wb], [wl, wb]], 'rgba(10,7,18,1)');
+
+  // city bokeh — out of focus, so it is the one thing allowed to be bright
+  c.save();
+  c.beginPath(); c.rect(wl, wt, wr - wl, wb - wt); c.clip();
+  c.filter = 'blur(' + (2.4 * S).toFixed(2) + 'px)';
+  for (let i = 0; i < 120; i++) {
+    const x = wl + rnd(i) * (wr - wl);
+    const y = wt + rnd(i + 300) * (wb - wt);
+    const tw = 0.55 + 0.45 * Math.sin((t + rnd(i + 600)) * TAU * (1 + Math.floor(rnd(i + 800) * 3)));
+    const warm = rnd(i + 90) > 0.35;
+    c.fillStyle = warm
+      ? 'rgba(255,168,90,' + (0.1 + 0.3 * tw) + ')'
+      : 'rgba(150,180,235,' + (0.06 + 0.18 * tw) + ')';
+    c.beginPath(); c.arc(x, y, (0.8 + rnd(i + 40) * 2.4) * S, 0, TAU); c.fill();
   }
+  c.filter = 'none';
   c.restore();
 
-  // ---- a screen -------------------------------------------------------
-  // Side screens are sheared rather than projected: canvas 2D is affine only,
-  // and at background scale, under a scrim, a shear reads as an angled panel
-  // while a true projective warp would cost a per-pixel pass per frame.
-  function screen(x, y, w, h, shear, draw) {
-    c.save();
-    c.translate(x + camX, y + camY);
-    c.transform(1, shear, 0, 1, 0, 0);
-
-    // bezel, then a rim catching the glow of its own screen, then glass
-    c.fillStyle = '#151020';
-    c.fillRect(-7 * S, -7 * S, w + 14 * S, h + 14 * S);
-    c.strokeStyle = 'rgba(255,150,70,.22)';
-    c.lineWidth = 1 * S;
-    c.strokeRect(-7 * S, -7 * S, w + 14 * S, h + 14 * S);
-    c.fillStyle = '#0b0814';
-    c.fillRect(0, 0, w, h);
-
-    c.save();
-    c.beginPath(); c.rect(0, 0, w, h); c.clip();
-    // Shallow depth of field. Sharp, the terminal is legible right behind the
-    // headline and competes with it; a background that reads as "screens with
-    // work on them" rather than "text you try to read" is the whole job. The
-    // blur is applied to the content only, so the bezels stay crisp and the
-    // panels still read as hardware.
-    c.filter = 'blur(' + (1.5 * S).toFixed(2) + 'px)';
-    draw(w, h);
-    c.filter = 'none';
-
-    // scanlines and a faint CRT curve of light across the glass
-    c.fillStyle = 'rgba(0,0,0,.22)';
-    for (let yy = 0; yy < h; yy += 3 * S) c.fillRect(0, yy, w, 1 * S);
-    const sheen = c.createLinearGradient(0, 0, w, h);
-    sheen.addColorStop(0, 'rgba(180,200,255,.05)');
-    sheen.addColorStop(0.5, 'rgba(180,200,255,0)');
-    sheen.addColorStop(1, 'rgba(255,140,43,.04)');
-    c.fillStyle = sheen; c.fillRect(0, 0, w, h);
-    c.restore();
-
-    c.restore();
+  // mullions
+  c.strokeStyle = 'rgba(6,4,10,.9)'; c.lineWidth = 2.5 * S;
+  for (let i = -3; i <= 3; i++) {
+    const x = px(i * 2.4, wz);
+    c.beginPath(); c.moveTo(x, wt); c.lineTo(x, wb); c.stroke();
   }
 
-  // ---- centre screen: the real terminal --------------------------------
-  const cw = W * 0.40, ch = H * 0.44;
-  const cx = W * 0.5 - cw / 2, cy = H * 0.24;
+  // ---- floor ------------------------------------------------------------
+  quad([[0, py(1.55, NEAR)], [W, py(1.55, NEAR)], [wr, wb], [wl, wb]], 'rgba(9,6,12,1)');
+  // the aisle catches the strips overhead — the one thing leading the eye in
+  const aisle = c.createLinearGradient(0, py(1.55, FAR), 0, H);
+  aisle.addColorStop(0, 'rgba(255,150,70,.16)');
+  aisle.addColorStop(0.45, 'rgba(255,140,60,.06)');
+  aisle.addColorStop(1, 'rgba(255,140,60,0)');
+  quad([
+    [px(-1.5, NEAR), py(1.55, NEAR)], [px(1.5, NEAR), py(1.55, NEAR)],
+    [px(1.5, FAR), py(1.55, FAR)], [px(-1.5, FAR), py(1.55, FAR)]
+  ], aisle);
 
-  screen(cx, cy, cw, ch, 0, (w, h) => {
-    c.fillStyle = '#08050d'; c.fillRect(0, 0, w, h);
-    const lh = 13 * S;
-    const rows = Math.ceil(h / lh) + 2;
-    // scroll exactly one line per 1/LINES.length of the loop, so the text is
-    // back where it started at t=1
-    const scrolled = t * LINES.length;
-    const first = Math.floor(scrolled);
-    const frac = scrolled - first;
+  // ---- desks, ceiling lights and chairs, far to near --------------------
+  // Each row cycles through the same set of depths as t advances, so the
+  // dolly is continuous and the loop is exact.
+  const rows = [];
+  for (let i = 0; i < ROWS; i++) rows.push(NEAR + ((i + t) % ROWS) * SPACING);
+  rows.sort((a, b) => b - a);
 
-    c.font = (10.5 * S).toFixed(1) + 'px ui-monospace, monospace';
-    c.textBaseline = 'top';
-    for (let i = 0; i < rows; i++) {
-      const line = LINES[(first + i) % LINES.length];
-      const y = i * lh - frac * lh + 8 * S;
-      // colour by what the line actually says — these are real outcomes
-      let col = 'rgba(196,206,224,.42)';
-      if (/BLOCKED|blocked|STOPPED|refused|✕/.test(line)) col = 'rgba(255,110,110,.62)';
-      else if (/✓|OK|verified|written|stopped before/.test(line)) col = 'rgba(120,230,160,.55)';
-      else if (/HELD|held|⚠|review/.test(line)) col = 'rgba(255,190,90,.6)';
-      else if (/^[A-Z0-9 ·—-]+$/.test(line.trim()) && line.trim().length > 4) col = 'rgba(255,166,77,.66)';
-      c.fillStyle = col;
-      c.fillText(line.slice(0, 78), 10 * S, y);
+  for (const z of rows) {
+    const fade = Math.max(0, Math.min(1, (FAR - z) / FAR)) * 0.55 + 0.2;
+
+    // ceiling strip lights, two runs
+    for (const sx of [-1, 1]) {
+      const x1 = px(sx * 1.1, z), x2 = px(sx * 3.4, z);
+      const yy = py(-2.35, z), h = Math.max(1.2 * S, (0.09 * FL) / z);
+      const g = c.createLinearGradient(x1, yy, x2, yy);
+      g.addColorStop(0, 'rgba(255,196,140,' + (0.1 * fade) + ')');
+      g.addColorStop(0.5, 'rgba(255,222,180,' + (0.72 * fade) + ')');
+      g.addColorStop(1, 'rgba(255,196,140,' + (0.1 * fade) + ')');
+      c.fillStyle = g;
+      c.fillRect(Math.min(x1, x2), yy, Math.abs(x2 - x1), h);
+      // halation — the bloom old stock puts around any highlight
+      c.save();
+      c.globalCompositeOperation = 'lighter';
+      const bx = (x1 + x2) / 2;
+      const bloom = c.createRadialGradient(bx, yy, 0, bx, yy, Math.abs(x2 - x1) * 0.9);
+      bloom.addColorStop(0, 'rgba(255,170,90,' + (0.16 * fade) + ')');
+      bloom.addColorStop(1, 'rgba(255,140,43,0)');
+      c.fillStyle = bloom;
+      c.fillRect(bx - Math.abs(x2 - x1), yy - Math.abs(x2 - x1) * 0.5, Math.abs(x2 - x1) * 2, Math.abs(x2 - x1));
+      c.restore();
     }
-    // prompt caret, blinking on the loop
-    if ((t * 8) % 1 < 0.55) {
-      c.fillStyle = 'rgba(255,166,77,.9)';
-      c.fillRect(10 * S, h - 16 * S, 7 * S, 11 * S);
+
+    for (const sx of [-1, 1]) {
+      const zf = z + 1.35;
+      const inner = sx * 1.45, outer = sx * 4.5;
+
+      // partition behind the desk
+      quad([
+        [px(inner, z), py(0.35, z)], [px(outer, z), py(0.35, z)],
+        [px(outer, z), py(1.1, z)], [px(inner, z), py(1.1, z)]
+      ], 'rgba(28,19,32,' + (0.7 + 0.3 * fade) + ')');
+
+      // desk top, then its front edge
+      quad([
+        [px(inner, z), py(1.1, z)], [px(outer, z), py(1.1, z)],
+        [px(outer, zf), py(1.1, zf)], [px(inner, zf), py(1.1, zf)]
+      ], 'rgba(52,33,34,' + (0.45 + 0.55 * fade) + ')');
+      quad([
+        [px(inner, zf), py(1.1, zf)], [px(outer, zf), py(1.1, zf)],
+        [px(outer, zf), py(1.62, zf)], [px(inner, zf), py(1.62, zf)]
+      ], 'rgba(17,11,18,.95)');
+
+      // the strips catch the front edge; one bright line does more to say
+      // "desk" than any amount of shading on the surface
+      c.strokeStyle = 'rgba(255,178,110,' + (0.16 + 0.4 * fade) + ')';
+      c.lineWidth = Math.max(1, 1.4 * S);
+      c.beginPath();
+      c.moveTo(px(inner, zf), py(1.1, zf));
+      c.lineTo(px(outer, zf), py(1.1, zf));
+      c.stroke();
+
+      // the light the strips throw along the desk
+      const dl = c.createLinearGradient(px(inner, z), py(1.1, z), px(inner, zf), py(1.1, zf));
+      dl.addColorStop(0, 'rgba(255,150,70,' + (0.12 * fade) + ')');
+      dl.addColorStop(1, 'rgba(255,150,70,0)');
+      quad([
+        [px(inner, z), py(1.1, z)], [px(outer, z), py(1.1, z)],
+        [px(outer, zf), py(1.1, zf)], [px(inner, zf), py(1.1, zf)]
+      ], dl);
+
+      // a monitor, dark or barely awake — this is a workspace, not a console
+      const mx = (inner + outer) / 2;
+      const mw = Math.abs(px(mx + 0.62, z) - px(mx - 0.62, z));
+      const mh = (0.62 * FL) / z;
+      const mxs = px(mx, z) - mw / 2, mys = py(1.1, z) - mh;
+      quad([[mxs, mys], [mxs + mw, mys], [mxs + mw, mys + mh], [mxs, mys + mh]], 'rgba(10,7,14,.96)');
+      if (rnd(Math.round(z * 13) + (sx > 0 ? 7 : 0)) > 0.55) {
+        c.fillStyle = 'rgba(255,150,70,' + (0.1 + 0.06 * Math.sin((t + z) * TAU * 2)) * fade + ')';
+        c.fillRect(mxs + mw * 0.06, mys + mh * 0.1, mw * 0.88, mh * 0.74);
+      }
+
+      // chair
+      const chx = px(mx - sx * 0.15, zf + 0.9);
+      const chw = Math.abs(px(0.5, zf + 0.9) - px(0, zf + 0.9));
+      const chh = (0.85 * FL) / (zf + 0.9);
+      c.fillStyle = 'rgba(30,20,28,' + (0.6 + 0.35 * fade) + ')';
+      c.beginPath();
+      c.ellipse(chx, py(1.12, zf + 0.9) - chh * 0.2, chw, chh * 0.3, 0, 0, TAU);
+      c.fill();
+      // the back: a solid mass, no outline. An outlined rectangle at this
+      // scale reads as a picture frame rather than a chair.
+      c.beginPath();
+      c.ellipse(chx, py(1.12, zf + 0.9) - chh * 0.62, chw * 0.72, chh * 0.42, 0, 0, TAU);
+      c.fill();
     }
-  });
-
-  // ---- left screen: the folder map -------------------------------------
-  const lw = W * 0.20, lh2 = H * 0.34;
-  screen(W * 0.045, H * 0.30, lw, lh2, 0.05, (w, h) => {
-    c.fillStyle = '#080610'; c.fillRect(0, 0, w, h);
-    c.font = (8.5 * S).toFixed(1) + 'px ui-monospace, monospace';
-    c.textBaseline = 'middle';
-    c.fillStyle = 'rgba(255,166,77,.85)';
-    c.fillText('FOLDERS & WALLS', 9 * S, 12 * S);
-    const rowH = (h - 26 * S) / FOLDERS.length;
-    for (let i = 0; i < FOLDERS.length; i++) {
-      const y = 26 * S + i * rowH + rowH / 2;
-      // one row highlights at a time, travelling down the list over the loop
-      const hot = Math.floor(t * FOLDERS.length) === i;
-      if (hot) { c.fillStyle = 'rgba(255,106,19,.14)'; c.fillRect(0, y - rowH / 2, w, rowH); }
-      c.fillStyle = hot ? 'rgba(255,200,150,.95)' : 'rgba(180,190,210,.5)';
-      c.fillText(FOLDERS[i][0], 9 * S, y);
-      c.fillStyle = FOLDERS[i][1] === 'hard' ? 'rgba(255,110,110,.75)' : 'rgba(120,200,255,.45)';
-      c.fillRect(w - 34 * S, y - 2.5 * S, 26 * S * (FOLDERS[i][1] === 'hard' ? 1 : 0.55), 5 * S);
-    }
-  });
-
-  // ---- right screen: the gate ------------------------------------------
-  const rw = W * 0.20, rh = H * 0.34;
-  screen(W * 0.755, H * 0.30, rw, rh, -0.05, (w, h) => {
-    c.fillStyle = '#080610'; c.fillRect(0, 0, w, h);
-    c.font = (8.5 * S).toFixed(1) + 'px ui-monospace, monospace';
-    c.textBaseline = 'middle';
-    c.fillStyle = 'rgba(255,166,77,.85)';
-    c.fillText('GATE · 10 CHECKS', 9 * S, 12 * S);
-
-    const names = ['identity', 'channel', 'source', 'private', 'label',
-                   'walls', 'instruction', 'policy', 'reconcile', 'consent'];
-    for (let i = 0; i < 10; i++) {
-      const y = 30 * S + i * (h - 40 * S) / 10;
-      const lit = (Math.sin((t * 2 - i / 13) * TAU) + 1) / 2;
-      c.fillStyle = 'rgba(170,180,200,' + (0.3 + 0.35 * lit) + ')';
-      c.fillText(names[i], 9 * S, y);
-      const bx = w * 0.52, bw = w * 0.38;
-      c.fillStyle = 'rgba(255,255,255,.05)';
-      c.fillRect(bx, y - 3 * S, bw, 6 * S);
-      c.fillStyle = 'rgba(255,166,77,' + (0.3 + 0.65 * lit) + ')';
-      c.fillRect(bx, y - 3 * S, bw * (0.35 + 0.65 * lit), 6 * S);
-    }
-  });
-
-  // ---- the light the screens throw -------------------------------------
-  // Screens are the only source in the room, so everything else is lit by
-  // them: bloom in the air, a pool on the desk, and a reflection below.
-  c.save();
-  c.globalCompositeOperation = 'lighter';
-  for (const [gx, gy, gr, a] of [
-    [W * 0.5 + camX, H * 0.43 + camY, W * 0.42, 0.3],
-    [W * 0.145 + camX, H * 0.47 + camY, W * 0.2, 0.15],
-    [W * 0.855 + camX, H * 0.47 + camY, W * 0.2, 0.15]
-  ]) {
-    const g = c.createRadialGradient(gx, gy, 0, gx, gy, gr);
-    g.addColorStop(0, 'rgba(255,140,43,' + a + ')');
-    g.addColorStop(0.45, 'rgba(214,59,6,' + a * 0.3 + ')');
-    g.addColorStop(1, 'rgba(255,106,19,0)');
-    c.fillStyle = g; c.beginPath(); c.arc(gx, gy, gr, 0, TAU); c.fill();
   }
-  c.restore();
 
-  // ---- the desk --------------------------------------------------------
-  const desk = c.createLinearGradient(0, deskY, 0, H);
-  desk.addColorStop(0, 'rgba(26,14,10,.95)');
-  desk.addColorStop(1, 'rgba(8,4,8,1)');
-  c.fillStyle = desk;
-  c.fillRect(0, deskY, W, H - deskY);
-  // the edge catches the light
-  c.fillStyle = 'rgba(255,140,43,.16)';
-  c.fillRect(0, deskY, W, 1.5 * S);
+  // ---- haze in the air, so depth reads ---------------------------------
+  const haze = c.createLinearGradient(0, HOR - H * 0.2, 0, H);
+  haze.addColorStop(0, 'rgba(120,60,30,.1)');
+  haze.addColorStop(0.45, 'rgba(60,26,14,.05)');
+  haze.addColorStop(1, 'rgba(4,2,6,0)');
+  c.fillStyle = haze; c.fillRect(0, 0, W, H);
 
-  // Reflection: the frame above the desk, drawn back onto it flipped and
-  // squashed. Cheaper and far more convincing than re-drawing each screen —
-  // it picks up the bezels, the glow and the text without knowing about any
-  // of them, and a real desk reflects all three.
-  const reflTop = Math.max(0, cy - 20 * S);
-  const reflH = deskY - reflTop;
-  c.save();
-  c.globalAlpha = 0.2;
-  c.translate(0, deskY);
-  c.scale(1, -0.5);
-  // Destination y is negative: after scale(1,-0.5) a local y of Y lands at
-  // deskY - 0.5*Y, so the strip has to be drawn at -reflH..0 to end up BELOW
-  // the desk edge rather than back over the screens.
-  c.drawImage(c.canvas, 0, reflTop, W, reflH, 0, -reflH, W, reflH);
-  c.restore();
-  // fade it out with distance, or it reads as a mirror rather than a desk
-  const fade = c.createLinearGradient(0, deskY, 0, H);
-  fade.addColorStop(0, 'rgba(8,4,8,.25)');
-  fade.addColorStop(0.55, 'rgba(8,4,8,.85)');
-  fade.addColorStop(1, 'rgba(8,4,8,1)');
-  c.fillStyle = fade;
-  c.fillRect(0, deskY, W, H - deskY);
-
-  // a keyboard, catching the same light — the one object that says "somebody
-  // works here" rather than "this is a render"
-  c.save();
-  c.translate(camX * 1.4, camY * 1.4);
-  const kw = W * 0.26, kh = H * 0.055, kx = W * 0.5 - kw / 2, ky = deskY + H * 0.11;
-  c.fillStyle = 'rgba(13,8,15,.92)';
-  c.fillRect(kx, ky, kw, kh);
-  c.strokeStyle = 'rgba(255,150,70,.1)'; c.lineWidth = 1 * S;
-  c.strokeRect(kx, ky, kw, kh);
-  for (let r = 0; r < 4; r++) for (let k = 0; k < 22; k++) {
-    c.fillStyle = 'rgba(255,170,110,.035)';
-    c.fillRect(kx + 6 * S + k * (kw - 12 * S) / 22, ky + 5 * S + r * (kh - 10 * S) / 4,
-               (kw - 12 * S) / 22 - 2 * S, (kh - 10 * S) / 4 - 2 * S);
-  }
-  c.restore();
-
-  // ---- dust in the light ------------------------------------------------
-  for (let i = 0; i < 55; i++) {
+  // ---- dust in the beams ------------------------------------------------
+  for (let i = 0; i < 70; i++) {
     const drift = (t + rnd(i + 700)) % 1;
-    const x = rnd(i) * W + Math.sin((drift + rnd(i + 30)) * TAU) * 26 * S;
-    const y = (rnd(i + 200) + drift * 0.16) % 1 * H;
-    const a = 0.05 + 0.16 * (0.5 + 0.5 * Math.sin((drift + rnd(i + 90)) * TAU));
-    c.fillStyle = 'rgba(255,190,140,' + a + ')';
-    c.beginPath(); c.arc(x, y, (0.7 + rnd(i + 400)) * S, 0, TAU); c.fill();
+    const x = rnd(i) * W + Math.sin((drift + rnd(i + 30)) * TAU) * 30 * S;
+    const y = ((rnd(i + 200) + drift * 0.12) % 1) * H;
+    const a = 0.04 + 0.14 * (0.5 + 0.5 * Math.sin((drift + rnd(i + 90)) * TAU));
+    c.fillStyle = 'rgba(255,200,150,' + a + ')';
+    c.beginPath(); c.arc(x, y, (0.6 + rnd(i + 400)) * S, 0, TAU); c.fill();
+  }
+
+  c.restore();  // gate weave
+
+  // ══ the old-film pass ═════════════════════════════════════════════════
+  // Grade first, then the physical damage on top of it — that is the order it
+  // happens in reality, and doing it the other way tints the scratches.
+
+  // ---- grade: push the whole frame towards the brand ---------------------
+  c.save();
+  c.globalCompositeOperation = 'color';
+  c.fillStyle = 'rgba(255,106,19,.34)';
+  c.fillRect(0, 0, W, H);
+  c.restore();
+
+  c.save();
+  c.globalCompositeOperation = 'overlay';
+  const grade = c.createLinearGradient(0, 0, W, H);
+  grade.addColorStop(0, 'rgba(122,26,5,.3)');
+  grade.addColorStop(0.5, 'rgba(255,106,19,.1)');
+  grade.addColorStop(1, 'rgba(20,8,24,.38)');
+  c.fillStyle = grade;
+  c.fillRect(0, 0, W, H);
+  c.restore();
+
+  // ---- grain -----------------------------------------------------------
+  // Rendered small and scaled up with smoothing off. Real grain is clumped,
+  // not per-pixel, and a 1:1 noise field costs eight times as much to produce
+  // for a result that looks like digital noise rather than film.
+  const gw = 320, gh = Math.round(320 * H / W);
+  if (!window.__grain) {
+    window.__grain = document.createElement('canvas');
+    window.__grain.width = gw; window.__grain.height = gh;
+  }
+  const gc = window.__grain.getContext('2d');
+  const img = gc.createImageData(gw, gh);
+  const seed = Math.floor(t * 997);
+  for (let i = 0; i < gw * gh; i++) {
+    const n = (Math.sin((i + seed * 7919) * 12.9898) * 43758.5453);
+    const v = (n - Math.floor(n)) * 255;
+    img.data[i * 4] = img.data[i * 4 + 1] = img.data[i * 4 + 2] = v;
+    img.data[i * 4 + 3] = 30;
+  }
+  gc.putImageData(img, 0, 0);
+  c.save();
+  c.globalCompositeOperation = 'overlay';
+  c.imageSmoothingEnabled = false;
+  c.drawImage(window.__grain, 0, 0, W, H);
+  c.restore();
+
+  // ---- scratches, splices and dust on the print -------------------------
+  const framesPerLoop = 192;
+  const fi = Math.floor(t * framesPerLoop);
+  for (let s = 0; s < 3; s++) {
+    // each scratch lives for a run of frames, then the print moves on
+    const life = Math.floor(rnd(s * 31 + Math.floor(fi / 11)) * 3);
+    if (life === 0) continue;
+    const x = rnd(s * 17 + Math.floor(fi / 11) * 3) * W + Math.sin(fi * 0.7 + s) * 1.5 * S;
+    const a = 0.05 + 0.1 * rnd(s * 53 + fi);
+    c.fillStyle = 'rgba(255,225,200,' + a + ')';
+    c.fillRect(x, 0, (0.6 + rnd(s * 7 + fi) * 0.9) * S, H);
+  }
+  for (let d = 0; d < 9; d++) {
+    if (rnd(d * 91 + fi * 3) < 0.6) continue;
+    const x = rnd(d * 13 + fi * 7) * W;
+    const y = rnd(d * 29 + fi * 11) * H;
+    c.fillStyle = rnd(d + fi) > 0.5 ? 'rgba(20,10,6,.5)' : 'rgba(255,230,205,.28)';
+    c.fillRect(x, y, (1 + rnd(d * 3 + fi) * 2.5) * S, (1 + rnd(d * 5 + fi) * 4) * S);
   }
 
   // ---- vignette ---------------------------------------------------------
-  // Lighter than it looks like it should be: the page lays its own scrim over
-  // this, and two stacked vignettes turn the footage into a brown smear.
-  const v = c.createRadialGradient(W / 2, H / 2, H * 0.32, W / 2, H / 2, W * 0.78);
+  // The copy sits bottom-left, so the corner opposite the vanishing point is
+  // pulled down hardest — the type gets ground, the room keeps its depth.
+  const v = c.createRadialGradient(W * 0.62, H * 0.42, H * 0.18, W * 0.62, H * 0.42, W * 0.85);
   v.addColorStop(0, 'rgba(4,2,7,0)');
-  v.addColorStop(1, 'rgba(4,2,7,.8)');
+  v.addColorStop(0.55, 'rgba(4,2,7,.3)');
+  v.addColorStop(1, 'rgba(4,2,7,.9)');
   c.fillStyle = v;
+  c.fillRect(0, 0, W, H);
+
+  // and one more pull into the bottom-left, where the headline lands
+  const pocket = c.createRadialGradient(W * 0.2, H * 0.82, 0, W * 0.2, H * 0.82, W * 0.62);
+  pocket.addColorStop(0, 'rgba(4,2,7,.5)');
+  pocket.addColorStop(0.6, 'rgba(4,2,7,.2)');
+  pocket.addColorStop(1, 'rgba(4,2,7,0)');
+  c.fillStyle = pocket;
   c.fillRect(0, 0, W, H);
 }`;
 
