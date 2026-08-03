@@ -18,7 +18,7 @@ Node 22+. No dependencies, no build step, no `npm install`.
 node demo/seed.js            # the whole product, narrated, in ~10 seconds
 node demo/seed.js --serve    # same, then opens the 16-screen UI
 node bin/vault.js serve      # empty vault, UI + API on :8080
-npm test                     # 933 tests
+npm test                     # 958 tests
 ```
 
 `demo/seed.js` seeds a fictional company, runs normal traffic through it, then runs
@@ -219,12 +219,13 @@ src/
   insure/     the carrier evidence pack                 value/     cost, health, patterns
   continuity/ mirror, escrow, self-host                 search/    L7 Vault Search
 bin/          vault.js (CLI) · vault-verify.js (standalone verifier)
+              vault-contact.js — the site's contact endpoint (holds the address, not the page)
               vault-model.js · vault-organize.js · vault-journal.js · vault-redteam.js
 site/         the marketing site — no build step, no dependencies, nothing third-party
               index.html · styles.css · app.js · hero.webm
               mark.mjs, video.mjs — build-time generators for the logo and the footage
 demo/         seed.js — the whole product, narrated
-test/         933 tests
+test/         958 tests
 ```
 
 Zero dependencies is a deliberate constraint, not a flex: the product has to run

@@ -58,6 +58,19 @@
 }
 
 *{box-sizing:border-box}
+
+/*
+  `hidden` beats any display we set anywhere. This is not belt-and-braces — it
+  is a bug fix. The drawer carries `display:grid`, which outranks the browser's
+  own `[hidden]{display:none}`, so the CLOSED menu stayed a full-screen fixed
+  overlay at z-index 24 with opacity 0: invisible, but on top of the entire
+  page. Every click landed on it, and any click that happened to fall on one of
+  the eight invisible nav links navigated to that section — which read as the
+  page jumping somewhere at random. Scoping the fix to `.drawer` would leave
+  the same trap set for the next component that hides itself.
+*/
+[hidden]{display:none !important}
+
 html{scroll-behavior:smooth}
 body{
   margin:0;background:var(--black-2);color:var(--ink-2);
@@ -276,9 +289,82 @@ body.scrolled .topbar{background:rgba(7,4,10,.9);border-bottom-color:var(--line-
 .sub{margin:22px 0 0;max-width:68ch;color:var(--muted);font-size:clamp(15px,1.5vw,17px);text-wrap:pretty}
 .center .sub{margin-inline:auto}
 
-.reveal{opacity:0;transform:translateY(26px);
-  transition:opacity .75s ease var(--d,0ms),transform .75s cubic-bezier(.2,.8,.2,1) var(--d,0ms)}
-.reveal.in{opacity:1;transform:none}
+/*
+  Scroll reveal, in three dimensions.
+
+  The perspective lives on the SECTION, not on each element, so everything in a
+  band shares one vanishing point and swings in like panels of the same object
+  rather than a dozen independent cards. Perspective set per-element gives each
+  one its own camera, which is the tell that makes CSS 3D look cheap.
+
+  `transform-style:preserve-3d` and a z translation put the elements genuinely
+  off the page plane, so the rotation has depth to work with. Both properties
+  are on a wrapper, never on the text itself — rasterising rotated text at a
+  fractional angle is what makes type look furry mid-animation, so the final
+  state is `transform:none` and the layer is dropped the moment it lands.
+*/
+.band .wrap,.closer .wrap{perspective:1400px;perspective-origin:50% 30%}
+
+/*
+  The starting pose is a CUSTOM PROPERTY, not a transform.
+
+  Variants below only change `--from`; none of them sets `transform`. That
+  matters: `.reveal.deep` and `.band.alt .reveal` both outrank
+  `.reveal.in{transform:none}` on specificity, so when they set the transform
+  directly the element never settles — it stays rotated and 320px behind the
+  page, permanently. Routing every variant through one variable means the
+  resting rule can never be outranked by a rule that only meant to change the
+  angle.
+*/
+.reveal{
+  --from:translate3d(0,42px,-120px) rotateX(9deg);
+  opacity:0;
+  transform:var(--from);
+  transform-origin:50% 0;
+  transition:
+    opacity .8s cubic-bezier(.2,.7,.3,1) var(--d,0ms),
+    transform .95s cubic-bezier(.16,.84,.24,1) var(--d,0ms),
+    filter .8s ease var(--d,0ms);
+  filter:blur(6px);
+  will-change:transform,opacity}
+.reveal.in{opacity:1;transform:none;filter:none}
+/* The compositor layer is only worth its memory while the thing is moving. */
+.reveal.in{will-change:auto}
+
+/*
+  Depth banding. Odd sections tip the other way and the cards fan from the
+  side, so scrolling does not become one repeated move — which is what makes a
+  long page feel like a slideshow.
+*/
+.band.alt .reveal{--from:translate3d(0,42px,-120px) rotateX(-7deg)}
+.band .problems .reveal,.band .caps .reveal,.band .grid .reveal{transform-origin:50% 50%}
+
+/* The big statements arrive from further away than the paragraphs under them. */
+.reveal.deep{--from:translate3d(0,60px,-320px) rotateX(12deg) scale(.96)}
+
+/*
+  Scroll-linked depth on the section grounds. Where the browser supports
+  scroll-driven animations this runs entirely off the main thread; where it
+  does not, nothing happens and the section is simply flat, which is a
+  perfectly good page.
+*/
+@supports (animation-timeline: view()){
+  .band .bg-scan,.band .bg-flow,.band .bg-lines,.band .bg-dots,.band .bg-chain{
+    animation:depth-drift linear both;
+    animation-timeline:view();
+    animation-range:entry 0% exit 100%}
+  @keyframes depth-drift{
+    from{transform:translate3d(0,-4%,0) scale(1.12)}
+    to{transform:translate3d(0,4%,0) scale(1.02)}}
+
+  .band h2.big{
+    animation:title-rise linear both;
+    animation-timeline:view();
+    animation-range:entry 10% cover 45%}
+  @keyframes title-rise{
+    from{letter-spacing:-.06em;opacity:.55}
+    to{letter-spacing:-.025em;opacity:1}}
+}
 
 /* ═══ animated grounds ═══════════════════════════════════════════════ */
 .bg-scan{position:absolute;inset:0;z-index:0;opacity:.55;
@@ -425,6 +511,7 @@ body.scrolled .topbar{background:rgba(7,4,10,.9);border-bottom-color:var(--line-
   box-shadow:0 0 14px rgba(255,140,43,.6);
   transform:scaleX(0);transform-origin:left;transition:transform 1.1s cubic-bezier(.2,.8,.2,1) .1s}
 .reveal.in .bar-t i{transform:scaleX(1)}
+.reveal.in .bar-t i{transition-delay:.25s}
 .bar-t i.slow{background:linear-gradient(90deg,rgba(255,106,19,.45),rgba(122,26,5,.75));box-shadow:none}
 .bar-v{font-size:12.5px;color:var(--orange);text-align:end;font-weight:600}
 .bar-v em{color:var(--muted);font-weight:400;font-size:11px;margin-inline-start:6px}
@@ -516,6 +603,45 @@ body.scrolled .topbar{background:rgba(7,4,10,.9);border-bottom-color:var(--line-
 .closer h2{font-size:clamp(30px,5.2vw,60px);margin-inline:auto;max-width:18ch;text-wrap:balance;
   letter-spacing:-.04em}
 .closer .sub{max-width:56ch}
+
+/* ═══ contact form ═══════════════════════════════════════════════════ */
+/*
+  The destination address is not in this file, in the markup, or anywhere else
+  the browser can see it — it lives in the endpoint's configuration. A mailto:
+  link would publish it to every scraper on the internet.
+*/
+.contact{display:grid;grid-template-columns:repeat(2,1fr);gap:16px 18px;
+  max-width:720px;margin:38px auto 0;text-align:start}
+.contact .field{display:flex;flex-direction:column;gap:7px}
+.contact .field-wide,.contact .contact-actions{grid-column:1/-1}
+.contact label{font:11.5px/1 var(--mono);letter-spacing:.16em;text-transform:uppercase;
+  color:var(--muted)}
+.contact .opt{color:var(--muted);opacity:.65;letter-spacing:.1em}
+.contact input,.contact textarea{
+  font:15px/1.5 var(--sans);color:var(--ink);background:rgba(7,4,10,.6);
+  border:1px solid var(--line);padding:12px 14px;width:100%;
+  transition:border-color .2s ease,box-shadow .2s ease,background .2s ease}
+.contact textarea{resize:vertical;min-height:110px}
+.contact input:hover,.contact textarea:hover{border-color:rgba(255,138,60,.34)}
+.contact input:focus,.contact textarea:focus{outline:none;border-color:var(--orange);
+  background:rgba(7,4,10,.85);box-shadow:0 0 0 3px rgba(255,106,19,.16)}
+/* Only scold a field the visitor has actually finished with. :user-invalid
+   waits for that; :invalid marks every required field red on first paint. */
+.contact input:user-invalid,.contact textarea:user-invalid{border-color:#ff6e6e}
+
+/* The honeypot. Off-screen rather than display:none — some bots skip anything
+   that is not rendered, and this one wants to be found by them. */
+.contact .trap{position:absolute;left:-9999px;width:1px;height:1px;overflow:hidden}
+
+.contact-actions{display:flex;align-items:center;gap:18px;flex-wrap:wrap;margin-top:6px}
+.contact-status{margin:0;font:13px/1.5 var(--sans);color:var(--muted);min-height:1.2em}
+.contact-status.ok{color:#7be2a4}
+.contact-status.bad{color:#ff8f8f}
+.contact.sending button{opacity:.6;pointer-events:none}
+.contact.sent{opacity:.55}
+
+@media (max-width:640px){ .contact{grid-template-columns:1fr} }
+
 .closer-note{margin:22px 0 0;color:var(--muted);font-size:13.5px}
 
 /* ═══ footer ═════════════════════════════════════════════════════════ */
@@ -557,6 +683,8 @@ body.scrolled .topbar{background:rgba(7,4,10,.9);border-bottom-color:var(--line-
     transition-duration:.001ms !important;
   }
   .kicker,.hero h1,.lede,.cta,.reveal{opacity:1 !important;transform:none !important}
+  .reveal{filter:none !important}
+  .band .wrap,.closer .wrap{perspective:none}
   .bar-t i{transform:scaleX(1) !important}
   .glitch::before,.glitch::after{display:none}
   .btn:hover{transform:none}
@@ -568,7 +696,7 @@ body.scrolled .topbar{background:rgba(7,4,10,.9);border-bottom-color:var(--line-
   the page prints as a hero and nine blank pages.
 */
 @media print{
-  .reveal{opacity:1 !important;transform:none !important}
+  .reveal{opacity:1 !important;transform:none !important;filter:none !important}
   .hero-canvas,.hero-video,.hero-scrim,.scanlines,.grain,.bg-scan,.bg-flow,.bg-lines,
   .bg-dots,.bg-chain,.bg-horizon,.ticker,.scroll-hint,.hero-hud,.progress,.drawer{display:none !important}
   body,.band,.band.alt,.hero,.closer,.foot{background:#fff !important;color:#000 !important}

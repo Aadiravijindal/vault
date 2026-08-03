@@ -5,3 +5,7 @@ vault-export/
 ledger-export.json
 node_modules/
 .DS_Store
+
+# contact enquiries spooled to disk by bin/vault-contact.js — real people's
+# names and messages, never committed
+.contact-spool.jsonl

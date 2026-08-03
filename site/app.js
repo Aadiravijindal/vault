@@ -249,6 +249,9 @@ document.getElementById('year').textContent = new Date().getFullYear();
   const targets = [...document.querySelectorAll('.band .wrap > *, .closer .wrap > *')];
   targets.forEach((el, i) => {
     el.classList.add('reveal');
+    // The headline of a section comes from further back than the paragraph
+    // under it, so a band arrives as a composition rather than as one slab.
+    if (el.matches('h2, .eyebrow')) el.classList.add('deep');
     // A small stagger inside each section, capped so a long list never crawls.
     el.style.setProperty('--d', `${Math.min(i % 8, 5) * 55}ms`);
   });
@@ -298,4 +301,62 @@ document.getElementById('year').textContent = new Date().getFullYear();
       ticking = false;
     });
   }, { passive: true });
+})();
+
+// ── 4 · the contact form ────────────────────────────────────────────────────
+//
+// Progressive enhancement, not a replacement: the form already works as a
+// plain POST. This keeps the visitor on the page, reports what happened, and
+// refuses to submit the honeypot — but if this file never loads, the form
+// still submits and the message still arrives.
+//
+// The destination address is not here. It is not anywhere the browser can see
+// it. The endpoint holds it.
+(function contactForm() {
+  const form = document.getElementById('contact');
+  if (!form) return;
+  const status = form.querySelector('.contact-status');
+  const endpoint = form.dataset.endpoint || form.action;
+
+  const say = (msg, kind) => {
+    status.textContent = msg;
+    status.className = `contact-status${kind ? ` ${kind}` : ''}`;
+  };
+
+  form.addEventListener('submit', async (e) => {
+    // Let the browser's own validation speak first — it is localised and it
+    // moves focus to the offending field, which is more than a custom message
+    // usually manages.
+    if (!form.reportValidity()) { e.preventDefault(); return; }
+    e.preventDefault();
+
+    if (form.elements.website.value) {
+      // Silently accept. Telling a bot it was caught only teaches whoever
+      // wrote it which field to leave alone next time.
+      say('Thanks — we will be in touch.', 'ok');
+      form.classList.add('sent');
+      return;
+    }
+
+    form.classList.add('sending');
+    say('Sending…');
+
+    try {
+      const res = await fetch(endpoint, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(Object.fromEntries(new FormData(form)))
+      });
+      if (!res.ok) throw new Error(`the server said ${res.status}`);
+      form.classList.remove('sending');
+      form.classList.add('sent');
+      say('Thanks — we will be in touch.', 'ok');
+      form.querySelectorAll('input,textarea').forEach((el) => { el.value = ''; el.disabled = true; });
+    } catch (err) {
+      form.classList.remove('sending');
+      // Say what to do next, not just that something broke. A dead end here is
+      // a lost conversation.
+      say(`Could not send that (${err.message}). Please try again in a moment.`, 'bad');
+    }
+  });
 })();

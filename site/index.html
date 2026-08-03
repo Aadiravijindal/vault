@@ -352,7 +352,7 @@
         <div><b data-count="0">0</b><span>code paths that pass a write unchecked</span></div>
         <div><b data-count="100" data-suffix="%">100%</b><span>of outcomes logged — blocks included</span></div>
         <div><b data-count="74">74</b><span>tools in the connector catalog</span></div>
-        <div><b data-count="933">933</b><span>tests on every change</span></div>
+        <div><b data-count="958">958</b><span>tests on every change</span></div>
       </div>
     </div>
   </section>
@@ -506,9 +506,51 @@
         We are working with a small number of teams putting agents into regulated
         environments. If that is you, we would like to hear what breaks.
       </p>
-      <div class="cta center-cta">
-        <a class="btn btn-lg" href="mailto:hello@vault.example?subject=Early%20access">Request early access</a>
-      </div>
+      <!--
+        The form posts to an endpoint that holds the destination address; the
+        address is deliberately nowhere in this page. A mailto: link would put
+        it in the markup for every scraper on the internet, and would dump the
+        visitor into a mail client rather than taking the message.
+
+        It works with no JavaScript: a plain form POST navigates to the
+        endpoint's own reply. app.js upgrades it to a fetch so the page does
+        not move, but that is an enhancement, not a requirement.
+      -->
+      <form class="contact" id="contact" method="post" action="/api/contact" data-endpoint="/api/contact">
+        <div class="field">
+          <label for="c-name">Name</label>
+          <input id="c-name" name="name" type="text" autocomplete="name" required maxlength="120">
+        </div>
+        <div class="field">
+          <label for="c-email">Work email</label>
+          <input id="c-email" name="email" type="email" autocomplete="email" required maxlength="200"
+                 inputmode="email" spellcheck="false">
+        </div>
+        <div class="field field-wide">
+          <label for="c-company">Company <span class="opt">optional</span></label>
+          <input id="c-company" name="company" type="text" autocomplete="organization" maxlength="120">
+        </div>
+        <div class="field field-wide">
+          <label for="c-message">What are you building, and what worries you about it?</label>
+          <textarea id="c-message" name="message" rows="4" required maxlength="4000"></textarea>
+        </div>
+
+        <!--
+          Honeypot. A real visitor never sees this and never fills it in; most
+          bots fill every input they find. Hidden from assistive technology and
+          removed from the tab order, so it costs a human nothing.
+        -->
+        <div class="field trap" aria-hidden="true">
+          <label for="c-website">Website</label>
+          <input id="c-website" name="website" type="text" tabindex="-1" autocomplete="off">
+        </div>
+
+        <div class="contact-actions">
+          <button class="btn btn-lg" type="submit">Request early access</button>
+          <p class="contact-status" role="status" aria-live="polite"></p>
+        </div>
+      </form>
+
       <p class="closer-note">No credit card. No usage meter. Runs on your hardware.</p>
     </div>
   </section>

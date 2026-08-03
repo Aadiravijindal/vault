@@ -80,7 +80,7 @@ describe('the page says what it promises to say', () => {
     // changes. These are the ones with a number in them.
     assert.match(text, /\b74\b/, '74 connectors');
     assert.match(text, /576 adversarial cases/);
-    assert.match(text, /\b933\b/, 'the test count');
+    assert.match(text, /\b958\b/, 'the test count');
     assert.match(text, /p50 80ms/);
     assert.match(text, /ten checks|10 checks/i);
   });
@@ -345,6 +345,27 @@ describe('it moves, and it can be told not to', () => {
     }
   });
 
+  test('the scroll reveal is three-dimensional, and settles', () => {
+    // The perspective is on the section, not on each element: set per-element
+    // every card gets its own camera, which is the tell that makes CSS 3D look
+    // cheap.
+    assert.match(css, /\.band \.wrap,\.closer \.wrap\{perspective:/);
+    assert.match(css, /--from:translate3d/);
+    assert.match(css, /\.reveal\{[^}]*transform:var\(--from\)/);
+
+    // Every variant must change the VARIABLE, never the transform. Both
+    // `.reveal.deep` and `.band.alt .reveal` outrank `.reveal.in`, so a
+    // variant that sets `transform` directly leaves the element rotated and
+    // hundreds of pixels behind the page forever. That shipped once.
+    for (const sel of ['.reveal.deep', '.band.alt .reveal']) {
+      const rule = css.slice(css.indexOf(`${sel}{`), css.indexOf('}', css.indexOf(`${sel}{`)) + 1);
+      assert.ok(rule.startsWith(sel), `${sel} should have a rule`);
+      assert.ok(!/(^|[;{])transform:/.test(rule),
+        `${sel} sets transform directly, so .reveal.in can never win and it will never settle`);
+    }
+    assert.match(css, /\.reveal\.in\{opacity:1;transform:none/);
+  });
+
   test('one switch stops all of it', () => {
     assert.match(css, /@media \(prefers-reduced-motion:reduce\)/);
     const block = css.slice(css.indexOf('@media (prefers-reduced-motion:reduce)'));
@@ -362,6 +383,49 @@ describe('it moves, and it can be told not to', () => {
     assert.match(js, /IntersectionObserver/);
     assert.match(js, /visibilitychange/);
     assert.match(js, /cancelAnimationFrame/);
+  });
+});
+
+describe('the contact form', () => {
+  test('it is a real form, and it works with no JavaScript', () => {
+    // method + action mean a plain POST submits it. The fetch in app.js keeps
+    // the visitor on the page; it is not what makes the form work.
+    const form = html.slice(html.indexOf('<form class="contact"'), html.indexOf('</form>'));
+    assert.match(form, /method="post"/);
+    assert.match(form, /action="\/api\/contact"/);
+    assert.match(form, /<button[^>]*type="submit"/);
+  });
+
+  test('every field is labelled, and required means required', () => {
+    const form = html.slice(html.indexOf('<form class="contact"'), html.indexOf('</form>'));
+    for (const id of ['c-name', 'c-email', 'c-message']) {
+      assert.match(form, new RegExp(`for="${id}"`), `${id} has no label`);
+      assert.match(form, new RegExp(`id="${id}"[^>]*required|required[^>]*id="${id}"`),
+        `${id} should be required`);
+    }
+    assert.match(form, /id="c-email"[^>]*type="email"/, 'the email field must be type=email');
+    // A cap in the markup as well as on the server, so the browser stops it
+    // before a 4000-character message is uploaded and refused.
+    assert.match(form, /maxlength="4000"/);
+  });
+
+  test('the honeypot is invisible to people and to screen readers', () => {
+    const trap = html.slice(html.indexOf('<div class="field trap"'), html.indexOf('</div>', html.indexOf('<div class="field trap"')));
+    assert.match(html.slice(html.indexOf('<div class="field trap"')), /aria-hidden="true"/);
+    assert.match(trap, /tabindex="-1"/, 'it must be out of the tab order');
+    const rule = css.slice(css.indexOf('.contact .trap{'), css.indexOf('}', css.indexOf('.contact .trap{')));
+    assert.match(rule, /left:-9999px/,
+      'off-screen rather than display:none — a bot that skips unrendered fields would skip this one');
+  });
+
+  test('the status is announced, not just painted', () => {
+    assert.match(html, /class="contact-status"[^>]*role="status"[^>]*aria-live="polite"/,
+      'somebody using a screen reader has to be told the message was sent');
+  });
+
+  test('no address is published to the page', () => {
+    assert.ok(!/href="mailto:/i.test(html),
+      'the endpoint exists precisely so the address is not in the markup');
   });
 });
 
@@ -390,6 +454,19 @@ describe('it degrades', () => {
     assert.match(html, /<div class="drawer" id="drawer" hidden>/);
     assert.match(js, /panel\.hidden = true/);
     assert.match(js, /e\.key === 'Escape'/, 'Escape must close it');
+  });
+
+  test('nothing can out-rank the hidden attribute', () => {
+    // `.drawer` sets display:grid, which beats the UA stylesheet's
+    // [hidden]{display:none}. The closed menu therefore stayed a full-screen
+    // transparent overlay at z-index 24, and every click on the page landed on
+    // it — any click that hit one of the eight invisible nav links navigated
+    // there, which read as the page jumping somewhere at random.
+    assert.match(css, /\[hidden\]\{display:none !important\}/,
+      'without this, any component that sets display and hides itself becomes a click-eating overlay');
+    const global = css.indexOf('[hidden]{display:none !important}');
+    assert.ok(global < css.indexOf('.drawer{'),
+      'the rule is global on purpose — scoping it to .drawer leaves the trap set for the next component');
   });
 
   test('nothing is fetched from a third party', () => {

@@ -10,6 +10,25 @@ python3 -m http.server -d site 4000
 
 Deploy by copying `site/` anywhere that serves static files.
 
+The contact form needs somewhere to POST. `bin/vault-contact.js` is that endpoint, and
+will serve the site alongside it if you want one process:
+
+```bash
+export CONTACT_SMTP_USER=you@gmail.com
+export CONTACT_SMTP_PASS=…          # an app password, never your login password
+node bin/vault-contact.js           # site + /api/contact on :8090
+```
+
+**The destination address is not in this folder.** Not in the markup, not in the CSS, not
+in the script, not in any zip of the site — the page knows only the path `/api/contact`,
+and the endpoint holds the address. A `mailto:` link would publish it to every scraper
+that ever reads the page, and would dump the visitor into a mail client instead of taking
+their message. A test asserts the leak cannot happen.
+
+With no relay configured the endpoint still accepts messages and spools them to disk, so a
+missing password loses nothing. Every message is spooled **before** the send is attempted,
+for the same reason.
+
 `mark.mjs` and `video.mjs` are **build-time tools**. They are not shipped, not imported by
 the page, and not needed to serve it. They regenerate two committed artefacts: the logo
 path and the hero footage.
@@ -90,6 +109,25 @@ universal selector, so the sixteenth animation is covered the day it is added.
 
 Every animated layer is absolutely positioned, `aria-hidden`, behind its content and at
 low opacity, so none of it can reduce the contrast of any text. There is a test.
+
+### The scroll
+
+Sections arrive in three dimensions: elements swing up from 120px behind the page,
+un-blurring as they land, with headings coming from further back than the paragraphs under
+them. Alternate bands tip the other way, so a long page does not become one repeated move.
+Where the browser supports scroll-driven animations, the section grounds drift in depth and
+the big headings tighten their letter-spacing as they cross the viewport — entirely off the
+main thread, and simply absent where it is not supported.
+
+**The perspective is on the section, not on each element.** Set per-element, every card
+gets its own vanishing point, which is the tell that makes CSS 3D look cheap.
+
+**And every variant sets a custom property, never `transform`.** `.reveal.deep` and
+`.band.alt .reveal` both outrank `.reveal.in{transform:none}` on specificity, so a variant
+that sets the transform directly means the element never settles — it stays rotated and
+hundreds of pixels behind the page, forever. That shipped once. Routing every variant
+through `--from` means the resting rule cannot be outranked by a rule that only meant to
+change an angle.
 
 Scroll reveal, the counters and the progress bar are additive: the classes are added by
 script or not at all, so no JavaScript means visible, not blank.
